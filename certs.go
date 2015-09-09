@@ -18,7 +18,7 @@ func init() {
 // Load a CA bundle from by arrays.  You can then load them into
 // the proxy with `proxy.SetMITMCertAuth`
 func LoadCA(caCert, caKey []byte) (*tls.Certificate, error) {
-	ca, err := tls.X509KeyPair(CA_CERT, CA_KEY)
+	ca, err := tls.X509KeyPair(caCert, caKey)
 	if err != nil {
 		return nil, err
 	}
