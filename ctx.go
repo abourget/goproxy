@@ -29,9 +29,8 @@ type ProxyCtx struct {
 	host    string
 	sniHost string
 
-	sniffedTLS        bool
-	MITMCertAuth      *tls.Certificate
-	MITMGeneratedCert *tls.Certificate // filled once request is signed..
+	sniffedTLS     bool
+	MITMCertConfig *GoproxyConfig
 
 	connectScheme string
 
@@ -559,21 +558,18 @@ func (ctx *ProxyCtx) NewHTMLResponse(body string) {
 }
 
 func (ctx *ProxyCtx) tlsConfig(host string) (*tls.Config, error) {
-	config := *defaultTLSConfig
-
-	ca := ctx.proxy.MITMCertAuth
-	if ctx.MITMCertAuth != nil {
-		ca = ctx.MITMCertAuth
+	ca := ctx.proxy.MITMCertConfig
+	if ctx.MITMCertConfig != nil {
+		ca = ctx.MITMCertConfig
 	}
 
 	ctx.Logf("signing for %s", stripPort(host))
-	cert, err := signHost(ca, []string{stripPort(host)})
+	err := ca.cert(host)
 	if err != nil {
 		ctx.Warnf("Cannot sign host certificate with provided CA: %s", err)
 		return nil, err
 	}
-	config.Certificates = append(config.Certificates, cert)
-	return &config, nil
+	return ca.Config, nil
 }
 
 func (ctx *ProxyCtx) removeProxyHeaders() {

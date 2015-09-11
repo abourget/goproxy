@@ -1,7 +1,6 @@
 package goproxy
 
 import (
-	"crypto/tls"
 	"log"
 	"net"
 	"net/http"
@@ -40,8 +39,8 @@ type ProxyHttpServer struct {
 	// Custom transport to be used
 	Transport *http.Transport
 
-	// Setting MITMCertAuth allows you to override the default CA cert/key used to sign MITM'd requests.
-	MITMCertAuth *tls.Certificate
+	// Setting MITMCertConfig allows you to override the default CA cert/key used to sign MITM'd requests.
+	MITMCertConfig *GoproxyConfig
 
 	// ConnectDial will be used to create TCP connections for CONNECT requests
 	// if nil, .Transport.Dial will be used
@@ -62,7 +61,7 @@ func NewProxyHttpServer() *ProxyHttpServer {
 			TLSClientConfig: tlsClientSkipVerify,
 			Proxy:           http.ProxyFromEnvironment,
 		},
-		MITMCertAuth:    GoproxyCa,
+		MITMCertConfig:  GoproxyCaConfig,
 		harLog:          har.New(),
 		harLogEntryCh:   make(chan harReqAndResp, 10),
 		harFlushRequest: make(chan string, 10),
@@ -84,7 +83,7 @@ func (proxy *ProxyHttpServer) ServeHTTP(w http.ResponseWriter, r *http.Request) 
 		UserObjects:    make(map[string]interface{}),
 		Session:        atomic.AddInt64(&proxy.sess, 1),
 		proxy:          proxy,
-		MITMCertAuth:   proxy.MITMCertAuth,
+		MITMCertConfig: proxy.MITMCertConfig,
 	}
 	ctx.host = r.URL.Host
 	if strings.IndexRune(ctx.host, ':') == -1 {
@@ -122,10 +121,10 @@ func (proxy *ProxyHttpServer) Logf(msg string, v ...interface{}) {
 	}
 }
 
-// SetMITMCertAuth sets the CA to be used to sign man-in-the-middle'd
-// certificates. You can load some []byte with `LoadCA()`. This bundle
+// SetMITMCertConfig sets the CA Config to be used to sign man-in-the-middle'd
+// certificates. You can load some []byte with `LoadCAConfig()`. This bundle
 // gets passed into the `ProxyCtx` and may be overridden in the [TODO:
 // FIXME] `HandleConnect()` callback, before doing SNI sniffing.
-func (proxy *ProxyHttpServer) SetMITMCertAuth(ca *tls.Certificate) {
-	proxy.MITMCertAuth = ca
+func (proxy *ProxyHttpServer) SetMITMCertConfig(config *GoproxyConfig) {
+	proxy.MITMCertConfig = config
 }

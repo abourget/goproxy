@@ -122,18 +122,3 @@ func (proxy *ProxyHttpServer) NewConnectDialToProxy(https_proxy string) func(net
 	}
 	return nil
 }
-
-func TLSConfigFromCA(ca *tls.Certificate) func(host string, ctx *ProxyCtx) (*tls.Config, error) {
-	return func(host string, ctx *ProxyCtx) (*tls.Config, error) {
-		config := *defaultTLSConfig
-		ctx.Logf("signing for %s", stripPort(host))
-		cert, err := signHost(ca, []string{stripPort(host)})
-		if err != nil {
-			ctx.Warnf("Cannot sign host certificate with provided CA: %s", err)
-			return nil, err
-		}
-		config.Certificates = append(config.Certificates, cert)
-		ctx.MITMGeneratedCert = &cert
-		return &config, nil
-	}
-}
