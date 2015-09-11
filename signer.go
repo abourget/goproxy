@@ -13,8 +13,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-
-	"github.com/google/martian/log"
 )
 
 // MaxSerialNumber is the upper boundary that is used to create unique serial
@@ -105,8 +103,6 @@ func (c *GoproxyConfig) cert(hostname string) error {
 	c.certmu.RUnlock()
 
 	if ok {
-		log.Debugf("mitm: cache hit for %s", hostname)
-
 		// Check validity of the certificate for hostname match, expiry, etc. In
 		// particular, if the cached certificate has expired, create a new one.
 		if _, err := tlsc.Leaf.Verify(x509.VerifyOptions{
@@ -115,11 +111,7 @@ func (c *GoproxyConfig) cert(hostname string) error {
 		}); err == nil {
 			return nil
 		}
-
-		log.Debugf("mitm: invalid certificate in cache for %s", hostname)
 	}
-
-	log.Debugf("mitm: cache miss for %s", hostname)
 
 	serial, err := rand.Int(rand.Reader, MaxSerialNumber)
 	if err != nil {
