@@ -81,7 +81,7 @@ func NewConfig(ca *x509.Certificate, privateKey interface{}) (*GoproxyConfig, er
 		Config: &tls.Config{
 			InsecureSkipVerify: true,
 			Certificates:       make([]tls.Certificate, 0),
-			MinVersion:         tls.VersionTLS12,
+			MinVersion:         tls.VersionTLS10,
 			RootCAs:            roots,
 			NameToCertificate:  make(map[string]*tls.Certificate),
 		},
