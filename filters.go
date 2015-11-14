@@ -161,7 +161,7 @@ func HostsToMap(hosts ...string) map[string]bool {
 }
 
 func MatchRequestHostMap(req *http.Request, hosts map[string]bool) bool {
-	 _, ok := hosts[req.URL.Host]
+	_, ok := hosts[req.URL.Host]
 	return ok
 }
 
