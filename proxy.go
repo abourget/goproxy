@@ -27,6 +27,8 @@ type ProxyHttpServer struct {
 	connectHandlers  []Handler
 	requestHandlers  []Handler
 	responseHandlers []Handler
+	doneHandlers     []Handler
+
 	// NonProxyHandler will be used to handle direct connections to the proxy. You can assign an `http.ServeMux` or some other routing libs here.  The default will return a 500 error saying this is a proxy and has nothing to serve by itself.
 	NonProxyHandler http.Handler
 

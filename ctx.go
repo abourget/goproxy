@@ -414,8 +414,7 @@ func (ctx *ProxyCtx) DispatchResponseHandlers() error {
 
 		switch then {
 		case DONE:
-			// TODO: ensure everything is properly shut down
-			return nil
+			return ctx.DispatchDoneHandlers()
 		case NEXT:
 			continue
 		case FORWARD:
@@ -433,10 +432,36 @@ func (ctx *ProxyCtx) DispatchResponseHandlers() error {
 		err := fmt.Errorf("Response nil: %s", ctx.ResponseError)
 		ctx.Logf("error reading response %v: %v", ctx.Req.URL.Host, err.Error())
 		http.Error(ctx.ResponseWriter, err.Error(), 500)
+		ctx.DispatchDoneHandlers()
 		return err
 	}
 
 	return ctx.ForwardResponse(ctx.Resp)
+}
+
+func (ctx *ProxyCtx) DispatchDoneHandlers() error {
+	var then Next
+	for _, handler := range ctx.proxy.doneHandlers {
+		then = handler.Handle(ctx)
+
+		switch then {
+		case DONE:
+			return nil
+		case NEXT:
+			continue
+		case FORWARD:
+			break
+		case MITM:
+			panic("MITM doesn't make sense when we are done")
+		case REJECT:
+			panic("REJECT a response ? then do what, send a 500 back ?")
+		default:
+			// We're done
+			return nil
+		}
+	}
+
+	return nil
 }
 
 func (ctx *ProxyCtx) ForwardResponse(resp *http.Response) error {
@@ -464,6 +489,8 @@ func (ctx *ProxyCtx) ForwardResponse(resp *http.Response) error {
 		ctx.Warnf("Can't close response body %v", err)
 	}
 	ctx.Logf("Copied %d bytes to client, error=%v", nr, err)
+
+	ctx.DispatchDoneHandlers()
 
 	return nil
 }
@@ -508,6 +535,8 @@ func (ctx *ProxyCtx) forwardMITMResponse(resp *http.Response) error {
 		ctx.Warnf("Cannot write TLS response chunked trailer from mitm'd client: %v", err)
 		return err
 	}
+
+	ctx.DispatchDoneHandlers()
 
 	return nil
 }

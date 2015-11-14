@@ -43,6 +43,18 @@ func (proxy *ProxyHttpServer) HandleResponse(f Handler) {
 	proxy.responseHandlers = append(proxy.responseHandlers, f)
 }
 
+// HandleDoneFunc and HandleDone are called at the end of every request.
+// Use them to cleanup.
+//
+// See `Next` values for the return value meaning
+func (proxy *ProxyHttpServer) HandleDoneFunc(f func(ctx *ProxyCtx) Next) {
+	proxy.doneHandlers = append(proxy.doneHandlers, HandlerFunc(f))
+}
+
+func (proxy *ProxyHttpServer) HandleDone(f Handler) {
+	proxy.doneHandlers = append(proxy.doneHandlers, f)
+}
+
 //////
 ////// dispatchers section //////
 //////
@@ -99,7 +111,7 @@ func (proxy *ProxyHttpServer) dispatchRequestHandlers(ctx *ProxyCtx) {
 		then = handler.Handle(ctx)
 		switch then {
 		case DONE:
-			// TODO: ensure everything is properly shut down
+			ctx.DispatchDoneHandlers()
 			return
 		case NEXT:
 			continue
@@ -115,6 +127,7 @@ func (proxy *ProxyHttpServer) dispatchRequestHandlers(ctx *ProxyCtx) {
 		case REJECT:
 			ctx.ResponseWriter.WriteHeader(502)
 			ctx.ResponseWriter.Write([]byte("Rejected by proxy"))
+			ctx.DispatchDoneHandlers()
 			return
 		default:
 			panic(fmt.Sprintf("Invalid value %v for Next after calling %v", then, handler))
