@@ -693,7 +693,7 @@ func (ctx *ProxyCtx) Charset() string {
 }
 
 func copyHeaders(dst, src http.Header) {
-	for k, _ := range dst {
+	for k := range dst {
 		dst.Del(k)
 	}
 	for k, vs := range src {

@@ -15,7 +15,7 @@ func equal(u, v []string) bool {
 	if len(u) != len(v) {
 		return false
 	}
-	for i, _ := range u {
+	for i := range u {
 		if u[i] != v[i] {
 			return false
 		}
