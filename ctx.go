@@ -367,8 +367,11 @@ func (ctx *ProxyCtx) ForwardConnect() error {
 	if !ctx.sniffedTLS {
 		ctx.Conn.Write([]byte("HTTP/1.0 200 OK\r\n\r\n"))
 	}
-	go ctx.copyAndClose(targetSiteConn, ctx.Conn)
-	go ctx.copyAndClose(ctx.Conn, targetSiteConn)
+	toClose := make(chan net.Conn)
+	go ctx.copyAndClose(targetSiteConn, ctx.Conn, toClose)
+	go ctx.copyAndClose(ctx.Conn, targetSiteConn, toClose)
+	go ctx.closeTogether(toClose)
+
 	return nil
 }
 
@@ -635,14 +638,22 @@ func (ctx *ProxyCtx) httpError(parentErr error) {
 	}
 }
 
-func (ctx *ProxyCtx) copyAndClose(w, r net.Conn) {
-	connOk := true
-	if _, err := io.Copy(w, r); err != nil {
-		connOk = false
+func (ctx *ProxyCtx) copyAndClose(w, r net.Conn, toClose chan net.Conn) {
+	_, err := io.Copy(w, r)
+	if err != nil {
 		ctx.Warnf("Error copying to client: %s", err)
 	}
-	if err := r.Close(); err != nil && connOk {
-		ctx.Warnf("Error closing: %s", err)
+	toClose <- r
+}
+
+func (ctx *ProxyCtx) closeTogether(toClose chan net.Conn) {
+	c1 := <-toClose
+	c2 := <-toClose
+	if err := c1.Close(); err != nil {
+		ctx.Warnf("Error closing connection: %s", err)
+	}
+	if err := c2.Close(); err != nil {
+		ctx.Warnf("Error closing connection: %s", err)
 	}
 }
 
