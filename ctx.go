@@ -639,8 +639,8 @@ func (ctx *ProxyCtx) httpError(parentErr error) {
 }
 
 func (ctx *ProxyCtx) copyAndClose(w, r net.Conn, toClose chan net.Conn) {
-	_, err := io.Copy(w, r)
-	if err != nil {
+	bytes, err := io.Copy(w, r)
+	if err != nil && bytes <= 0 {
 		ctx.Warnf("Error copying to client: %s", err)
 	}
 	toClose <- r
