@@ -52,11 +52,6 @@ type GoproxyConfig struct {
 // NewConfig creates a MITM config using the CA certificate and
 // private key to generate on-the-fly certificates.
 func NewConfig(ca *x509.Certificate, privateKey interface{}) (*GoproxyConfig, error) {
-	if roots == nil {
-		roots = x509.NewCertPool()
-	}
-	roots.AddCert(ca)
-
 	priv, err := rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {
 		return nil, err
@@ -79,27 +74,14 @@ func NewConfig(ca *x509.Certificate, privateKey interface{}) (*GoproxyConfig, er
 		priv:     priv,
 		keyID:    keyID,
 		validity: time.Hour * 24 * 3650,
-
-		Config: &tls.Config{
-			InsecureSkipVerify:       true,
-			RootCAs:                  roots,
-			MinVersion:               tls.VersionTLS10,
-			MaxVersion:               tls.VersionTLS12,
-			PreferServerCipherSuites: true,
-			ClientAuth:               tls.RequireAnyClientCert,
-			Renegotiation: 						tls.RenegotiateFreelyAsClient,
-			CipherSuites: []uint16{
-				tls.TLS_RSA_WITH_AES_256_CBC_SHA,
-				tls.TLS_RSA_WITH_AES_128_CBC_SHA,
-				tls.TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA,
-				tls.TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA,
-				tls.TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA,
-				tls.TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA,
-				tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,
-				tls.TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,
-			},
-		},
+		Config:   rootCAs(nil),
 	}
+	if tlsConfig.Config.RootCAs == nil {
+		tlsConfig.Config.RootCAs = x509.NewCertPool()
+	}
+	tlsConfig.Config.RootCAs.AddCert(ca)
+	tlsConfig.Config.Certificates = make([]tls.Certificate, 0)
+	tlsConfig.Config.NameToCertificate = make(map[string]*tls.Certificate)
 
 	return tlsConfig, nil
 }

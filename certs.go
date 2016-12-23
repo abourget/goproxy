@@ -3,18 +3,28 @@ package goproxy
 import (
 	"crypto/tls"
 	"crypto/x509"
+	"fmt"
+
+	"github.com/hashicorp/go-rootcerts"
 )
 
 var GoproxyCaConfig *GoproxyConfig
-var roots *x509.CertPool
+
+func rootCAs(c *rootcerts.Config) *tls.Config {
+	t := &tls.Config{
+		InsecureSkipVerify: true,
+		MinVersion:         tls.VersionTLS10,
+		MaxVersion:         tls.VersionTLS11,
+		Renegotiation:      tls.RenegotiateFreelyAsClient,
+	}
+	err := rootcerts.ConfigureTLS(t, c)
+	if err != nil {
+		fmt.Println("[Warning] Error loading root certs", err)
+	}
+	return t
+}
 
 func init() {
-	var err error
-	roots, err = x509.SystemCertPool()
-	if err != nil {
-		roots = nil
-	}
-
 	config, err := LoadCAConfig(CA_CERT, CA_KEY)
 	if err != nil {
 		panic("Error parsing builtin CA " + err.Error())
@@ -39,13 +49,7 @@ func LoadCAConfig(caCert, caKey []byte) (*GoproxyConfig, error) {
 	return config, err
 }
 
-var tlsClientSkipVerify = &tls.Config{
-	RootCAs:            roots,
-	InsecureSkipVerify: true,
-	MinVersion:         tls.VersionTLS10,
-	MaxVersion:         tls.VersionTLS11,
-	Renegotiation:      tls.RenegotiateFreelyAsClient,
-}
+var tlsClientSkipVerify = rootCAs(nil)
 
 var CA_CERT = []byte(`-----BEGIN CERTIFICATE-----
 MIICSjCCAbWgAwIBAgIBADALBgkqhkiG9w0BAQUwSjEjMCEGA1UEChMaZ2l0aHVi
