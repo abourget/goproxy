@@ -113,6 +113,9 @@ func (proxy *ProxyHttpServer) dispatchRequestHandlers(ctx *ProxyCtx) {
 		case DONE:
 			ctx.DispatchDoneHandlers()
 			return
+		case MOCK:
+			ctx.DispatchResponseHandlers()
+			return
 		case NEXT:
 			continue
 		case FORWARD:
