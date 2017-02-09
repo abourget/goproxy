@@ -15,6 +15,11 @@ import (
 	"time"
 )
 
+// OrganizationName is the name your CA cert will be signed with. It
+// will show in your different UIs. Change it globally here to show
+// meaningful things to your users.
+var OrganizationName = "GoProxy untrusted MITM proxy Inc"
+
 // MaxSerialNumber is the upper boundary that is used to create unique serial
 // numbers for the certificate. This can be any unsigned integer up to 20
 // bytes (2^(8*20)-1).
@@ -118,7 +123,7 @@ func (c *GoproxyConfig) cert(hostname string) error {
 		SerialNumber: serial,
 		Subject: pkix.Name{
 			CommonName:   hostname,
-			Organization: []string{"StopLight"},
+			Organization: []string{OrganizationName},
 		},
 		SubjectKeyId:          c.keyID,
 		KeyUsage:              x509.KeyUsageKeyEncipherment | x509.KeyUsageDigitalSignature,
