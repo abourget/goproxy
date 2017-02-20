@@ -24,12 +24,13 @@ func rootCAs(c *rootcerts.Config) *tls.Config {
 	return t
 }
 
-func init() {
+func LoadDefaultConfig() error {
 	config, err := LoadCAConfig(CA_CERT, CA_KEY)
 	if err != nil {
-		panic("Error parsing builtin CA " + err.Error())
+		return fmt.Errorf("Error parsing builtin CA: %s", err.Error())
 	}
 	GoproxyCaConfig = config
+	return nil
 }
 
 // Load a CAConfig bundle from by arrays.  You can then load them into
