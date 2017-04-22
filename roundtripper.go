@@ -64,7 +64,7 @@ func (ctx *ProxyCtx) _roundTripWithLog(req *http.Request) (*http.Response, error
 		reqAndResp.captureContent = ctx.isLogWithContent
 
 		req := ctx.Req
-		if reqAndResp.captureContent && req.ContentLength > 0 {
+		if req.ContentLength > 0 {
 			req, reqAndResp.req = copyReq(req)
 		} else {
 			reqAndResp.req = req
@@ -72,7 +72,7 @@ func (ctx *ProxyCtx) _roundTripWithLog(req *http.Request) (*http.Response, error
 
 		resp, err = ctx.RoundTripper.RoundTrip(req, ctx)
 
-		if reqAndResp.captureContent && resp != nil && resp.ContentLength != 0 {
+		if resp != nil && resp.ContentLength != 0 {
 			resp, reqAndResp.resp = copyResp(resp)
 		} else {
 			reqAndResp.resp = resp

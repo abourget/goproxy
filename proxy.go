@@ -36,6 +36,7 @@ type ProxyHttpServer struct {
 	harLog            *har.Har
 	harLogEntryCh     chan harReqAndResp
 	harFlushRequest   chan string
+	harFlushToMemory  chan chan *har.Har
 	harFlusherRunOnce sync.Once
 
 	// Custom transport to be used
@@ -67,6 +68,7 @@ func NewProxyHttpServer() *ProxyHttpServer {
 		harLog:          har.New(),
 		harLogEntryCh:   make(chan harReqAndResp, 10),
 		harFlushRequest: make(chan string, 10),
+		harFlushToMemory: make(chan chan *har.Har, 10),
 	}
 	proxy.ConnectDial = dialerFromEnv(&proxy)
 	return &proxy
