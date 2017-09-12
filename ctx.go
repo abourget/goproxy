@@ -300,6 +300,13 @@ func (ctx *ProxyCtx) ManInTheMiddleHTTPS() error {
 		r := ctx.Req
 
 		rawClientTls := tls.Server(ctx.Conn, tlsConfig)
+		
+		// Set a reasonable timeout to complete the initial handshake. This forcefully
+		// closes some connections that Chrome keeps open. 
+		timeoutDuration := 15 * time.Second
+		ctx.Conn.SetReadDeadline(time.Now().Add(timeoutDuration))
+		ctx.Conn.SetWriteDeadline(time.Now().Add(timeoutDuration))
+		
 		if err := rawClientTls.Handshake(); err != nil {
 			ctx.Warnf("Cannot handshake client %v %v", r.Host, err)
 			return
