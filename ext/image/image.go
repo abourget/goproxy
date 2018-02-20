@@ -52,7 +52,7 @@ func HandleImage(f func(img image.Image, ctx *ProxyCtx) image.Image) Handler {
 		img, imgType, err := image.Decode(resp.Body)
 		if err != nil {
 			regret.Regret()
-			ctx.Warnf("%s: %s", ctx.Req.Method+" "+ctx.Req.URL.String()+" Image from "+ctx.Req.RequestURI+"content type"+
+			ctx.Logf(6,"%s: %s", ctx.Req.Method+" "+ctx.Req.URL.String()+" Image from "+ctx.Req.RequestURI+"content type"+
 				contentType+"cannot be decoded returning original image", err)
 			return NEXT
 		}

@@ -19,6 +19,8 @@ func (f RoundTripperFunc) RoundTrip(req *http.Request, ctx *ProxyCtx) (*http.Res
 }
 
 func (ctx *ProxyCtx) RoundTrip(req *http.Request) (*http.Response, error) {
+	// RLS 2/16/2018 - This is where requests are made to the original destination sites.
+
 	var tr *http.Transport
 	var addendum = []string{""}
 
@@ -39,6 +41,11 @@ func (ctx *ProxyCtx) RoundTrip(req *http.Request) (*http.Response, error) {
 			tr = ctx.proxy.Transport
 		}
 
+		if ctx.proxy.FlushIdleConnections {
+			ctx.proxy.Transport.CloseIdleConnections()
+			ctx.proxy.FlushIdleConnections = false
+		}
+
 		ctx.RoundTripper = ctx.wrapTransport(tr)
 	}
 
@@ -46,10 +53,8 @@ func (ctx *ProxyCtx) RoundTrip(req *http.Request) (*http.Response, error) {
 		addendum = append(addendum, "log=yes")
 	}
 
-	ctx.Logf("RoundTrip for req.URL=%q, req.Host=%q%s", req.URL, req.Host, strings.Join(addendum, ", "))
-
 	resp, err := ctx._roundTripWithLog(req)
-	ctx.Logf("  RoundTrip returned: err=%v", err)
+	//ctx.Logf("  RoundTrip returned: err=%v", err)
 
 	return resp, err
 }

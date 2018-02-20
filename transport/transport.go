@@ -130,7 +130,9 @@ type RoundTripDetails struct {
 	Error   error
 }
 
+
 func (t *Transport) DetailedRoundTrip(req *http.Request) (details *RoundTripDetails, resp *http.Response, err error) {
+	//fmt.Println("  *** DetailedRoundTrip ***")
 	if req.URL == nil {
 		return nil, nil, errors.New("http: nil Request.URL")
 	}
@@ -193,6 +195,15 @@ func (t *Transport) RegisterProtocol(scheme string, rt RoundTripper) {
 		panic("protocol " + scheme + " already registered")
 	}
 	t.altProto[scheme] = rt
+}
+
+
+func (t *Transport) NumIdleConnections() (int) {
+	if t.idleConn == nil {
+		return 0
+	}
+
+	return len(t.idleConn)
 }
 
 // CloseIdleConnections closes any connections which were previously
@@ -395,7 +406,9 @@ func (t *Transport) getConn(cm *connectMethod) (*persistConn, error) {
 	if cm.targetScheme == "https" {
 		// Initiate TLS and check remote host name against certificate.
 		conn = tls.Client(conn, t.TLSClientConfig)
+		//fmt.Printf("  *** Handshake 1\n");
 		if err = conn.(*tls.Conn).Handshake(); err != nil {
+			//fmt.Printf("  *** Handshake 1 Error\n");
 			return nil, err
 		}
 		if t.TLSClientConfig == nil || !t.TLSClientConfig.InsecureSkipVerify {

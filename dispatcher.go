@@ -3,6 +3,8 @@ package goproxy
 import (
 	"fmt"
 	"net/http"
+	"path/filepath"
+	//"strings"
 )
 
 // HandleConnectFunc and HandleConnect mimic the `net/http` handlers,
@@ -60,11 +62,15 @@ func (proxy *ProxyHttpServer) HandleDone(f Handler) {
 //////
 
 func (proxy *ProxyHttpServer) dispatchConnectHandlers(ctx *ProxyCtx) {
+
+	// We haven't made a connection to the destination site yet. Here we're just hijacking
+	// the connection back to the local client.
 	hij, ok := ctx.ResponseWriter.(http.Hijacker)
 	if !ok {
 		panic("httpserver does not support hijacking")
 	}
 
+	// This sets up a new connection to the original client
 	conn, _, err := hij.Hijack()
 	if err != nil {
 		panic("cannot hijack connection " + err.Error())
@@ -73,25 +79,41 @@ func (proxy *ProxyHttpServer) dispatchConnectHandlers(ctx *ProxyCtx) {
 	ctx.Conn = conn
 
 	var then Next
+
+
 	for _, handler := range proxy.connectHandlers {
+		
 		then = handler.Handle(ctx)
+
 		switch then {
 		case NEXT:
 			continue
 
 		case FORWARD:
+			// Don't record allowed metrics for whitelisted sites
 			break
 
 		case MITM:
+			//ctx.Logf("  *** UpdatedAllowedCounter")
+			if ctx.Resp != nil && ctx.Resp.StatusCode != 206 {
+				ctx.proxy.UpdateAllowedCounter()
+			}
+
 			err := ctx.ManInTheMiddle()
 			if err != nil {
-				ctx.Logf("error MITM'ing: %s", err)
+				ctx.Logf(1, "ERROR: Couldn't MITM: %s", err)
 			}
 			return
 
 		case REJECT:
+			//ctx.Logf("  *** UpdatedBlockedCounter")
+
+			ctx.proxy.UpdateBlockedCounter()
+			ctx.proxy.UpdateBlockedHosts(ctx.Req.Host)
 			ctx.RejectConnect()
 
+			// What happens if we don't return anything?
+			return
 		case DONE:
 			return
 
@@ -100,25 +122,40 @@ func (proxy *ProxyHttpServer) dispatchConnectHandlers(ctx *ProxyCtx) {
 		}
 	}
 
+	/*if strings.Contains(ctx.host, "js-agent.newrelic.com") {
+		ctx.Logf(1, "  *** js-agent.newrelic.com forward request")
+	}*/
 	if err := ctx.ForwardConnect(); err != nil {
-		ctx.Logf("Failed forwarding in fallback clause: %s", err)
+		ctx.Logf(1, "ERROR: Failed forwarding in fallback clause: %s", err)
 	}
+
 }
 
 func (proxy *ProxyHttpServer) dispatchRequestHandlers(ctx *ProxyCtx) {
+
+
 	var then Next
 	for _, handler := range proxy.requestHandlers {
 		then = handler.Handle(ctx)
 		switch then {
 		case DONE:
+			//if log {
+			//	ctx.Logf(1, " *** DONE ***")
+			//}
 			ctx.DispatchDoneHandlers()
 			return
 		case MOCK:
 			ctx.DispatchResponseHandlers()
 			return
 		case NEXT:
+			//if log {
+			//	ctx.Logf(1, " *** NEXT ***")
+			//}
 			continue
 		case FORWARD:
+			//if log {
+			//	ctx.Logf(1, " *** FORWARD ***")
+			//}
 			if ctx.Resp != nil {
 				// We've got a Resp already, so short circuit the ResponseHandlers.
 				ctx.ForwardResponse(ctx.Resp)
@@ -128,14 +165,35 @@ func (proxy *ProxyHttpServer) dispatchRequestHandlers(ctx *ProxyCtx) {
 		case MITM:
 			panic("MITM doesn't make sense when we are already parsing the request")
 		case REJECT:
-			ctx.ResponseWriter.WriteHeader(502)
-			ctx.ResponseWriter.Write([]byte("Rejected by proxy"))
-			ctx.DispatchDoneHandlers()
+				ctx.proxy.UpdateBlockedCounter()
+				ctx.proxy.UpdateBlockedHosts(ctx.Req.Host)
+
+				ext := filepath.Ext(ctx.Req.URL.Path)
+				//ctx.Logf("  path: %s  extension: %s", ctx.Req.URL.Path, ext)
+				switch ext {
+				case ".js":
+					//ctx.Logf("  Serving dummy script")
+					ctx.NewEmptyScript()
+				case ".png", ".gif":
+					//ctx.Logf("  Serving dummy %s", ext)
+					ctx.NewEmptyImage(ext)
+				default:
+					// Note that jpg pixels are > 1k in length and are rarely used
+					// so we just return a 502 error to avoid the bandwidth.
+					// Todo: Revisit this if we're seeing too many broken image icons in web pages
+					//ctx.Logf("  Serving 502")
+					ctx.NewResponse(502, "text/plain; charset=utf-8", "502.1 Blocked by Winston [" + ext + "]")
+				}
+
+				ctx.ForwardResponse(ctx.Resp)
+
+
 			return
 		default:
 			panic(fmt.Sprintf("Invalid value %v for Next after calling %v", then, handler))
 		}
 	}
+
 
 	ctx.ForwardRequest(ctx.host)
 	ctx.DispatchResponseHandlers()
