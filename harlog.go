@@ -13,7 +13,7 @@ import (
 )
 
 func (proxy *ProxyHttpServer) harLogAggregator() {
-	proxy.Logf("Launching harLogAggregator()")
+	proxy.Logf(1, "Launching harLogAggregator()")
 	for {
 		select {
 		case reqAndResp := <-proxy.harLogEntryCh:
@@ -35,17 +35,17 @@ func (proxy *ProxyHttpServer) harLogAggregator() {
 			proxy.harLog.AppendEntry(*harEntry)
 
 		case filename := <-proxy.harFlushRequest:
-			proxy.Logf("Received HAR flush request to %q", filename)
+			proxy.Logf(1, "Received HAR flush request to %q", filename)
 			if len(proxy.harLog.Log.Entries) == 0 {
-				proxy.Logf("No HAR entries to flush")
+				proxy.Logf(1, "No HAR entries to flush")
 				continue
 			}
 
 			err := flushHarToDisk(proxy.harLog, filename)
 			if err != nil {
-				proxy.Logf("Error flushing HAR file to disk: %s", err)
+				proxy.Logf(1, "Error flushing HAR file to disk: %s", err)
 			} else {
-				proxy.Logf("Wrote HAR file to disk: %s", filename)
+				proxy.Logf(1, "Wrote HAR file to disk: %s", filename)
 			}
 
 			proxy.harLog = har.New() // reset
@@ -129,6 +129,6 @@ func (ctx *ProxyCtx) FlushHARToDisk(filename string) {
 }
 
 func (proxy *ProxyHttpServer) FlushHARToDisk(filename string) {
-	proxy.Logf("Calling a flush of HAR to disk")
+	proxy.Logf(1, "Calling a flush of HAR to disk")
 	proxy.harFlushRequest <- filename
 }

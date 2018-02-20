@@ -13,6 +13,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"fmt"
 )
 
 // OrganizationName is the name your CA cert will be signed with. It
@@ -91,11 +92,37 @@ func NewConfig(ca *x509.Certificate, privateKey interface{}) (*GoproxyConfig, er
 	return tlsConfig, nil
 }
 
+
 func (c *GoproxyConfig) cert(hostname string) error {
+	return c.certWithCommonName(hostname, "")
+}
+
+	// RLS 7/14/2017
+	// If commonName is provided, it will be used in the certificate. This is used to
+	// service non-SNI requests.
+func (c *GoproxyConfig) certWithCommonName(hostname string, commonName string) error {
+
+	// Debug - this should never happen.
+	if hostname == "" {
+		fmt.Println("  *** NO HOST DETECTED IN CERT() ***")
+	}
+
 	// Remove the port if it exists.
-	host, _, err := net.SplitHostPort(getWildcardHost(hostname))
+	host, _, err := net.SplitHostPort(hostname)
 	if err == nil {
 		hostname = host
+	}
+
+	// Is this an IP address?
+	isIP := false
+	ip := net.ParseIP(hostname);
+	if ip != nil {
+		isIP = true
+	}
+
+	// Convert to a wildcard host (*.example.com)
+	if !isIP {
+		hostname = getWildcardHost(hostname)
 	}
 
 	// Remove the port if it exists.
@@ -119,10 +146,16 @@ func (c *GoproxyConfig) cert(hostname string) error {
 		return err
 	}
 
+	certificateCommonName := hostname
+	if len(commonName) > 0 {
+		certificateCommonName = commonName
+		//fmt.Printf("  *** Overrode common name with %s \n", commonName)
+	}
+
 	tmpl := &x509.Certificate{
 		SerialNumber: serial,
 		Subject: pkix.Name{
-			CommonName:   hostname,
+			CommonName:   certificateCommonName,
 			Organization: []string{OrganizationName},
 		},
 		SubjectKeyId:          c.keyID,
@@ -133,11 +166,12 @@ func (c *GoproxyConfig) cert(hostname string) error {
 		NotAfter:              time.Now().Add(c.validity),
 	}
 
-	if ip := net.ParseIP(hostname); ip != nil {
+	if isIP {
 		tmpl.IPAddresses = []net.IP{ip}
 	} else {
 		tmpl.DNSNames = []string{hostname}
 	}
+
 
 	raw, err := x509.CreateCertificate(rand.Reader, tmpl, c.Root, c.priv.Public(), c.capriv)
 	if err != nil {
