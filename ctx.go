@@ -80,42 +80,42 @@ type ProxyCtx struct {
 	// RoundTripper is used to send a request to a remote server when
 	// forwarding a Request.  If you set your own RoundTripper, then
 	// `FakeDestinationDNS` and `LogToHARFile` will have no effect.
-	RoundTripper       RoundTripper
-	fakeDestinationDNS string
+	RoundTripper            RoundTripper
+	fakeDestinationDNS      string
 
 	// HAR logging
-	isLogEnabled     bool
-	isLogWithContent bool
+	isLogEnabled            bool
+	isLogWithContent        bool
 
 	// will contain the recent error that occured while trying to send receive or parse traffic
-	Error error
+	Error                   error
 
 	// UserObjects and UserData allow you to keep data between
 	// Connect, Request and Response handlers.
-	UserObjects map[string]interface{}
-	UserData    map[string]string
+	UserObjects             map[string]interface{}
+	UserData                map[string]string
 
 	// Will connect a request to a response
-	Session int64
-	proxy   *ProxyHttpServer
+	Session                 int64
+	Proxy                   *ProxyHttpServer
 
 	// Closure to alert listeners that a TLS handshake failed
 	// RLS 6-29-2017
-	Tlsfailure func(ctx *ProxyCtx, untrustedCertificate bool)
+	Tlsfailure              func(ctx *ProxyCtx, untrustedCertificate bool)
 
 	// References to persistent caches for statistics collection
 	// RLS 7-5-2017
-	UpdateAllowedCounter func()
-	UpdateBlockedCounter func()
+	UpdateAllowedCounter    func()
+	UpdateBlockedCounter    func()
 	UpdateBlockedCounterByN func(int)
-	UpdateBlockedHostsByN func(string, int)
+	UpdateBlockedHostsByN   func(string, int)
 
 	// Client signature
 	// https://blog.squarelemon.com/tls-fingerprinting/
-	CipherSignature string
+	CipherSignature         string
 
-	NewBodyLength int
-	VerbosityLevel uint16
+	NewBodyLength           int
+	VerbosityLevel          uint16
 
 	// 11/2/2017 - Used for replacement macros (user agents)
 	DeviceType int
@@ -127,6 +127,9 @@ type ProxyCtx struct {
 
 	// Keeps a list of any messages we want to pass back to the client
 	StatusMessage []string
+
+	// Request handler sets this to true if it thinks it is a first party request
+	FirstParty bool
 }
 
 // Append a message to the context. This will be sent back to the client as a "Winston-Response" header.
@@ -289,7 +292,7 @@ func (ctx *ProxyCtx) TunnelHTTP() error {
 	//}
 
 	//ctx.Logf("Assuming CONNECT is plain HTTP tunneling, mitm proxying it")
-	targetSiteConn, err := ctx.proxy.connectDial("tcp", ctx.host)
+	targetSiteConn, err := ctx.Proxy.connectDial("tcp", ctx.host)
 	if err != nil {
 		ctx.Warnf("Error dialing to %s: %s", ctx.host, err.Error())
 		return err
@@ -327,7 +330,7 @@ func (ctx *ProxyCtx) TunnelHTTP() error {
 		ctx.Req = req
 		ctx.IsThroughTunnel = true
 
-		ctx.proxy.dispatchRequestHandlers(ctx)
+		ctx.Proxy.dispatchRequestHandlers(ctx)
 	}
 
 	return nil
@@ -441,7 +444,7 @@ func (ctx *ProxyCtx) ManInTheMiddleHTTPS() error {
 			commonName := conn.ConnectionState().PeerCertificates[0].Subject.CommonName
 
 			// Create a certificate using the IP/hostname pair and cache it
-			ca := ctx.proxy.MITMCertConfig
+			ca := ctx.Proxy.MITMCertConfig
 
 			if ctx.MITMCertConfig != nil {
 				ca = ctx.MITMCertConfig
@@ -616,7 +619,7 @@ func (ctx *ProxyCtx) ManInTheMiddleHTTPS() error {
 			//	ctx.Logf("  *** ManInTheMiddleHTTPS (Sling) - Dispatching request handlers...")
 			//}
 
-			ctx.proxy.dispatchRequestHandlers(ctx)
+			ctx.Proxy.dispatchRequestHandlers(ctx)
 
 			// Force a timeout. Some requests hang forever because they never send an EOF.
 			end := time.Now()
@@ -701,7 +704,7 @@ func (ctx *ProxyCtx) ForwardConnect() error {
 	// TODO: Should we allow forwarded requests request to bypass DNS?
 	var dnsbypassctx context.Context
 
-	targetSiteConn, err := ctx.proxy.connectDialContext(dnsbypassctx, "tcp", ctx.host)
+	targetSiteConn, err := ctx.Proxy.connectDialContext(dnsbypassctx, "tcp", ctx.host)
 	if err != nil {
 		ctx.httpError(err)
 		return err
@@ -785,7 +788,7 @@ func (ctx *ProxyCtx) DispatchResponseHandlers() error {
 	var rejected = false
 
 	var then Next
-	for _, handler := range ctx.proxy.responseHandlers {
+	for _, handler := range ctx.Proxy.responseHandlers {
 		then = handler.Handle(ctx)
 		//ctx.Logf("  ResponseHandler: %s [URL: %s]", then, ctx.Req.URL.Host)
 		switch then {
@@ -797,7 +800,7 @@ func (ctx *ProxyCtx) DispatchResponseHandlers() error {
 			//ctx.Logf("  *** UpdateAllowedCounter %s", ctx.Req.URL.Host)
 			// Don't count streaming content in the allowed statistics
 			if ctx.Resp != nil && ctx.Resp.StatusCode != 206 {
-				ctx.proxy.UpdateAllowedCounter()
+				ctx.Proxy.UpdateAllowedCounter()
 			}
 			break
 		case MITM:
@@ -805,8 +808,8 @@ func (ctx *ProxyCtx) DispatchResponseHandlers() error {
 		case REJECT:
 			rejected = true
 			//ctx.Logf("  *** UpdateBlockedCounter %s", ctx.Req.URL.Host)
-			ctx.proxy.UpdateBlockedCounter()
-			ctx.proxy.UpdateBlockedHosts(ctx.Req.Host)
+			ctx.Proxy.UpdateBlockedCounter()
+			ctx.Proxy.UpdateBlockedHosts(ctx.Req.Host)
 			//panic("REJECT a response ? then do what, send a 500 back ?")
 		default:
 			panic(fmt.Sprintf("Invalid value %v for Next after calling %v", then, handler))
@@ -877,7 +880,7 @@ func (ctx *ProxyCtx) DispatchResponseHandlers() error {
 
 func (ctx *ProxyCtx) DispatchDoneHandlers() error {
 	var then Next
-	for _, handler := range ctx.proxy.doneHandlers {
+	for _, handler := range ctx.Proxy.doneHandlers {
 		then = handler.Handle(ctx)
 
 		switch then {
@@ -1134,7 +1137,7 @@ func (ctx *ProxyCtx) NewEmptyPng() {
 }
 
 func (ctx *ProxyCtx) tlsConfig(host string) (*tls.Config, error) {
-	ca := ctx.proxy.MITMCertConfig
+	ca := ctx.Proxy.MITMCertConfig
 
 	if ctx.MITMCertConfig != nil {
 		ca = ctx.MITMCertConfig
@@ -1261,7 +1264,7 @@ func (ctx *ProxyCtx) closeTogether(toClose chan net.Conn) {
 func (ctx *ProxyCtx) Logf(level uint16, msg string, argv ...interface{}) {
 	// RLS 2/10/2018 - Changed to bitmask so that we can toggle the different log levels.
 	bitflag := uint16(1 << uint16((level - 1)))
-	if ctx.proxy.Verbose && (level == 0 || ctx.proxy.VerbosityLevel&bitflag != 0) {
+	if ctx.Proxy.Verbose && (level == 0 || ctx.Proxy.VerbosityLevel&bitflag != 0) {
 		ctx.printf(msg, argv...)
 	}
 }
@@ -1282,7 +1285,7 @@ func (ctx *ProxyCtx) Warnf(msg string, argv ...interface{}) {
 }
 
 func (ctx *ProxyCtx) printf(msg string, argv ...interface{}) {
-	ctx.proxy.Logger.Printf("[%03d] "+msg+"\n", append([]interface{}{ctx.Session & 0xFF}, argv...)...)
+	ctx.Proxy.Logger.Printf("[%03d] "+msg+"\n", append([]interface{}{ctx.Session & 0xFF}, argv...)...)
 }
 
 var charsetFinder = regexp.MustCompile("charset=([^ ;]*)")

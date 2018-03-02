@@ -96,7 +96,7 @@ func (proxy *ProxyHttpServer) dispatchConnectHandlers(ctx *ProxyCtx) {
 		case MITM:
 			//ctx.Logf("  *** UpdatedAllowedCounter")
 			if ctx.Resp != nil && ctx.Resp.StatusCode != 206 {
-				ctx.proxy.UpdateAllowedCounter()
+				ctx.Proxy.UpdateAllowedCounter()
 			}
 
 			err := ctx.ManInTheMiddle()
@@ -108,8 +108,8 @@ func (proxy *ProxyHttpServer) dispatchConnectHandlers(ctx *ProxyCtx) {
 		case REJECT:
 			//ctx.Logf("  *** UpdatedBlockedCounter")
 
-			ctx.proxy.UpdateBlockedCounter()
-			ctx.proxy.UpdateBlockedHosts(ctx.Req.Host)
+			ctx.Proxy.UpdateBlockedCounter()
+			ctx.Proxy.UpdateBlockedHosts(ctx.Req.Host)
 			ctx.RejectConnect()
 
 			// What happens if we don't return anything?
@@ -165,8 +165,8 @@ func (proxy *ProxyHttpServer) dispatchRequestHandlers(ctx *ProxyCtx) {
 		case MITM:
 			panic("MITM doesn't make sense when we are already parsing the request")
 		case REJECT:
-				ctx.proxy.UpdateBlockedCounter()
-				ctx.proxy.UpdateBlockedHosts(ctx.Req.Host)
+				ctx.Proxy.UpdateBlockedCounter()
+				ctx.Proxy.UpdateBlockedHosts(ctx.Req.Host)
 
 				ext := filepath.Ext(ctx.Req.URL.Path)
 				//ctx.Logf("  path: %s  extension: %s", ctx.Req.URL.Path, ext)

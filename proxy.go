@@ -174,7 +174,7 @@ func (proxy *ProxyHttpServer) ServeHTTP(w http.ResponseWriter, r *http.Request) 
 		UserData:       make(map[string]string),
 		UserObjects:    make(map[string]interface{}),
 		Session:        atomic.AddInt64(&proxy.sess, 1),
-		proxy:          proxy,
+		Proxy:          proxy,
 		MITMCertConfig: proxy.MITMCertConfig,
 		Tlsfailure:	proxy.Tlsfailure,
 		UpdateAllowedCounter:	proxy.UpdateAllowedCounter,
@@ -336,7 +336,7 @@ func (proxy *ProxyHttpServer) ListenAndServeTLS(httpsAddr string) error {
 				UserData:       make(map[string]string),
 				UserObjects:    make(map[string]interface{}),
 				Session:        atomic.AddInt64(&proxy.sess, 1),
-				proxy:          proxy,
+				Proxy:          proxy,
 				MITMCertConfig: proxy.MITMCertConfig,
 				Tlsfailure:	proxy.Tlsfailure,
 				UpdateAllowedCounter:	proxy.UpdateAllowedCounter,
@@ -350,7 +350,7 @@ func (proxy *ProxyHttpServer) ListenAndServeTLS(httpsAddr string) error {
 
 			ctx.host = connectReq.URL.Host
 			//if tlsConn.Host() == "" {
-				//log.Printf("*** ListenAndServeTLS - ctx.host [%s]", ctx.host)
+			//	log.Printf("*** ListenAndServeTLS - ctx.host [%s]", ctx.host)
 			//}
 			if strings.IndexRune(ctx.host, ':') == -1 {
 				if connectReq.URL.Scheme == "http" {

@@ -114,8 +114,8 @@ func copyReadCloser(readCloser io.ReadCloser, len int64) (io.ReadCloser, io.Read
 //
 // LogToHARFile alwasy returns `NEXT`.
 func (ctx *ProxyCtx) LogToHARFile(captureContent bool) Next {
-	ctx.proxy.harFlusherRunOnce.Do(func() {
-		go ctx.proxy.harLogAggregator()
+	ctx.Proxy.harFlusherRunOnce.Do(func() {
+		go ctx.Proxy.harLogAggregator()
 	})
 
 	ctx.isLogEnabled = true
@@ -125,7 +125,7 @@ func (ctx *ProxyCtx) LogToHARFile(captureContent bool) Next {
 }
 
 func (ctx *ProxyCtx) FlushHARToDisk(filename string) {
-	ctx.proxy.FlushHARToDisk(filename)
+	ctx.Proxy.FlushHARToDisk(filename)
 }
 
 func (proxy *ProxyHttpServer) FlushHARToDisk(filename string) {

@@ -33,17 +33,17 @@ func (ctx *ProxyCtx) RoundTrip(req *http.Request) (*http.Response, error) {
 					ServerName:         strings.Split(ctx.host, ":")[0],
 					InsecureSkipVerify: true,
 				},
-				Proxy: ctx.proxy.Transport.Proxy,
+				Proxy: ctx.Proxy.Transport.Proxy,
 			}
 			addendum = append(addendum, fmt.Sprintf(", sni=%q, fakedns=%q", transport.TLSClientConfig.ServerName, ctx.fakeDestinationDNS))
 			tr = transport
 		} else {
-			tr = ctx.proxy.Transport
+			tr = ctx.Proxy.Transport
 		}
 
-		if ctx.proxy.FlushIdleConnections {
-			ctx.proxy.Transport.CloseIdleConnections()
-			ctx.proxy.FlushIdleConnections = false
+		if ctx.Proxy.FlushIdleConnections {
+			ctx.Proxy.Transport.CloseIdleConnections()
+			ctx.Proxy.FlushIdleConnections = false
 		}
 
 		ctx.RoundTripper = ctx.wrapTransport(tr)
@@ -84,7 +84,7 @@ func (ctx *ProxyCtx) _roundTripWithLog(req *http.Request) (*http.Response, error
 		}
 
 		reqAndResp.end = time.Now()
-		ctx.proxy.harLogEntryCh <- *reqAndResp
+		ctx.Proxy.harLogEntryCh <- *reqAndResp
 
 	} else {
 		resp, err = ctx.RoundTripper.RoundTrip(req, ctx)
