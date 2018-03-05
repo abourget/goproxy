@@ -47,6 +47,7 @@ const (
 	FORWARD // Continue directly with forwarding, going through Response Handlers
 	MITM    // Continue with Man-in-the-middle attempt, either through HTTP or HTTPS.
 	REJECT  // Reject the CONNECT attempt outright
+	SIGNATURE	// Return the client TLS signature (RLS 3-5-2018)
 )
 
 // About CONNECT requests

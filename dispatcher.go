@@ -114,6 +114,10 @@ func (proxy *ProxyHttpServer) dispatchConnectHandlers(ctx *ProxyCtx) {
 
 			// What happens if we don't return anything?
 			return
+		case SIGNATURE:
+			//ctx.Logf(1, "  *** dispatchConnectHandlers:SIGNATURE")
+			//ctx.ReturnSignature()
+			return
 		case DONE:
 			return
 
@@ -164,6 +168,11 @@ func (proxy *ProxyHttpServer) dispatchRequestHandlers(ctx *ProxyCtx) {
 			break
 		case MITM:
 			panic("MITM doesn't make sense when we are already parsing the request")
+		case SIGNATURE:
+			//ctx.Logf(1, "  *** dispatchRequestHandlers:SIGNATURE")
+			ctx.ReturnSignature()
+			ctx.ForwardResponse(ctx.Resp)
+			return
 		case REJECT:
 				ctx.Proxy.UpdateBlockedCounter()
 				ctx.Proxy.UpdateBlockedHosts(ctx.Req.Host)

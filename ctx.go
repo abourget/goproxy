@@ -750,6 +750,12 @@ func (ctx *ProxyCtx) RejectConnect() {
 	ctx.Conn.Close()
 }
 
+func (ctx *ProxyCtx) ReturnSignature() {
+	//ctx.Logf(1, "  *** ReturnSignature()")
+	ctx.Resp = NewResponse(ctx.Req, http.StatusOK, "text/html; charset=utf-8", ctx.CipherSignature)
+
+}
+
 // Request handling
 
 func (ctx *ProxyCtx) ForwardRequest(host string) error {
@@ -811,6 +817,9 @@ func (ctx *ProxyCtx) DispatchResponseHandlers() error {
 			ctx.Proxy.UpdateBlockedCounter()
 			ctx.Proxy.UpdateBlockedHosts(ctx.Req.Host)
 			//panic("REJECT a response ? then do what, send a 500 back ?")
+		case SIGNATURE:
+			// Do nothing. We're just returning the client signature.
+			//ctx.Logf(1, " *** DispatchResponseHandlers:SIGNATURE")
 		default:
 			panic(fmt.Sprintf("Invalid value %v for Next after calling %v", then, handler))
 		}
@@ -894,6 +903,9 @@ func (ctx *ProxyCtx) DispatchDoneHandlers() error {
 			panic("MITM doesn't make sense when we are done")
 		case REJECT:
 			panic("REJECT a response ? then do what, send a 500 back ?")
+		case SIGNATURE:
+			//ctx.Logf(1, "  *** DispatchDoneHandlers:SIGNATURE")
+			return nil
 		default:
 			// We're done
 			return nil
