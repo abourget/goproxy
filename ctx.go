@@ -752,7 +752,14 @@ func (ctx *ProxyCtx) RejectConnect() {
 
 func (ctx *ProxyCtx) ReturnSignature() {
 	//ctx.Logf(1, "  *** ReturnSignature()")
-	ctx.Resp = NewResponse(ctx.Req, http.StatusOK, "text/html; charset=utf-8", ctx.CipherSignature)
+	if ctx.IsSecure {
+		ctx.Resp = NewResponse(ctx.Req, http.StatusOK, "text/html; charset=utf-8", ctx.CipherSignature)
+		ctx.Resp.Header.Set("Access-Control-Allow-Origin", "*")
+		ctx.Proxy.LastSignature = ctx.CipherSignature
+	} else {
+		ctx.Resp = NewResponse(ctx.Req, http.StatusOK, "text/html; charset=utf-8", ctx.Proxy.LastSignature)
+		ctx.Resp.Header.Set("Access-Control-Allow-Origin", "*")
+	}
 
 }
 
@@ -803,19 +810,14 @@ func (ctx *ProxyCtx) DispatchResponseHandlers() error {
 		case NEXT:
 			continue
 		case FORWARD:
-			//ctx.Logf("  *** UpdateAllowedCounter %s", ctx.Req.URL.Host)
-			// Don't count streaming content in the allowed statistics
-			if ctx.Resp != nil && ctx.Resp.StatusCode != 206 {
-				ctx.Proxy.UpdateAllowedCounter()
-			}
 			break
 		case MITM:
 			panic("MITM doesn't make sense when we are already parsing the request")
 		case REJECT:
 			rejected = true
-			//ctx.Logf("  *** UpdateBlockedCounter %s", ctx.Req.URL.Host)
-			ctx.Proxy.UpdateBlockedCounter()
-			ctx.Proxy.UpdateBlockedHosts(ctx.Req.Host)
+
+			//ctx.Proxy.UpdateBlockedCounter()
+			//ctx.Proxy.UpdateBlockedHosts(ctx.Req.Host)
 			//panic("REJECT a response ? then do what, send a 500 back ?")
 		case SIGNATURE:
 			// Do nothing. We're just returning the client signature.

@@ -90,15 +90,10 @@ func (proxy *ProxyHttpServer) dispatchConnectHandlers(ctx *ProxyCtx) {
 			continue
 
 		case FORWARD:
-			// Don't record allowed metrics for whitelisted sites
+			// Don't update allowed metrics for whitelisted sites
 			break
 
 		case MITM:
-			//ctx.Logf("  *** UpdatedAllowedCounter")
-			if ctx.Resp != nil && ctx.Resp.StatusCode != 206 {
-				ctx.Proxy.UpdateAllowedCounter()
-			}
-
 			err := ctx.ManInTheMiddle()
 			if err != nil {
 				ctx.Logf(1, "ERROR: Couldn't MITM: %s", err)
@@ -106,10 +101,6 @@ func (proxy *ProxyHttpServer) dispatchConnectHandlers(ctx *ProxyCtx) {
 			return
 
 		case REJECT:
-			//ctx.Logf("  *** UpdatedBlockedCounter")
-
-			ctx.Proxy.UpdateBlockedCounter()
-			ctx.Proxy.UpdateBlockedHosts(ctx.Req.Host)
 			ctx.RejectConnect()
 
 			// What happens if we don't return anything?
@@ -174,8 +165,6 @@ func (proxy *ProxyHttpServer) dispatchRequestHandlers(ctx *ProxyCtx) {
 			ctx.ForwardResponse(ctx.Resp)
 			return
 		case REJECT:
-				ctx.Proxy.UpdateBlockedCounter()
-				ctx.Proxy.UpdateBlockedHosts(ctx.Req.Host)
 
 				ext := filepath.Ext(ctx.Req.URL.Path)
 				//ctx.Logf("  path: %s  extension: %s", ctx.Req.URL.Path, ext)

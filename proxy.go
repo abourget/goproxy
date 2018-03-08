@@ -106,6 +106,10 @@ type ProxyHttpServer struct {
 	// If set to true, then the next HTTP request will flush all idle connections. Will be reset to false afterwards.
 	FlushIdleConnections bool
 
+	// Calls to the signature reporting service (https://winstonprivacysignature.conf) will save the signature
+	// here so it can be retrieved by a follow up http request if necessary.
+	LastSignature string
+
 }
 
 // New proxy server, logs to StdErr by default
@@ -539,14 +543,6 @@ func (proxy *ProxyHttpServer) UpdateAllowedCounter() {
 	if proxy.AllowedStats == nil {
 		return
 	}
-/*
-	defer func() {
-		if r:= recover(); r != nil {
-			proxy.Logf("*** UpdateAllowedCounter() paniced. Recovering gracefully.")
-		}
-	}()
-*/
-
 	// Convert today's date to a string
 	key := time.Now().Format("2006-01-02")
 	// Get the current count
@@ -562,24 +558,10 @@ func (proxy *ProxyHttpServer) UpdateAllowedCounter() {
 
 	// If the entry doesn't exist, create it
 	if err != nil {
-		//fmt.Printf("UpdateAllowedCounter: previous value was 0\n")
 		b := make([]byte, 8)
 		binary.BigEndian.PutUint64(b, 1)
 		proxy.AllowedStats.Write(key, b)
 	} else {
-		/*
-		if len(value)==0 {
-			fmt.Printf("  *** UpdateAllowedCounter: Flushing and trying again", value)
-			proxy.AllowedStats.Flush(key)
-			value, _ := proxy.AllowedStats.Read(key)
-			fmt.Printf("  *** UpdateAllowedCounter: restored value %v", value)
-
-			panic("  *** Stopping here... check it out!")
-		}
-		*/
-		//fmt.Printf("UpdateAllowedCounter: incrementing... %v\n", value)
-
-
 		// Increment and save
 
 		currentValue := binary.BigEndian.Uint64(value)
