@@ -626,8 +626,12 @@ func (proxy *ProxyHttpServer) UpdateBlockedHostsByN(host string, amount int) {
 	proxy.blockedhostsmu.Lock()
 	defer proxy.blockedhostsmu.Unlock()
 
+	host = stripPort(host)
+
 	// Get the current count
 	value, err := proxy.BlockedHosts.Read(host)
+
+	//proxy.Logf(1, "  *** blockedhost %s err=%+v", host, err)
 
 	// TODO: Add error checking in case we get an invalid value. This could happen with a storage error.
 
@@ -642,6 +646,9 @@ func (proxy *ProxyHttpServer) UpdateBlockedHostsByN(host string, amount int) {
 		// Increment and save
 		//fmt.Printf("UpdateBlockedHosts - host: [%s] [%d]\n", host, value)
 		currentValue := binary.BigEndian.Uint64(value)
+
+		//proxy.Logf(1, "  *** blockedhost %s currentvalue=%d", host, currentValue)
+
 		//fmt.Printf("UpdateBlockedHosts: previous value %d\n", currentValue)
 		// Convert from byte array to int, increment, then convert back
 		b := make([]byte, 8)

@@ -82,7 +82,7 @@ func (proxy *ProxyHttpServer) dispatchConnectHandlers(ctx *ProxyCtx) {
 
 
 	for _, handler := range proxy.connectHandlers {
-		
+
 		then = handler.Handle(ctx)
 
 		switch then {
@@ -117,7 +117,7 @@ func (proxy *ProxyHttpServer) dispatchConnectHandlers(ctx *ProxyCtx) {
 		}
 	}
 
-	/*if strings.Contains(ctx.host, "js-agent.newrelic.com") {
+	/*if strings.Contains(ctx.host, "facebook.com") {
 		ctx.Logf(1, "  *** js-agent.newrelic.com forward request")
 	}*/
 	if err := ctx.ForwardConnect(); err != nil {

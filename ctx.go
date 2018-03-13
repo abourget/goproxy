@@ -364,11 +364,11 @@ func (ctx *ProxyCtx) ManInTheMiddleHTTPS() error {
 	// Attempt to recover gracefully from a nested panic not caught by the later defer recover.
 	// This is a very rare race condition which happens only under high load but which
 	// unfortunately crashes the device.
-	defer func() {
+	/*defer func() {
 		if r := recover(); r != nil {
 			ctx.Logf(1, "Error (1): Panic while processing MITM request. Recovering gracefully.", r)
 		}
-	}()
+	}()*/
 
 	if ctx.Method != "CONNECT" {
 		panic("method is not CONNECT")
@@ -426,7 +426,7 @@ func (ctx *ProxyCtx) ManInTheMiddleHTTPS() error {
 		// We don't want to block, so for now just spin up a thread and see
 		// if we can get the certificate from the remote server.
 		go func() {
-			//ctx.Logf("  *** ManInTheMiddleHTTPS - Initiating non-SNI certificate generation routine: %s", ctx.host)
+			//ctx.Logf(1, "  *** ManInTheMiddleHTTPS - Initiating non-SNI certificate generation routine: %s", ctx.host)
 
 			// Dial the destination
 			conn, _ := tls.Dial("tcp", ctx.host, &tls.Config{InsecureSkipVerify: true})
@@ -482,11 +482,13 @@ func (ctx *ProxyCtx) ManInTheMiddleHTTPS() error {
 		// Found a rare but irreproducible race condition when calling isEof() with many
 		// active connections at the same time. This ensures that only the active connection
 		// goes down and doesn't take the entire process with it.
-		/*defer func() {
+		// RLS 3-11-2018 - Also recovers from occasional panics on line ~576:
+		//     subReq, err := http.ReadRequest(clientTlsReader)
+		defer func() {
 			if r := recover(); r != nil {
 				ctx.Logf(1, "Error (2): Panic while processing MITM request. Recovering gracefully.", r)
 			}
-		}()*/
+		}()
 
 		// If we make it here, then we are responsible for closing the client connection
 		defer ctx.Conn.Close()
@@ -510,6 +512,9 @@ func (ctx *ProxyCtx) ManInTheMiddleHTTPS() error {
 		// errors out, the connection is left open and we end up with thousands of orphaned objects.
 		defer rawClientTls.Close()
 
+		//ctx.Logf(1, "  *** Starting handshake with [%s]", r.Host)
+
+		// TODO: Can we avoid handshaking on subsequent connections?
 		// Performs the TLS handshake
 		if err := rawClientTls.Handshake(); err != nil {
 			// A handshake error typically only occurs on the client side
