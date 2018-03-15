@@ -395,9 +395,14 @@ func (ctx *ProxyCtx) ManInTheMiddleHTTPS() error {
 	}
 
 	// RLS 2/16/2018
-	// TODO: Should we fetch downstream certificates and copy their properties to our local certificate?
-	// This might improve compatibility as some sites return multiple hostnames in their cert.
+	// TODO: IMPORTANT: values from the downstream certificate need to be propagated back up to the client.
+	// If we don't do this and simply use Winston's valid certificate data (ie: expiration date)
+	// then the upstream client will not block bad certificates. This would present a huge security risk.
+
 	tlsConfig, err := ctx.tlsConfig(signHost)
+	/*if strings.Contains(ctx.host, "expired.badssl.com") {
+		fmt.Printf("  *** TLSConfig: %+v\n", tlsConfig)
+	}*/
 
 	// We should always be able to get a certificate when a signhost has been provided
 	if !isIpAddress && err != nil {
@@ -412,7 +417,7 @@ func (ctx *ProxyCtx) ManInTheMiddleHTTPS() error {
 	// Note: This was a dumb idea. This mainly happens with smart devices. They don't
 	// trust our CA and there's no way to make them. We just have to whitelist them.
 	if isIpAddress && err != nil  {
-
+		ctx.Logf(1, "  *** Non-SNI Host - Trying to generate certificate.")
 		if ctx.Tlsfailure != nil {
 			//ctx.Logf(2, "  *** TLS Failure (IP Address)")
 			ctx.Tlsfailure(ctx, false)
@@ -429,6 +434,7 @@ func (ctx *ProxyCtx) ManInTheMiddleHTTPS() error {
 			//ctx.Logf(1, "  *** ManInTheMiddleHTTPS - Initiating non-SNI certificate generation routine: %s", ctx.host)
 
 			// Dial the destination
+			fmt.Printf("  *** IP Address connect. Skipping TLS security check. This is BAD! \n")
 			conn, _ := tls.Dial("tcp", ctx.host, &tls.Config{InsecureSkipVerify: true})
 			defer conn.Close()
 

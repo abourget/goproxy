@@ -12,7 +12,8 @@ var GoproxyCaConfig *GoproxyConfig
 
 func rootCAs(c *rootcerts.Config) *tls.Config {
 	t := &tls.Config{
-		InsecureSkipVerify: true,
+		// RLS 3/15/2018 - Enabling this will result in serious TLS security vulnerabilities.
+		InsecureSkipVerify: false,
 		MinVersion:         tls.VersionTLS10,
 		MaxVersion:         tls.VersionTLS12,
 		Renegotiation:      tls.RenegotiateFreelyAsClient,
