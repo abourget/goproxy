@@ -17,7 +17,7 @@ import (
 	"net/url"
 	"github.com/peterbourgon/diskv"
 	"time"
-//	"fmt"
+	//"fmt"
 	"encoding/binary"
 //	"github.com/elico/go-linux-tproxy-master"
 	"github.com/honnef.co/go-conntrack"
@@ -26,6 +26,7 @@ import (
 	"encoding/hex"
 	"crypto/md5"
 	"context"
+	"crypto/tls"
 )
 
 // The basic proxy type. Implements http.Handler.
@@ -122,15 +123,23 @@ func NewProxyHttpServer() *ProxyHttpServer {
 		NonProxyHandler: http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 			http.Error(w, "This is a proxy server. Does not respond to non-proxy requests.", 500)
 		}),
+		// This transport is responsible for the outgoing connections to downstream websites.
 		Transport: &http.Transport{
-			TLSClientConfig: tlsClientSkipVerify,
+			TLSClientConfig: tlsClientSkipVerify,	// Ignore this poorly chosen name. This is a TLS config (see certs.go)
 			Proxy:           http.ProxyFromEnvironment,
+			TLSHandshakeTimeout: time.Second * time.Duration(10),	// TLS handshake timeout
 		},
 		MITMCertConfig:  GoproxyCaConfig,
 		harLog:          har.New(),
 		harLogEntryCh:   make(chan harReqAndResp, 10),
 		harFlushRequest: make(chan string, 10),
 	}
+
+
+	// Test - set up a client cache to support session tickets
+	// Setting a relatively low number will force tickets out more quickly, helping to prevent against snooping attacks.
+	proxy.Transport.TLSClientConfig.ClientSessionCache = tls.NewLRUClientSessionCache(25)
+	//fmt.Printf("  *** TLSClientConfig: %+v\n", proxy.Transport.TLSClientConfig)
 
 	// RLS 2/15/2018
 	// This looks for a proxy on the network and sets up a dialer to call it.

@@ -394,15 +394,8 @@ func (ctx *ProxyCtx) ManInTheMiddleHTTPS() error {
 		}
 	}
 
-	// RLS 2/16/2018
-	// TODO: IMPORTANT: values from the downstream certificate need to be propagated back up to the client.
-	// If we don't do this and simply use Winston's valid certificate data (ie: expiration date)
-	// then the upstream client will not block bad certificates. This would present a huge security risk.
-
+	// This is our TLS server to handle client requests. See signer.go and certs.go.
 	tlsConfig, err := ctx.tlsConfig(signHost)
-	/*if strings.Contains(ctx.host, "expired.badssl.com") {
-		fmt.Printf("  *** TLSConfig: %+v\n", tlsConfig)
-	}*/
 
 	// We should always be able to get a certificate when a signhost has been provided
 	if !isIpAddress && err != nil {
@@ -416,6 +409,10 @@ func (ctx *ProxyCtx) ManInTheMiddleHTTPS() error {
 	// for future requests.
 	// Note: This was a dumb idea. This mainly happens with smart devices. They don't
 	// trust our CA and there's no way to make them. We just have to whitelist them.
+
+	// RLS 3/16/2018 - Test: certificate generation for IP addresses should be supported now.
+
+	/*
 	if isIpAddress && err != nil  {
 		ctx.Logf(1, "  *** Non-SNI Host - Trying to generate certificate.")
 		if ctx.Tlsfailure != nil {
@@ -430,6 +427,7 @@ func (ctx *ProxyCtx) ManInTheMiddleHTTPS() error {
 
 		// We don't want to block, so for now just spin up a thread and see
 		// if we can get the certificate from the remote server.
+
 		go func() {
 			//ctx.Logf(1, "  *** ManInTheMiddleHTTPS - Initiating non-SNI certificate generation routine: %s", ctx.host)
 
@@ -469,12 +467,12 @@ func (ctx *ProxyCtx) ManInTheMiddleHTTPS() error {
 
 
 		}()
-
 		// The first request will abort...
 		//ctx.Logf("  *** Exiting non-SNI certificate generation routine")
 
 		return err
 	}
+*/
 
 
 	// This contains the original connection with the client
@@ -496,7 +494,7 @@ func (ctx *ProxyCtx) ManInTheMiddleHTTPS() error {
 			}
 		}()
 
-		// If we make it here, then we are responsible for closing the client connection
+		// If we make it here, then we opened a client connection and are responsible for closing it.
 		defer ctx.Conn.Close()
 
 		//TODO: cache connections to the remote website
@@ -594,7 +592,7 @@ func (ctx *ProxyCtx) ManInTheMiddleHTTPS() error {
 				//    GET /index.html HTTP/1.1
 				// These sites have to be auto whitelisted or they'll be blocked.
 				//if count != 2 {
-				ctx.Logf(1, "  *** TLS Protocol Error %d [%s] +%v", count, ctx.host, err.Error())
+				ctx.Logf(1, "  *** Unknown TLS protocol request. Whitelisting this client so we don't break things. %d [%s] +%v", count, ctx.host, err.Error())
 
 				if ctx.Tlsfailure != nil {
 					if strings.Contains(err.Error(), "malformed HTTP") {

@@ -175,14 +175,14 @@ func (c *GoproxyConfig) certWithCommonName(hostname string, commonName string) e
 		conn, err := tls.Dial("tcp", originalhostname + ":" + port, &tls.Config{InsecureSkipVerify: true})
 
 		if err != nil {
-			fmt.Printf("  *** Couldn't connect to destination [%s]\n", originalhostname)
+			fmt.Printf("  *** TLS Certificate Routine: Couldn't connect to destination [%s] %+v\n", originalhostname, err)
 		} else {
 			// Only close the connection if we couldn't connect.
 			defer conn.Close()
 			if len(conn.ConnectionState().PeerCertificates) >= 1 {
 				origcert = conn.ConnectionState().PeerCertificates[0]
 				//fmt.Printf("  *** original cert: %s (%d)\n     Subject: %s\n     Issuer: %+v\n     DNS Names: %s\n     IssuingCertificateURL: %+v\n     Signature Algorithm: %+v\n", originalhostname, len(conn.ConnectionState().PeerCertificates), origcert.Subject, origcert.Issuer, origcert.DNSNames, origcert.IssuingCertificateURL, origcert.SignatureAlgorithm)
-				fmt.Printf("  *** original cert: %s (%d)\n     Subject: %s\n     Issuer: %+v\n     DNS Names: %s\n", originalhostname, len(conn.ConnectionState().PeerCertificates), origcert.Subject, origcert.Issuer, origcert.DNSNames)
+				//fmt.Printf("  *** original cert: %s (%d)\n     Subject: %s\n     Issuer: %+v\n     DNS Names: %s\n", originalhostname, len(conn.ConnectionState().PeerCertificates), origcert.Subject, origcert.Issuer, origcert.DNSNames)
 
 				// Todo: Check the validity of the certificate. We need to figure out how to
 				// query the installed trusted roots of the operating system. This is needed
@@ -236,17 +236,26 @@ func (c *GoproxyConfig) certWithCommonName(hostname string, commonName string) e
 		tmpl.DNSNames = []string{hostname}
 	}
 
-	// Experiment: copy values from the original certificate to our new one
-	if origcert != nil {
+	// If we have a non-Winston certificate for an external site, then copy values from the original certificate to our new one
+	if origcert != nil && !strings.HasPrefix(originalhostname, "winston.conf") {
+
 		tmpl.Subject = origcert.Subject
 		tmpl.NotBefore = origcert.NotBefore
 		tmpl.NotAfter = origcert.NotAfter
-		tmpl.DNSNames = origcert.DNSNames
-		tmpl.IPAddresses = origcert.IPAddresses
 		tmpl.KeyUsage = origcert.KeyUsage
-		//tmpl.SubjectKeyId = origcert.SubjectKeyId
 		tmpl.AuthorityKeyId = origcert.AuthorityKeyId
-		//tmpl.CRLDistributionPoints = origcert.CRLDistributionPoints
+		tmpl.IPAddresses = origcert.IPAddresses
+
+		// If the DNS name points to winston.conf, then use the original hostname.
+		if len(origcert.DNSNames) > 0 && origcert.DNSNames[0] != "winston.conf" {
+			//fmt.Printf("  *** overwriting cert with original values: host=%s  DNSNames[0]=%s\n", originalhostname, origcert.DNSNames[0] )
+			tmpl.DNSNames = origcert.DNSNames
+		} else {
+			//fmt.Printf("  *** Blocked domain.: host=%s  DNSNames[0]=%s\n", originalhostname, hostname )
+			tmpl.DNSNames = []string{hostname}
+		}
+
+
 	}
 
 
@@ -267,6 +276,8 @@ func (c *GoproxyConfig) certWithCommonName(hostname string, commonName string) e
 		Leaf:        x509c,
 	}
 
+	// Todo: Should this be moved higher so we don't repeatedly request the same certificate from downstream server?
+	// The risk is that a hung connection could block all HTTPS traffic to the proxy. Leaving it for now. RLS 3/16/2018
 	c.certmu.Lock()
 	c.NameToCertificate[hostname] = tlsc
 	c.Certificates = append(c.Certificates, *tlsc)

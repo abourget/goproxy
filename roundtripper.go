@@ -95,6 +95,10 @@ func (ctx *ProxyCtx) _roundTripWithLog(req *http.Request) (*http.Response, error
 
 func (ctx *ProxyCtx) wrapTransport(tr *http.Transport) RoundTripper {
 	return RoundTripperFunc(func(req *http.Request, ctx *ProxyCtx) (*http.Response, error) {
+		/*if strings.Contains(req.URL.String(), "howsmyssl") {
+			fmt.Printf("  *** TLSClientConfig: %+v\n\n", tr.TLSClientConfig)
+		}*/
+
 		return tr.RoundTrip(req)
 	})
 }

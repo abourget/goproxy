@@ -132,7 +132,6 @@ type RoundTripDetails struct {
 
 
 func (t *Transport) DetailedRoundTrip(req *http.Request) (details *RoundTripDetails, resp *http.Response, err error) {
-	//fmt.Println("  *** DetailedRoundTrip ***")
 	if req.URL == nil {
 		return nil, nil, errors.New("http: nil Request.URL")
 	}
@@ -411,7 +410,7 @@ func (t *Transport) getConn(cm *connectMethod) (*persistConn, error) {
 			//fmt.Printf("  *** Handshake 1 Error\n");
 			return nil, err
 		}
-		fmt.Printf("  *** transport.go. InsecureSkipVerify %b\n", t.TLSClientConfig.InsecureSkipVerify)
+		//fmt.Printf("  *** transport.go. InsecureSkipVerify %b\n", t.TLSClientConfig.InsecureSkipVerify)
 		if t.TLSClientConfig == nil || !t.TLSClientConfig.InsecureSkipVerify {
 			if err = conn.(*tls.Conn).VerifyHostname(cm.tlsHost()); err != nil {
 				return nil, err

@@ -10,9 +10,12 @@ import (
 
 var GoproxyCaConfig *GoproxyConfig
 
+// This sets up a TLS Config. It's called both by signer.go to set up a server to handle incoming client requests
+// as well as by proxy.go to set up the outbound transport. This means that the caller will need to set any
+// custom properties if they want to change the behavior.
 func rootCAs(c *rootcerts.Config) *tls.Config {
 	t := &tls.Config{
-		// RLS 3/15/2018 - Enabling this will result in serious TLS security vulnerabilities.
+		// RLS 3/15/2018 - Enabling InsecureSkipVerify will result in serious TLS security vulnerabilities. Only use for testing.
 		InsecureSkipVerify: false,
 		MinVersion:         tls.VersionTLS10,
 		MaxVersion:         tls.VersionTLS12,
