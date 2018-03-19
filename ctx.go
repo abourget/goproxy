@@ -868,8 +868,9 @@ func (ctx *ProxyCtx) DispatchResponseHandlers() error {
 					// Note that jpg pixels are > 1k in length and are rarely used
 					// so we just return a 502 error to avoid the bandwidth.
 					// Todo: Revisit this if we're seeing too many broken image icons in web pages
-					//ctx.Logf("  Serving 502")
-					ctx.NewResponse(502, "text/plain; charset=utf-8", "502.2 Blocked by Winston [" + ext + "]")
+					//ctx.NewResponse(502, "text/plain; charset=utf-8", "502.2 Blocked by Winston [" + ext + "]")
+					ctx.NewResponse(502, "text/html; charset=utf-8", strings.Replace(blockedhtml, "Blocked", "502.2 Blocked by Winston", 1))
+
 				}
 
 				return ctx.ForwardResponse(ctx.Resp)
@@ -886,7 +887,9 @@ func (ctx *ProxyCtx) DispatchResponseHandlers() error {
 
 
 
-			ctx.NewResponse(504, "text/plain; charset=utf-8", "504 Blocked by Winston / No response from server")
+			//ctx.NewResponse(504, "text/plain; charset=utf-8", "504 Blocked by Winston / No response from server")
+			ctx.NewResponse(504, "text/html; charset=utf-8", strings.Replace(blockedhtml, "Blocked", "504 No response from server or blocked by Winston", 1))
+
 			return ctx.ForwardResponse(ctx.Resp)
 		}
 
@@ -1342,3 +1345,46 @@ func isEof(r *bufio.Reader) bool {
 	}
 	return false
 }
+
+
+var blockedhtml = `<!DOCTYPE html><html lang="en">
+<head>
+    <title>Page blocked by Winston</title>
+    <style>
+        html, body, .wrap {
+            height:100%;
+            margin:0;
+            padding:0
+        }
+        .wrap {
+            display:table;
+            width:100%;
+        }
+        .mid, .base {
+            display:table-row;
+            text-align:center
+        }
+        .base { height:1px; }
+        .image {
+            vertical-align:middle;
+            display:table-cell;
+        }
+        .image img {
+            width:50%;
+            height:auto;
+        }
+    </style>
+</head>
+<body>
+<div class="wrap">
+    <div class="mid">
+        <div class="image"><img src="http://winston.conf/images/logo_dark.png">
+            <div>Blocked</div>
+        </div>
+
+    </div>
+    <div class="base"></div>
+</div>
+
+</body>
+</html>`

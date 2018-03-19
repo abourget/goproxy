@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"net/http"
 	"path/filepath"
-	//"strings"
+	"strings"
 )
 
 // HandleConnectFunc and HandleConnect mimic the `net/http` handlers,
@@ -180,7 +180,8 @@ func (proxy *ProxyHttpServer) dispatchRequestHandlers(ctx *ProxyCtx) {
 					// so we just return a 502 error to avoid the bandwidth.
 					// Todo: Revisit this if we're seeing too many broken image icons in web pages
 					//ctx.Logf("  Serving 502")
-					ctx.NewResponse(502, "text/plain; charset=utf-8", "502.1 Blocked by Winston [" + ext + "]")
+					//ctx.NewResponse(502, "text/plain; charset=utf-8", "502.1 Blocked by Winston [" + ext + "]")
+					ctx.NewResponse(504, "text/html; charset=utf-8", strings.Replace(blockedhtml, "Blocked", "502.1 Blocked by Winston", 1))
 				}
 
 				ctx.ForwardResponse(ctx.Resp)

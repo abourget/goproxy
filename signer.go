@@ -5,7 +5,7 @@
 */
 
 /* Responsible for signing certificates based on Winston root certificate.
- * TODO: Check validity of certificates on first load rather than simply passing them on to clients.
+ * TODO: Check validity of certificates on first load rather than simply passing them on blindly to clients.
  */
 package goproxy
 
@@ -102,6 +102,10 @@ func NewConfig(ca *x509.Certificate, privateKey interface{}) (*GoproxyConfig, er
 	return tlsConfig, nil
 }
 
+// RLS 3/19/2018 - exported for testng
+func (c *GoproxyConfig) Cert(hostname string) error {
+	return c.cert(hostname)
+}
 
 func (c *GoproxyConfig) cert(hostname string) error {
 	return c.certWithCommonName(hostname, "")
@@ -110,6 +114,9 @@ func (c *GoproxyConfig) cert(hostname string) error {
 // RLS 7/14/2017
 // If commonName is provided, it will be used in the certificate. This is used to
 // service non-SNI requests.
+
+// TODO: commonName may no longer be needed. Refactor to remove it.
+// TODO: Should we remember bad requests so we don't keep making them? Routine is subject to an internal flood attack.
 func (c *GoproxyConfig) certWithCommonName(hostname string, commonName string) error {
 
 	originalhostname := hostname
@@ -175,7 +182,8 @@ func (c *GoproxyConfig) certWithCommonName(hostname string, commonName string) e
 		conn, err := tls.Dial("tcp", originalhostname + ":" + port, &tls.Config{InsecureSkipVerify: true})
 
 		if err != nil {
-			fmt.Printf("  *** TLS Certificate Routine: Couldn't connect to destination [%s] %+v\n", originalhostname, err)
+			fmt.Printf("  *** TLS Certificate Routine: Couldn't connect to destination [%s]\n", originalhostname)
+			return err
 		} else {
 			// Only close the connection if we couldn't connect.
 			defer conn.Close()
