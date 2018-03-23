@@ -38,7 +38,15 @@ func (ctx *ProxyCtx) RoundTrip(req *http.Request) (*http.Response, error) {
 			addendum = append(addendum, fmt.Sprintf(", sni=%q, fakedns=%q", transport.TLSClientConfig.ServerName, ctx.fakeDestinationDNS))
 			tr = transport
 		} else {
-			tr = ctx.Proxy.Transport
+			// RLS 3/20/2018 - route the request through the privacy network.
+			// TODO: How to handle failures?
+			// TODO: Select which transport to use
+			if ctx.PrivateNetwork && len(ctx.Proxy.PrivateTransport) > 0 {
+				//fmt.Printf("  *** RoundTrip() - Routing through private network\n")
+				tr = ctx.Proxy.PrivateTransport[0]
+			} else {
+				tr = ctx.Proxy.Transport
+			}
 		}
 
 		if ctx.Proxy.FlushIdleConnections {

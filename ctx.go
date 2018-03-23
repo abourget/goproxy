@@ -130,6 +130,9 @@ type ProxyCtx struct {
 
 	// Request handler sets this to true if it thinks it is a first party request
 	FirstParty bool
+
+	// Set to true to use private network
+	PrivateNetwork bool
 }
 
 // Append a message to the context. This will be sent back to the client as a "Winston-Response" header.
@@ -515,6 +518,11 @@ func (ctx *ProxyCtx) ManInTheMiddleHTTPS() error {
 		// FIX 9/13/2017: the deferred close must come before the Handshake because if it
 		// errors out, the connection is left open and we end up with thousands of orphaned objects.
 		defer rawClientTls.Close()
+
+		/*if strings.Contains(ctx.host, "104.244.42.") {
+			fmt.Printf("  *** tlsConfig for %s\n %+v \n\n %+v\n\n", ctx.host, tlsConfig.NameToCertificate, tlsConfig.NameToCertificate[signHost].Leaf.Subject)
+		}*/
+
 
 		//ctx.Logf(1, "  *** Starting handshake with [%s]", r.Host)
 
@@ -1169,7 +1177,8 @@ func (ctx *ProxyCtx) tlsConfig(host string) (*tls.Config, error) {
 		ca = ctx.MITMCertConfig
 	}
 
-	//ctx.Logf("signing for %s", stripPort(host))
+
+
 	err := ca.cert(host)
 	if err != nil {
 		ctx.Warnf("Cannot sign host certificate with provided CA: %s", err)
@@ -1178,7 +1187,6 @@ func (ctx *ProxyCtx) tlsConfig(host string) (*tls.Config, error) {
 
 	// Hook the client Hello in order to generate fingerprint
 	//ca.GetCertificate = ctx.getCertificateHook
-
 	return ca.Config, nil
 }
 

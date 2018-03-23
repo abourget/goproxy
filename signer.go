@@ -122,11 +122,11 @@ func (c *GoproxyConfig) certWithCommonName(hostname string, commonName string) e
 	originalhostname := hostname
 
 	/*experiment := false
-	if strings.Contains(originalhostname, "badssl.com") || strings.Contains(originalhostname, "facebook.com") {
+	if strings.Contains(originalhostname, "104.244.42.") {
 		fmt.Printf("  *** Starting badssl experiment: %s\n", originalhostname)
 		experiment = true
-	}*/
-
+	}
+*/
 	// Remove the port if it exists.
 	host, port, err := net.SplitHostPort(hostname)
 	if err == nil {
@@ -134,7 +134,7 @@ func (c *GoproxyConfig) certWithCommonName(hostname string, commonName string) e
 	}
 
 
-	// Is this an IP address?
+	// Is this an IP address?2
 	isIP := false
 	ip := net.ParseIP(hostname);
 	if ip != nil {
@@ -162,12 +162,29 @@ func (c *GoproxyConfig) certWithCommonName(hostname string, commonName string) e
 
 		// Check validity of the certificate for hostname match, expiry, etc. In
 		// particular, if the cached certificate has expired, create a new one.
-		if _, err := tlsc.Leaf.Verify(x509.VerifyOptions{
-			DNSName: hostname,
-			Roots:   c.RootCAs,
-		}); err == nil {
+		var err error
+		if isIP {
+			// Don't verify hostname if we have an ip address
+			_, err = tlsc.Leaf.Verify(x509.VerifyOptions{
+				//DNSName: hostname,
+				Roots:   c.RootCAs,
+			})
+		} else {
+			_, err = tlsc.Leaf.Verify(x509.VerifyOptions{
+				DNSName: hostname,
+				Roots:   c.RootCAs,
+			})
+		}
+		if err == nil {
+			/*if experiment {
+				fmt.Printf("  *** Certificate verified.\n")
+			}*/
 			return nil
 		}
+
+		/*if experiment {
+			fmt.Printf("  *** Certificate did not verify.\n")
+		}*/
 	}
 
 	// Test: Get the origin certificate and copy fields to it.
@@ -213,6 +230,9 @@ func (c *GoproxyConfig) certWithCommonName(hostname string, commonName string) e
 	//}
 
 	// Create a new certificate
+	c.certmu.Lock()
+	defer c.certmu.Unlock()
+
 	serial, err := rand.Int(rand.Reader, MaxSerialNumber)
 	if err != nil {
 		return err
@@ -284,12 +304,15 @@ func (c *GoproxyConfig) certWithCommonName(hostname string, commonName string) e
 		Leaf:        x509c,
 	}
 
+	/*if experiment {
+		fmt.Printf("  *** New cert created for %s.\n     Subject: %+v\n     DNS Names:%+v\n     IssuingCertificateURL: %+v\n     Issuer: %+v\n     Valid: %+v - %+v\n", hostname, tlsc.Leaf.Subject, tlsc.Leaf.DNSNames, tlsc.Leaf.IssuingCertificateURL, tlsc.Leaf.Issuer, tlsc.Leaf.NotBefore, tlsc.Leaf.NotAfter)
+	}*/
 	// Todo: Should this be moved higher so we don't repeatedly request the same certificate from downstream server?
 	// The risk is that a hung connection could block all HTTPS traffic to the proxy. Leaving it for now. RLS 3/16/2018
-	c.certmu.Lock()
+
 	c.NameToCertificate[hostname] = tlsc
 	c.Certificates = append(c.Certificates, *tlsc)
-	c.certmu.Unlock()
+
 
 	return nil
 }

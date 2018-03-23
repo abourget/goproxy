@@ -27,6 +27,7 @@ import (
 	"crypto/md5"
 	"context"
 	"crypto/tls"
+	ss "github.com/shadowsocks/shadowsocks-go/shadowsocks"
 )
 
 // The basic proxy type. Implements http.Handler.
@@ -75,6 +76,9 @@ type ProxyHttpServer struct {
 
 	// Custom transport to be used
 	Transport *http.Transport
+
+	// Private transports
+	PrivateTransport []*http.Transport
 
 	// Setting MITMCertConfig allows you to override the default CA cert/key used to sign MITM'd requests.
 	MITMCertConfig *GoproxyConfig
@@ -136,7 +140,7 @@ func NewProxyHttpServer() *ProxyHttpServer {
 	}
 
 
-	// Test - set up a client cache to support session tickets
+	// RLS 3/18/2018 - Add session ticket support
 	// Setting a relatively low number will force tickets out more quickly, helping to prevent against snooping attacks.
 	proxy.Transport.TLSClientConfig.ClientSessionCache = tls.NewLRUClientSessionCache(25)
 	//fmt.Printf("  *** TLSClientConfig: %+v\n", proxy.Transport.TLSClientConfig)
@@ -147,7 +151,42 @@ func NewProxyHttpServer() *ProxyHttpServer {
 	proxy.ConnectDial = dialerFromEnv(&proxy)
 	proxy.ConnectDialContext = dialerFromEnvContext(&proxy)
 
+	// Test: Mesh Network
+	//proxy.InitializeMeshTransports()
+
 	return &proxy
+}
+
+/* Initializes alternate transports which route requests through the Winston privacy mesh.
+ * RLS 3/20/2018
+ */
+func (proxy *ProxyHttpServer) InitializeMeshTransports() (error) {
+	// TODO: Get list of allowed proxies from central server.
+	// Hardcoded for now
+
+	serverAddr := "18.219.150.227:443"
+	method := "aes-128-cfb"
+	passwd := "Teps-1138"
+
+	// TODO: cipher should be stored with the transports.
+	cipher, err := ss.NewCipher(method, passwd)
+	if (err != nil) {
+		return err
+	}
+	proxy.PrivateTransport = []*http.Transport{
+		&http.Transport{
+			Dial: func(_, addr string) (net.Conn, error) {
+				//fmt.Printf("  *** Private transport dial\n")
+				rawAddr, err := ss.RawAddr(addr)
+				if (err != nil) {
+					return nil, err
+				}
+				//fmt.Printf("  *** Mesh network - Dial(): rawAddr %s  serverAddr: %s\n  cipher: %+v\n", rawAddr, serverAddr, cipher)
+				return ss.DialWithRawAddr(rawAddr, serverAddr, cipher.Copy())
+			},
+	}}
+
+	return nil
 }
 
 func (proxy *ProxyHttpServer) LazyWrite(PersistSeconds int) {
