@@ -537,12 +537,21 @@ func (ctx *ProxyCtx) ManInTheMiddleHTTPS() error {
 			// should let listeners know that we've found a domain that
 			// should probably be whitelisted.
 
-			ctx.Logf(1, "Cannot handshake client %v %v", r.Host, err)
+			//ctx.Logf(1, "Cannot handshake client %v %v", r.Host, err)
 
 			// Is anyone listening? Let them know the TLS handshake failed.
 			if ctx.Tlsfailure != nil {
-				//ctx.Logf(2, "  *** TLS Failure (Handshake error)")
-				ctx.Tlsfailure(ctx, true)
+				//if strings.Contains(r.Host, "google.com") {
+				//	fmt.Printf("  *** TLS Failure (Handshake error) %+v Err: %+v", ctx.Req.URL, err)
+				//}
+				// A handshake error occurred. This could be caused by transmission problems or
+				// new protocols. In either case, we don't want to flag the device as bad.
+				// RLS 3/30/3028 - Google handshakes through Firefox tend to throw EOF errors
+				// during the handshake, whitelisting the client. We'll ignore these as they
+				// seem to be intermittent and related to keystroke capture/auto-complete.
+				if !strings.Contains(err.Error(), "EOF") {
+					ctx.Tlsfailure(ctx, false)
+				}
 			}
 
 			return
@@ -606,6 +615,7 @@ func (ctx *ProxyCtx) ManInTheMiddleHTTPS() error {
 					if strings.Contains(err.Error(), "malformed HTTP") {
 						ctx.Tlsfailure(ctx, false)
 					} else if strings.Contains(err.Error(), "unknown certificate") {
+						//ctx.Logf(4, "  *** TLS Failure (unknown certificate) %+v", ctx.Req.URL)
 						ctx.Tlsfailure(ctx, true)
 					}
 				}

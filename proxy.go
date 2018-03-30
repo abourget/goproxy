@@ -27,7 +27,8 @@ import (
 	"crypto/md5"
 	"context"
 	"crypto/tls"
-	ss "github.com/shadowsocks/shadowsocks-go/shadowsocks"
+
+	"github.com/winston/shadowtransport"
 )
 
 // The basic proxy type. Implements http.Handler.
@@ -78,7 +79,7 @@ type ProxyHttpServer struct {
 	Transport *http.Transport
 
 	// Private transports
-	PrivateTransport []*http.Transport
+	PrivateNetwork *shadowtransport.PrivateNetwork
 
 	// Setting MITMCertConfig allows you to override the default CA cert/key used to sign MITM'd requests.
 	MITMCertConfig *GoproxyConfig
@@ -152,42 +153,32 @@ func NewProxyHttpServer() *ProxyHttpServer {
 	proxy.ConnectDialContext = dialerFromEnvContext(&proxy)
 
 	// Test: Mesh Network
+	proxy.PrivateNetwork = shadowtransport.Initialize(proxy.Transport)
+
 	//proxy.InitializeMeshTransports()
+	//proxy.InitializeProxyTransport()
 
 	return &proxy
 }
 
-/* Initializes alternate transports which route requests through the Winston privacy mesh.
- * RLS 3/20/2018
+/* Test function - sets up a transport which proxies via Amazon EC2 instance in Ohio.
  */
-func (proxy *ProxyHttpServer) InitializeMeshTransports() (error) {
-	// TODO: Get list of allowed proxies from central server.
-	// Hardcoded for now
-
-	serverAddr := "18.219.150.227:443"
-	method := "aes-128-cfb"
-	passwd := "Teps-1138"
-
-	// TODO: cipher should be stored with the transports.
-	cipher, err := ss.NewCipher(method, passwd)
-	if (err != nil) {
-		return err
-	}
+/*
+func (proxy *ProxyHttpServer) InitializeProxyTransport() (error) {
+	fmt.Printf("  *** Initializing Proxy Transport\n")
+	proxyURL, _ := url.Parse("http://18.219.150.227:7777")
 	proxy.PrivateTransport = []*http.Transport{
 		&http.Transport{
-			Dial: func(_, addr string) (net.Conn, error) {
-				//fmt.Printf("  *** Private transport dial\n")
-				rawAddr, err := ss.RawAddr(addr)
-				if (err != nil) {
-					return nil, err
-				}
-				//fmt.Printf("  *** Mesh network - Dial(): rawAddr %s  serverAddr: %s\n  cipher: %+v\n", rawAddr, serverAddr, cipher)
-				return ss.DialWithRawAddr(rawAddr, serverAddr, cipher.Copy())
-			},
-	}}
+			Proxy: http.ProxyURL(proxyURL),
+		}}
 
 	return nil
 }
+*/
+
+
+
+
 
 func (proxy *ProxyHttpServer) LazyWrite(PersistSeconds int) {
 	// RLS 7/7/2017

@@ -41,9 +41,9 @@ func (ctx *ProxyCtx) RoundTrip(req *http.Request) (*http.Response, error) {
 			// RLS 3/20/2018 - route the request through the privacy network.
 			// TODO: How to handle failures?
 			// TODO: Select which transport to use
-			if ctx.PrivateNetwork && len(ctx.Proxy.PrivateTransport) > 0 {
+			if ctx.PrivateNetwork && ctx.Proxy.PrivateNetwork != nil {
 				//fmt.Printf("  *** RoundTrip() - Routing through private network\n")
-				tr = ctx.Proxy.PrivateTransport[0]
+				tr = ctx.Proxy.PrivateNetwork.Transport()
 			} else {
 				tr = ctx.Proxy.Transport
 			}
