@@ -199,7 +199,7 @@ func (c *GoproxyConfig) certWithCommonName(hostname string, commonName string) e
 		conn, err := tls.Dial("tcp", originalhostname + ":" + port, &tls.Config{InsecureSkipVerify: true})
 
 		if err != nil {
-			fmt.Printf("  *** TLS Certificate Routine: Couldn't connect to destination [%s]\n", originalhostname)
+			//1fmt.Printf("  *** TLS Certificate Routine: Couldn't connect to destination [%s]\n", originalhostname)
 			return err
 		} else {
 			// Only close the connection if we couldn't connect.
