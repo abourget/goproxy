@@ -728,8 +728,12 @@ func (ctx *ProxyCtx) ForwardConnect() error {
 		return fmt.Errorf("Method is not CONNECT")
 	}
 
-	// TODO: Should we allow forwarded requests request to bypass DNS?
 	var dnsbypassctx context.Context
+
+	if ctx.Whitelisted {
+		//ctx.Logf(1, "  *** ForwardConnect() - Bypassing DNS for whitelisted host [%s]", ctx.host)
+		dnsbypassctx = context.WithValue(ctx.Req.Context(), dns.UpstreamKey, 0)
+	}
 
 	targetSiteConn, err := ctx.Proxy.connectDialContext(dnsbypassctx, "tcp", ctx.host)
 	if err != nil {
@@ -791,22 +795,34 @@ func (ctx *ProxyCtx) ReturnSignature() {
 }
 
 // Request handling
-
+// TODO: Remove host from function parameters
 func (ctx *ProxyCtx) ForwardRequest(host string) error {
-	// FIXME: we don't even use `host` here.. what's the point ?
 	//ctx.Logf("Sending request %v %v with Host header %q", ctx.Req.Method, ctx.Req.URL.String(), ctx.Req.Host)
 
+	/*if strings.Contains(host, "xaxis") {
+		ctx.Logf(1, "  *** ForwardRequest() - Xaxis spotted.")
+	}*/
 	// If the request was whitelisted, then use the upstream DNS.
 	dnsbypassctx := ctx.Req.Context()
 	if ctx.Whitelisted {
-		//ctx.Logf(3, "OK Bypassing DNS for whitelisted referrer [%s]", ctx.host)
+		//ctx.Logf(1, "  *** ForwardRequest() - Bypassing DNS for whitelisted site [%s]", ctx.host)
 		dnsbypassctx = context.WithValue(ctx.Req.Context(), dns.UpstreamKey, 0)
 	}
 
 	ctx.removeProxyHeaders()
+
+	// Note: if you get certificate errors for certain sites, you can debug them on the device using:
+	// openssl s_client -connect xxxxx.com:443 |tee logfile
+	//
+	// Also consider debugging TLS with Curl: https://curl.haxx.se/docs/sslcerts.html
 	resp, err := ctx.RoundTrip(ctx.Req.WithContext(dnsbypassctx))
 	//resp, err := ctx.RoundTrip(ctx.Req)
 	ctx.Resp = resp
+
+	//if strings.Contains(host, "xaxis") {
+	//	ctx.Logf(1, "  *** ForwardRequest() - resp err:", resp, err)
+	//}
+
 	if err != nil {
 		ctx.ResponseError = err
 		return err
@@ -859,7 +875,7 @@ func (ctx *ProxyCtx) DispatchResponseHandlers() error {
 	// In the case of a MITM attack, we can either drop the connection or
 	// return a status 500 code.
 	if ctx.Resp == nil || rejected {
-		//err := fmt.Errorf("Response nil: %s", ctx.ResponseError)
+		//ctx.Logf(1, "  *** BLOCKED/ResponseFilter: %s", ctx.Req.URL, ctx.Resp, rejected)
 
 		if rejected {
 			//ctx.Logf("BLOCKED/ResponseFilter: %s", ctx.Req.URL)
@@ -887,7 +903,30 @@ func (ctx *ProxyCtx) DispatchResponseHandlers() error {
 					// so we just return a 502 error to avoid the bandwidth.
 					// Todo: Revisit this if we're seeing too many broken image icons in web pages
 					//ctx.NewResponse(502, "text/plain; charset=utf-8", "502.2 Blocked by Winston [" + ext + "]")
-					ctx.NewResponse(502, "text/html; charset=utf-8", strings.Replace(blockedhtml, "Blocked", "502.2 Blocked by Winston", 1))
+
+					title := "Tracker Blocked"
+					errorcode := "502.2 Blocked by Winston"
+					text := "A website is attempting to track you. For your protection, access to this page has been blocked. It’s recommended that you do NOT visit this site."
+					proceed := "<a href=\"#\" onclick=\"buildURL();return false;\">Visit this page anyway</a>"
+					/*// Friendly error logging
+					if ctx.ResponseError != nil {
+						switch ctx.ResponseError.Error() {
+						case "x509: certificate signed by unknown authority":
+							title = "Website blocked"
+							errorcode = "Certificate signed by unknown authority"
+							text = "The certificate issued by this website was issued by an unknown authority. For your protection, access to this page has been blocked."
+							proceed = ""
+						}
+					}*/
+
+					body := strings.Replace(blockedhtml, "%BLOCKED%", errorcode, 1)
+					body = strings.Replace(body, "%TITLE%", title, 1)
+					body = strings.Replace(body, "%TEXT%", text, 1)
+					body = strings.Replace(body, "%PROCEED%", proceed, 1)
+					//ctx.NewResponse(504, "text/plain; charset=utf-8", "504 Blocked by Winston / No response from server")
+					ctx.NewResponse(502, "text/html; charset=utf-8", body)
+
+					//ctx.NewResponse(502, "text/html; charset=utf-8", strings.Replace(blockedhtml, "Blocked", "502.2 Blocked by Winston", 1))
 
 				}
 
@@ -904,9 +943,29 @@ func (ctx *ProxyCtx) DispatchResponseHandlers() error {
 			}
 
 
+			//fmt.Printf("  *** Response error: \n", ctx.ResponseError)
 
+			title := "Tracker Blocked"
+			errorcode := "504 Blocked by Winston"
+			text := "A website is attempting to track you. For your protection, access to this page has been blocked. It’s recommended that you do NOT visit this site."
+			proceed := "<a href=\"#\" onclick=\"buildURL();return false;\">Visit this page anyway</a>"
+			// Friendly error logging
+			if ctx.ResponseError != nil {
+				switch ctx.ResponseError.Error() {
+				case "x509: certificate signed by unknown authority":
+					title = "Website blocked"
+					errorcode = "Certificate signed by unknown authority"
+					text = "The certificate issued by this website was issued by an unknown authority. For your protection, access to this page has been blocked."
+					proceed = ""
+				}
+			}
+
+			body := strings.Replace(blockedhtml, "%BLOCKED%", errorcode, 1)
+			body = strings.Replace(body, "%TITLE%", title, 1)
+			body = strings.Replace(body, "%TEXT%", text, 1)
+			body = strings.Replace(body, "%PROCEED%", proceed, 1)
 			//ctx.NewResponse(504, "text/plain; charset=utf-8", "504 Blocked by Winston / No response from server")
-			ctx.NewResponse(504, "text/html; charset=utf-8", strings.Replace(blockedhtml, "Blocked", "504 No response from server or blocked by Winston", 1))
+			ctx.NewResponse(504, "text/html; charset=utf-8", body)
 
 			return ctx.ForwardResponse(ctx.Resp)
 		}
@@ -1364,44 +1423,104 @@ func isEof(r *bufio.Reader) bool {
 	return false
 }
 
-
-var blockedhtml = `<!DOCTYPE html><html lang="en">
+// TODO: Refactor this to its own file
+var blockedhtml = `
+<!DOCTYPE html><html lang="en">
 <head>
     <title>Page blocked by Winston</title>
+
     <style>
-        html, body, .wrap {
+        html, body {
             height:100%;
+			width:100%;
             margin:0;
-            padding:0
+            padding:0;
+			font-family: 'IBM Plex Mono';
         }
         .wrap {
             display:table;
-            width:100%;
+			table-layout: fixed;
+            width: 100%;
+			height: 100%;
         }
-        .mid, .base {
-            display:table-row;
-            text-align:center
-        }
-        .base { height:1px; }
         .image {
+			text-align: center;
             vertical-align:middle;
             display:table-cell;
+
+
         }
+	.reason {
+	    width:500px;
+            vertical-align:middle;
+	    text-align: left;
+            display:table-cell;
+	    padding: 0px 20px;
+	    font-size:14px;
+	}
+	.spacer {
+		min-width:20px;
+		display:table-cell;
+
+	}
         .image img {
-            width:50%;
+            max-width: 250px;
             height:auto;
         }
+	h1 { font-size: 28px; }
+	@media (max-width: 750px) {
+		.image { display:none;}
+		.middle { width:100% !important; }
+		.spacer { display:none; }
+		.reason {width: 100%;}
+	}
+
+	@media (max-width: 1000px) {
+		.image { width:250px; }
+		.middle { width:calc(100% - 250px) !important; }
+		.spacer { display:none; }
+	}
     </style>
+ <script>
+function buildURL() {
+    var hostname;
+    //find & remove protocol (http, ftp, etc.) and get hostname
+	url = window.location.href;
+
+    if (url.indexOf("://") > -1) {
+        hostname = url.split('/')[2];
+    }
+    else {
+        hostname = url.split('/')[0];
+    }
+
+    //find & remove port number
+    hostname = hostname.split(':')[0];
+    //find & remove "?"
+    hostname = hostname.split('?')[0];
+
+    newurl = "https://winston.conf/shared/ApplyChanges.php?minutes=10&domain=" + hostname + "&localrules=" + hostname + ":AllowDomainTemp&redirect="  + encodeURIComponent(window.location.href);
+    console.log(newurl);
+    window.location=newurl;
+}
+ </script>
 </head>
 <body>
 <div class="wrap">
-    <div class="mid">
-        <div class="image"><img src="http://winston.conf/images/logo_dark.png">
-            <div>Blocked</div>
+        <div class="image">
+			<img src="http://winston.conf/images/logo_dark.png">
+            <div>%BLOCKED%</div>
         </div>
+		<div class="reason">
 
-    </div>
-    <div class="base"></div>
+			<h1>%TITLE%</h1>
+
+			<p>%TEXT%</p>
+
+<p>%PROCEED%</p>
+		</div>
+		<div class="spacer"></div>
+
 </div>
 
 </body>

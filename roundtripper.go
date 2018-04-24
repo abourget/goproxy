@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"strings"
 	"time"
-	//"net/http/httptrace"
+	"net/http/httptrace"
 )
 
 type RoundTripper interface {
@@ -45,6 +45,9 @@ func (ctx *ProxyCtx) RoundTrip(req *http.Request) (*http.Response, error) {
 				tr = ctx.Proxy.PrivateNetwork.Transport()
 			} else {
 				tr = ctx.Proxy.Transport
+
+				// Ensures we report the correct cloaked status back to the caller
+				ctx.PrivateNetwork = false
 			}
 		}
 
@@ -103,7 +106,7 @@ func (ctx *ProxyCtx) _roundTripWithLog(req *http.Request) (*http.Response, error
 func (ctx *ProxyCtx) wrapTransport(tr *http.Transport) RoundTripper {
 	return RoundTripperFunc(func(req *http.Request, ctx *ProxyCtx) (*http.Response, error) {
 		// Add tracing to a specific domain. This is really helpful in debugging connection issues.
-		/*if strings.Contains(req.URL.String(), "pbs.twimg.com") || strings.Contains(req.URL.String(), "drudgereport") {
+		if strings.Contains(req.URL.String(), "xaxis") {
 			trace := &httptrace.ClientTrace{
 				// A private network request does not currently trigger DNS lookups because these
 				// are resolved by the server.
@@ -115,8 +118,8 @@ func (ctx *ProxyCtx) wrapTransport(tr *http.Transport) RoundTripper {
 				},
 			}
 			req = req.WithContext(httptrace.WithClientTrace(req.Context(), trace))
-			fmt.Printf("  *** wrapTransport: %s\n", req.URL.String())
-		}*/
+			//fmt.Printf("  *** wrapTransport: %s\n", req.URL.String())
+		}
 
 		return tr.RoundTrip(req)
 	})

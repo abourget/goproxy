@@ -22,7 +22,8 @@ import (
 	"strings"
 	"sync"
 	"time"
-	"fmt"
+	//"fmt"
+	//"github.com/benburkert/dns"
 )
 
 // OrganizationName is the name your CA cert will be signed with. It
@@ -111,6 +112,7 @@ func (c *GoproxyConfig) cert(hostname string) error {
 	return c.certWithCommonName(hostname, "")
 }
 
+
 // RLS 7/14/2017
 // If commonName is provided, it will be used in the certificate. This is used to
 // service non-SNI requests.
@@ -121,12 +123,11 @@ func (c *GoproxyConfig) certWithCommonName(hostname string, commonName string) e
 
 	originalhostname := hostname
 
-	/*experiment := false
-	if strings.Contains(originalhostname, "104.244.42.") {
-		fmt.Printf("  *** Starting badssl experiment: %s\n", originalhostname)
-		experiment = true
-	}
-*/
+	//experiment := false
+	//if strings.Contains(originalhostname, "xaxis") {
+	//	fmt.Printf("  *** Starting badssl experiment: %s\n", originalhostname)
+	//	experiment = true
+	//}
 	// Remove the port if it exists.
 	host, port, err := net.SplitHostPort(hostname)
 	if err == nil {
@@ -134,7 +135,7 @@ func (c *GoproxyConfig) certWithCommonName(hostname string, commonName string) e
 	}
 
 
-	// Is this an IP address?2
+	// Is this an IP address?
 	isIP := false
 	ip := net.ParseIP(hostname);
 	if ip != nil {
@@ -156,9 +157,9 @@ func (c *GoproxyConfig) certWithCommonName(hostname string, commonName string) e
 
 
 	if ok {
-		/*if experiment {
-			fmt.Printf("  *** Cached cert used for %s.\n     Subject: %+v\n     DNS Names:%+v\n     IssuingCertificateURL: %+v\n     Issuer: %+v\n     Valid: %+v - %+v\n", hostname, tlsc.Leaf.Subject, tlsc.Leaf.DNSNames, tlsc.Leaf.IssuingCertificateURL, tlsc.Leaf.Issuer, tlsc.Leaf.NotBefore, tlsc.Leaf.NotAfter)
-		}*/
+		//if experiment {
+		//	fmt.Printf("  *** Cached cert used for %s.\n     Subject: %+v\n     DNS Names:%+v\n     IssuingCertificateURL: %+v\n     Issuer: %+v\n     Valid: %+v - %+v\n", hostname, tlsc.Leaf.Subject, tlsc.Leaf.DNSNames, tlsc.Leaf.IssuingCertificateURL, tlsc.Leaf.Issuer, tlsc.Leaf.NotBefore, tlsc.Leaf.NotAfter)
+		//}
 
 		// Check validity of the certificate for hostname match, expiry, etc. In
 		// particular, if the cached certificate has expired, create a new one.
@@ -196,7 +197,35 @@ func (c *GoproxyConfig) certWithCommonName(hostname string, commonName string) e
 			port = "443"
 		}
 
-		conn, err := tls.Dial("tcp", originalhostname + ":" + port, &tls.Config{InsecureSkipVerify: true})
+		// TODO: Need ability to bypass local DNS
+		var conn *tls.Conn
+
+		//if experiment {
+		//	// Create a custom dialer which resolves to an upstream DNS server
+		//	dnsclient := new(dns.Client)
+		//
+		//	dnsclient.Transport = &dns.Transport{
+		//		Proxy: dns.NameServers{
+		//			&net.UDPAddr{IP: net.IPv4(8, 8, 4, 4), Port: 53},
+		//		}.Upstream(rand.Reader),
+		//	}
+		//
+		//	// This is a http/s dialer with a custom DNS resolver.
+		//	dialer := &net.Dialer{
+		//		Resolver: &net.Resolver{
+		//			PreferGo: true,
+		//			Dial: dnsclient.Dial,
+		//		},
+		//	}
+		//
+		//	fmt.Printf("  *** Experiment: Dialing upstream DNS server 8.8.8.8")
+		//	conn, err = tls.DialWithDialer(dialer, "tcp", originalhostname + ":" + port, &tls.Config{InsecureSkipVerify: true})
+		//
+		//} else {
+			conn, err = tls.Dial("tcp", originalhostname + ":" + port, &tls.Config{InsecureSkipVerify: true})
+		//}
+
+
 
 		if err != nil {
 			//1fmt.Printf("  *** TLS Certificate Routine: Couldn't connect to destination [%s]\n", originalhostname)

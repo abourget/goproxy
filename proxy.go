@@ -155,9 +155,6 @@ func NewProxyHttpServer() *ProxyHttpServer {
 	// Test: Mesh Network
 	proxy.PrivateNetwork = shadowtransport.Initialize(proxy.Transport)
 
-	//proxy.InitializeMeshTransports()
-	//proxy.InitializeProxyTransport()
-
 	return &proxy
 }
 

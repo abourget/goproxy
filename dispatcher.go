@@ -181,7 +181,32 @@ func (proxy *ProxyHttpServer) dispatchRequestHandlers(ctx *ProxyCtx) {
 					// Todo: Revisit this if we're seeing too many broken image icons in web pages
 					//ctx.Logf("  Serving 502")
 					//ctx.NewResponse(502, "text/plain; charset=utf-8", "502.1 Blocked by Winston [" + ext + "]")
-					ctx.NewResponse(504, "text/html; charset=utf-8", strings.Replace(blockedhtml, "Blocked", "502.1 Blocked by Winston", 1))
+
+					title := "Tracker Blocked"
+					errorcode := "504 Blocked by Winston"
+					text := "A website is attempting to track you. For your protection, access to this page has been blocked. It’s recommended that you do NOT visit this site."
+					proceed := "<a href=\"#\" onclick=\"buildURL();return false;\">Visit this page anyway</a>"
+					/*// Friendly error logging
+					if ctx.ResponseError != nil {
+						switch ctx.ResponseError.Error() {
+						case "x509: certificate signed by unknown authority":
+							title = "Website blocked"
+							errorcode = "Certificate signed by unknown authority"
+							text = "The certificate issued by this website was issued by an unknown authority. For your protection, access to this page has been blocked."
+							proceed = ""
+						}
+					}*/
+
+					body := strings.Replace(blockedhtml, "%BLOCKED%", errorcode, 1)
+					body = strings.Replace(body, "%TITLE%", title, 1)
+					body = strings.Replace(body, "%TEXT%", text, 1)
+					body = strings.Replace(body, "%PROCEED%", proceed, 1)
+					//ctx.NewResponse(504, "text/plain; charset=utf-8", "504 Blocked by Winston / No response from server")
+					ctx.NewResponse(504, "text/html; charset=utf-8", body)
+
+
+
+					//ctx.NewResponse(504, "text/html; charset=utf-8", strings.Replace(blockedhtml, "Blocked", "502.1 Blocked by Winston", 1))
 				}
 
 				ctx.ForwardResponse(ctx.Resp)
