@@ -28,7 +28,8 @@ import (
 	"context"
 	"crypto/tls"
 
-	"github.com/winston/shadowtransport"
+	//"github.com/winston/shadowtransport"
+	"github.com/winston/shadownetwork"
 )
 
 // The basic proxy type. Implements http.Handler.
@@ -79,7 +80,8 @@ type ProxyHttpServer struct {
 	Transport *http.Transport
 
 	// Private transports
-	PrivateNetwork *shadowtransport.PrivateNetwork
+	//PrivateNetwork *shadowtransport.PrivateNetwork
+	PrivateNetwork *shadownetwork.ShadowNetwork
 
 	// Setting MITMCertConfig allows you to override the default CA cert/key used to sign MITM'd requests.
 	MITMCertConfig *GoproxyConfig
@@ -152,10 +154,18 @@ func NewProxyHttpServer() *ProxyHttpServer {
 	proxy.ConnectDial = dialerFromEnv(&proxy)
 	proxy.ConnectDialContext = dialerFromEnvContext(&proxy)
 
-	// Test: Mesh Network
-	proxy.PrivateNetwork = shadowtransport.Initialize(proxy.Transport)
-
 	return &proxy
+}
+
+// Call after the private network has been initialized to have proxy automatically redirect requests through it.
+// The proxy will simply forward requests through the local network until this is called.
+func (proxy *ProxyHttpServer) SetShadowNetwork(sn *shadownetwork.ShadowNetwork) {
+	if sn == nil {
+		return
+	}
+
+	sn.DefaultTransport = proxy.Transport
+	proxy.PrivateNetwork = sn
 }
 
 /* Test function - sets up a transport which proxies via Amazon EC2 instance in Ohio.
@@ -695,53 +705,6 @@ func (proxy *ProxyHttpServer) UpdateBlockedHostsByN(host string, amount int) {
 
 }
 
-// Called when a client drops a TLS request without sending any information.
-// If three successive requests are received, returns true.
-/*
-func (proxy *ProxyHttpServer) CheckTLSFailure(host string) (bool) {
-	fmt.Printf("  *** UpdateBlockedHosts... [%s]\n", host)
-
-
-	if proxy.FailedStats == nil {
-		return false
-	}
-
-	proxy.failuremu.Lock()
-	defer proxy.failuremu.Unlock()
-
-	// Get the current count
-	value, err := proxy.FailedStats.Read(host)
-
-	// If the entry doesn't exist, create it
-	if err != nil {
-		//fmt.Printf("UpdateBlockedHosts: previous value was 0\n")
-		b := make([]byte, 8)
-		binary.BigEndian.PutUint64(b, 1)
-		proxy.FailedStats.Write(host, b)
-	} else {
-		// Increment and save
-
-		currentValue := binary.BigEndian.Uint64(value)
-
-		// This indicates that we should whitelist the domain. No need to
-		// write a new value.
-		if currentValue >= 3 {
-			fmt.Printf("  *** CheckTLSFailure [%s]: %d successive failures. Whitelisting.. \n", host, currentValue)
-			return true
-		}
-
-		// Convert from byte array to int, increment, then convert back
-		b := make([]byte, 8)
-		binary.BigEndian.PutUint64(b, currentValue + 1)
-		proxy.FailedStats.WriteMem(host, b)
-
-		fmt.Printf("  *** CheckTLSFailure [%s]: %d successive failures\n", host, currentValue + 1)
-	}
-
-	return false
-
-}
-*/
 
 // SetMITMCertConfig sets the CA Config to be used to sign man-in-the-middle'd
 // certificates. You can load some []byte with `LoadCAConfig()`. This bundle
