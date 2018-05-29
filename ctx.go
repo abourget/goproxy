@@ -29,6 +29,7 @@ import (
 	"sync"
 	"context"
 	"github.com/benburkert/dns"
+	"github.com/winston/shadownetwork"
 )
 
 // ProxyCtx is the Proxy context, contains useful information about every request. It is passed to
@@ -133,6 +134,9 @@ type ProxyCtx struct {
 
 	// Set to true to use private network
 	PrivateNetwork bool
+
+	// If a shadow transport is being used, this points to it.
+	ShadowTransport *shadownetwork.ShadowTransport
 }
 
 // Append a message to the context. This will be sent back to the client as a "Winston-Response" header.
@@ -333,7 +337,7 @@ func (ctx *ProxyCtx) TunnelHTTP() error {
 		ctx.Req = req
 		ctx.IsThroughTunnel = true
 
-		ctx.Proxy.dispatchRequestHandlers(ctx)
+		ctx.Proxy.DispatchRequestHandlers(ctx)
 	}
 
 	return nil
@@ -646,7 +650,7 @@ func (ctx *ProxyCtx) ManInTheMiddleHTTPS() error {
 			//	ctx.Logf("  *** ManInTheMiddleHTTPS (Sling) - Dispatching request handlers...")
 			//}
 
-			ctx.Proxy.dispatchRequestHandlers(ctx)
+			ctx.Proxy.DispatchRequestHandlers(ctx)
 
 			// Force a timeout. Some requests hang forever because they never send an EOF.
 			end := time.Now()
@@ -735,6 +739,16 @@ func (ctx *ProxyCtx) ForwardConnect() error {
 		dnsbypassctx = context.WithValue(ctx.Req.Context(), dns.UpstreamKey, 0)
 	}
 
+
+	/*if strings.Contains(ctx.Req.URL.String(), "xaxis") {
+		fmt.Printf("  *** ForwardConnect() about to set context - %s\n", ctx.Req.URL)
+		if ctx.PrivateNetwork && ctx.ShadowTransport != nil {
+			// This allows the transport to access the ShadowTransport object
+			fmt.Printf("  *** ForwardConnect() set context - %s\n", ctx.Req.URL)
+			dnsbypassctx = context.WithValue(ctx.Req.Context(), ShadowTransportKey, ctx.ShadowTransport)
+		}
+	}*/
+
 	targetSiteConn, err := ctx.Proxy.connectDialContext(dnsbypassctx, "tcp", ctx.host)
 	if err != nil {
 		ctx.httpError(err)
@@ -794,10 +808,13 @@ func (ctx *ProxyCtx) ReturnSignature() {
 
 }
 
+
+
 // Request handling
 // TODO: Remove host from function parameters
 func (ctx *ProxyCtx) ForwardRequest(host string) error {
 	//ctx.Logf("Sending request %v %v with Host header %q", ctx.Req.Method, ctx.Req.URL.String(), ctx.Req.Host)
+
 
 	/*if strings.Contains(host, "xaxis") {
 		ctx.Logf(1, "  *** ForwardRequest() - Xaxis spotted.")
@@ -809,19 +826,46 @@ func (ctx *ProxyCtx) ForwardRequest(host string) error {
 		dnsbypassctx = context.WithValue(ctx.Req.Context(), dns.UpstreamKey, 0)
 	}
 
+	/*if strings.Contains(ctx.Req.URL.String(), "xaxis") {
+		fmt.Printf("  *** ForwardRequest() about to set context - %t % t %s\n", ctx.PrivateNetwork, ctx.ShadowTransport, ctx.Req.URL)
+		if ctx.PrivateNetwork && ctx.ShadowTransport != nil {
+			// This allows the transport to access the ShadowTransport object
+			fmt.Printf("  *** ForwardRequest() set context - %s\n", ctx.Req.URL)
+			dnsbypassctx = context.WithValue(ctx.Req.Context(), ShadowTransportKey, ctx.ShadowTransport)
+		}
+	}*/
+
 	ctx.removeProxyHeaders()
 
 	// Note: if you get certificate errors for certain sites, you can debug them on the device using:
 	// openssl s_client -connect xxxxx.com:443 |tee logfile
 	//
 	// Also consider debugging TLS with Curl: https://curl.haxx.se/docs/sslcerts.html
+
+	// Send in a pointer to a struct that RoundTrip can modify to let us know if there was an error calling out to the private network
+	dnsbypassctx = context.WithValue(dnsbypassctx, shadownetwork.ShadowTransportFailed, &shadownetwork.ShadowNetworkFailure{})
+
+
 	resp, err := ctx.RoundTrip(ctx.Req.WithContext(dnsbypassctx))
 	//resp, err := ctx.RoundTrip(ctx.Req)
 	ctx.Resp = resp
 
-	//if strings.Contains(host, "xaxis") {
-	//	ctx.Logf(1, "  *** ForwardRequest() - resp err:", resp, err)
-	//}
+
+
+
+
+	//fmt.Printf("\nChecking context 1: %+v\n", dnsbypassctx)
+	errmsg := dnsbypassctx.Value(shadownetwork.ShadowTransportFailed)
+
+	//fmt.Println("Error message", errmsg)
+	if (errmsg != nil) {
+		//fmt.Println("Error handling")
+		errmsgstruct := errmsg.(*shadownetwork.ShadowNetworkFailure)
+		if errmsgstruct.Failed {
+			//fmt.Println("Private network failed.")
+			ctx.PrivateNetwork = false
+		}
+	}
 
 	if err != nil {
 		ctx.ResponseError = err
@@ -1047,10 +1091,11 @@ func (ctx *ProxyCtx) ForwardResponse(resp *http.Response) error {
 
 	copyHeaders(w.Header(), resp.Header)
 	w.WriteHeader(resp.StatusCode)
-	//nr, err :=
+
+	// TODO: This is a performance bottleneck
+	io.Copy(w, resp.Body)
 
 	// The response body must always be open at this point, so we close it.
-	io.Copy(w, resp.Body)
 	if err := resp.Body.Close(); err != nil {
 		ctx.Warnf("Can't close response body %v", err)
 	}

@@ -126,7 +126,8 @@ func (proxy *ProxyHttpServer) dispatchConnectHandlers(ctx *ProxyCtx) {
 
 }
 
-func (proxy *ProxyHttpServer) dispatchRequestHandlers(ctx *ProxyCtx) {
+// RLS 5/22/2018 - exported so that we can use it for unit testing
+func (proxy *ProxyHttpServer) DispatchRequestHandlers(ctx *ProxyCtx) {
 
 
 	var then Next

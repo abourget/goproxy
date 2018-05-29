@@ -216,6 +216,8 @@ func (proxy *ProxyHttpServer) LazyWrite(PersistSeconds int) {
 func (proxy *ProxyHttpServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	//r.Header["X-Forwarded-For"] = w.RemoteAddr()	
 
+	//fmt.Println("ServeHTTP()")
+
 	ctx := &ProxyCtx{
 		Method:         r.Method,
 		SourceIP:       r.RemoteAddr, // pick it from somewhere else ? have a plugin to override this ?
@@ -255,7 +257,7 @@ func (proxy *ProxyHttpServer) ServeHTTP(w http.ResponseWriter, r *http.Request) 
 			return
 		}
 
-		proxy.dispatchRequestHandlers(ctx)
+		proxy.DispatchRequestHandlers(ctx)
 	}
 }
 
@@ -303,7 +305,6 @@ func (proxy *ProxyHttpServer) ListenAndServeTLS(httpsAddr string) error {
 			if err != nil {
 				log.Printf("Error accepting new connection (err 3) - %v", err)
 				//log.Printf(" *** BAD TLS CONNECTION? - source: %s / destination: %s", c.RemoteAddr().String(), c.LocalAddr().String())
-
 			}
 
 
