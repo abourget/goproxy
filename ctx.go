@@ -106,6 +106,7 @@ type ProxyCtx struct {
 
 	// References to persistent caches for statistics collection
 	// RLS 7-5-2017
+	IgnoreCounter		bool		// if true, this request won't be counted (used for streaming)
 	UpdateAllowedCounter    func()
 	UpdateBlockedCounter    func()
 	UpdateBlockedCounterByN func(int)
@@ -847,14 +848,19 @@ func (ctx *ProxyCtx) ForwardRequest(host string) error {
 
 
 	resp, err := ctx.RoundTrip(ctx.Req.WithContext(dnsbypassctx))
-	//resp, err := ctx.RoundTrip(ctx.Req)
+
+	//fmt.Printf("  RoundTrip() - resp: %+v  err: %+v\n", resp, err)
 	ctx.Resp = resp
 
 
+	// TODO: Need a more elegant way to check for errors. It would be good if roundtripper figured this out.
+	// Check for private network error (socket close)
+	// This occurs if the remote Shadow Peer exists but actively refused the connection.
+/*	if err != nil && err.Error() == "n=0 socket close" {
+		fmt.Printf("  *** socket closed\n")
+	}
 
-
-
-	//fmt.Printf("\nChecking context 1: %+v\n", dnsbypassctx)
+	// Check for network connectivity errors
 	errmsg := dnsbypassctx.Value(shadownetwork.ShadowTransportFailed)
 
 	//fmt.Println("Error message", errmsg)
@@ -865,7 +871,7 @@ func (ctx *ProxyCtx) ForwardRequest(host string) error {
 			//fmt.Println("Private network failed.")
 			ctx.PrivateNetwork = false
 		}
-	}
+	}*/
 
 	if err != nil {
 		ctx.ResponseError = err
@@ -946,6 +952,7 @@ func (ctx *ProxyCtx) DispatchResponseHandlers() error {
 					// Note that jpg pixels are > 1k in length and are rarely used
 					// so we just return a 502 error to avoid the bandwidth.
 					// Todo: Revisit this if we're seeing too many broken image icons in web pages
+					// Todo: Refactor Winston specific code to the Winston package.
 					//ctx.NewResponse(502, "text/plain; charset=utf-8", "502.2 Blocked by Winston [" + ext + "]")
 
 					title := "Tracker Blocked"
@@ -1544,7 +1551,7 @@ function buildURL() {
     //find & remove "?"
     hostname = hostname.split('?')[0];
 
-    newurl = "https://winston.conf/shared/ApplyChanges.php?minutes=10&domain=" + hostname + "&localrules=" + hostname + ":AllowDomainTemp&redirect="  + encodeURIComponent(window.location.href);
+    newurl = "http://winston.conf/shared/ApplyChanges.php?minutes=10&domain=" + hostname + "&localrules=" + hostname + ":AllowDomainTemp&redirect="  + encodeURIComponent(window.location.href);
     console.log(newurl);
     window.location=newurl;
 }

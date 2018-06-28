@@ -546,6 +546,7 @@ func (proxy *ProxyHttpServer) Logf(level uint16, msg string, v ...interface{}) {
 	}
 }
 
+// TODO: Refactor the logging functions into the Winston package
 func (proxy *ProxyHttpServer) UpdateBlockedCounter() {
 	proxy.UpdateBlockedCounterByN(1)
 }

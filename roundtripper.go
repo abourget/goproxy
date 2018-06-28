@@ -24,7 +24,7 @@ func (f RoundTripperFunc) RoundTrip(req *http.Request, ctx *ProxyCtx) (*http.Res
 func (ctx *ProxyCtx) RoundTrip(req *http.Request) (*http.Response, error) {
 	// RLS 2/16/2018 - This is where requests are made to the original destination sites.
 
-	var tr *http.Transport
+	var tr http.RoundTripper
 	var addendum = []string{""}
 
 	requestcontext := req.Context()
@@ -45,7 +45,6 @@ func (ctx *ProxyCtx) RoundTrip(req *http.Request) (*http.Response, error) {
 		} else {
 			// RLS 3/20/2018 - route the request through the privacy network.
 			if ctx.PrivateNetwork && ctx.Proxy.PrivateNetwork != nil {
-				//fmt.Printf("  *** Using private transport\n")
 				//fmt.Printf("  *** RoundTrip() - Routing through private network\n")
 				/*if strings.Contains(req.URL.String(), "xaxis") {
 					fmt.Printf("  *** RoundTrip() setup - %s\n", req.URL)
@@ -134,7 +133,7 @@ func (ctx *ProxyCtx) _roundTripWithLog(req *http.Request) (*http.Response, error
 	return resp, err
 }
 
-func (ctx *ProxyCtx) wrapTransport(tr *http.Transport) RoundTripper {
+func (ctx *ProxyCtx) wrapTransport(tr http.RoundTripper) RoundTripper {
 	return RoundTripperFunc(func(req *http.Request, ctx *ProxyCtx) (*http.Response, error) {
 
 		// Add tracing to a specific domain. This is really helpful in debugging connection issues.
@@ -153,7 +152,35 @@ func (ctx *ProxyCtx) wrapTransport(tr *http.Transport) RoundTripper {
 			//fmt.Printf("  *** wrapTransport: %s\n", req.URL.String())
 		}*/
 
+
 		resp, err := tr.RoundTrip(req)
+
+		// Check for shadow network errors
+		if ctx.PrivateNetwork && ctx.ShadowTransport != nil {
+			// Check to see if we connected but the remote node actively refused the connection
+			if err != nil && err.Error() == "n=0 socket close" {
+				// TODO: This results in peer disconnects. Can we respond to connection timeouts instead?
+
+				//ctx.ShadowTransport.RecordFailedConnection(shadownetwork.ErrorRefusedConnection)
+				ctx.PrivateNetwork = false
+
+			} else {
+				// Check for network connectivity errors (the remote node doesn't exist)
+				dnsbypassctx := req.Context()
+
+				errmsg := dnsbypassctx.Value(shadownetwork.ShadowTransportFailed)
+
+				//fmt.Println("Error message", errmsg)
+				if (errmsg != nil) {
+					errmsgstruct := errmsg.(*shadownetwork.ShadowNetworkFailure)
+					if errmsgstruct.Failed {
+						ctx.PrivateNetwork = false
+					}
+				}
+			}
+		}
+
+		//fmt.Printf("  *** Ctx.Conn 2: %+v %+v\n", ctx.Conn, resp)
 		//fmt.Printf("  *** RoundTrip(): err: %+v\n  resp: %s\n", err, resp)
 		return resp, err
 	})
