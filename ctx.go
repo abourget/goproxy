@@ -555,6 +555,11 @@ func (ctx *ProxyCtx) ManInTheMiddleHTTPS() error {
 				// during the handshake, whitelisting the client. We'll ignore these as they
 				// seem to be intermittent and related to keystroke capture/auto-complete.
 				if !strings.Contains(err.Error(), "EOF") {
+
+					/*if strings.HasPrefix(ctx.CipherSignature, "51ab") {
+						fmt.Printf("  *** TLS Handshake failure: %s \n", err.Error())
+					}*/
+
 					ctx.Tlsfailure(ctx, false)
 				}
 			}
@@ -566,7 +571,7 @@ func (ctx *ProxyCtx) ManInTheMiddleHTTPS() error {
 		ctx.IsSecure = true
 
 		clientTlsReader := bufio.NewReader(rawClientTls)
-		gotSomething := false
+		//gotSomething := false
 
 		// Use to detect timeouts
 		start := time.Now()
@@ -617,6 +622,11 @@ func (ctx *ProxyCtx) ManInTheMiddleHTTPS() error {
 				ctx.Logf(1, "  *** Unknown TLS protocol request. Whitelisting this client so we don't break things. %d [%s] +%v", count, ctx.host, err.Error())
 
 				if ctx.Tlsfailure != nil {
+
+					/*if strings.HasPrefix(ctx.CipherSignature, "51ab") {
+						fmt.Printf("  *** Unknown TLS protocol encountered while trying to ReadRequest: %s \n", err.Error())
+					}*/
+
 					if strings.Contains(err.Error(), "malformed HTTP") {
 						ctx.Tlsfailure(ctx, false)
 					} else if strings.Contains(err.Error(), "unknown certificate") {
@@ -628,7 +638,7 @@ func (ctx *ProxyCtx) ManInTheMiddleHTTPS() error {
 				return //errors.New("Non-HTTP protocol detected in TLS packet. Whitelisted domain. Try again.")
 			}
 
-			gotSomething = true
+			//gotSomething = true
 
 			subReq.URL.Scheme = "https"
 			subReq.URL.Host = ctx.host
@@ -672,7 +682,9 @@ func (ctx *ProxyCtx) ManInTheMiddleHTTPS() error {
 		//}
 		// We automatically whitelist all ip addresses because these are very likely to
 		// be associated with streaming services.
-		if !gotSomething || isIpAddress {
+		//if !gotSomething || isIpAddress {
+		// TODO: Redirects don't return anything so these are whitelisting domains. Can we check to see if some TLS data was exchanged?
+		if isIpAddress {
 			//ctx.Logf("Client dropped connection. Checking TLS Failure stats... [%s]", ctx.Req.URL)
 
 			// Note: Some websites (google in particular) send HTTPS requests as keep alives
@@ -690,6 +702,11 @@ func (ctx *ProxyCtx) ManInTheMiddleHTTPS() error {
 
 					// whitelist certain sites across an entire network.
 					if ctx.Tlsfailure != nil {
+
+						/*if strings.HasPrefix(ctx.CipherSignature, "51ab") {
+							fmt.Printf("  *** TLS Failure (client dropped connection) %s \n", ctx.host)
+						}*/
+
 						ctx.Logf(2, "  *** TLS Failure (client dropped connection) [%s]", ctx.host)
 						ctx.Tlsfailure(ctx, false)
 					}
