@@ -17,7 +17,7 @@ import (
 	"net/url"
 	"github.com/peterbourgon/diskv"
 	"time"
-	//"fmt"
+	"fmt"
 	"encoding/binary"
 //	"github.com/elico/go-linux-tproxy-master"
 	"github.com/honnef.co/go-conntrack"
@@ -92,6 +92,9 @@ type ProxyHttpServer struct {
 
 	// RLS 2/15/2018 - New context version of ConnectDial
 	ConnectDialContext func(ctx context.Context, network string, addr string) (net.Conn, error)
+
+	// Callback function to determine if request should be traced.
+	Trace func(ctx *ProxyCtx) (bool)
 
 	// Closure to alert listeners that a TLS handshake failed
 	// RLS 6-29-2017
@@ -247,6 +250,13 @@ func (proxy *ProxyHttpServer) ServeHTTP(w http.ResponseWriter, r *http.Request) 
 		}
 	}
 
+	if proxy.Trace != nil {
+		shouldTrace := proxy.Trace(ctx)
+		if shouldTrace {
+			fmt.Printf("[INFO] Tracing request [%s]\n", ctx.Req.URL.String())
+			ctx.Trace = true
+		}
+	}
 
 	if r.Method == "CONNECT" {
 		proxy.dispatchConnectHandlers(ctx)
@@ -264,7 +274,7 @@ func (proxy *ProxyHttpServer) ServeHTTP(w http.ResponseWriter, r *http.Request) 
 // ListenAndServe launches all the servers required and listens. Use this method
 // if you want to start listeners for transparent proxying.
 func (proxy *ProxyHttpServer) ListenAndServe(addr string) error {
-	// TODO: implement listening on a port for HTTP transparent proxying
+	//fmt.Printf("*** ListenAndServe() called\n")
 	return http.ListenAndServe(addr, proxy)
 }
 
@@ -435,6 +445,14 @@ func (proxy *ProxyHttpServer) ListenAndServeTLS(httpsAddr string) error {
 				//ctx.Logf(2, "  *** cipher signature: %s", ctx.CipherSignature)
 			} else {
 				ctx.CipherSignature = ""
+			}
+
+			if proxy.Trace != nil {
+				shouldTrace := proxy.Trace(ctx)
+				if shouldTrace {
+					fmt.Printf("[INFO] Tracing request [Trace=true] [%s]\n", ctx.Req.URL.String())
+					ctx.Trace = true
+				}
 			}
 
 			proxy.dispatchConnectHandlers(ctx)

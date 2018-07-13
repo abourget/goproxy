@@ -25,6 +25,7 @@ func (proxy *ProxyHttpServer) HandleConnect(f Handler) {
 //
 // See `Next` values for the return value meaning
 func (proxy *ProxyHttpServer) HandleRequestFunc(f func(ctx *ProxyCtx) Next) {
+	fmt.Println("*** HandleRequstFunc() called")
 	proxy.requestHandlers = append(proxy.requestHandlers, HandlerFunc(f))
 }
 
@@ -128,19 +129,24 @@ func (proxy *ProxyHttpServer) dispatchConnectHandlers(ctx *ProxyCtx) {
 
 // RLS 5/22/2018 - exported so that we can use it for unit testing
 func (proxy *ProxyHttpServer) DispatchRequestHandlers(ctx *ProxyCtx) {
-
+	if ctx.Trace {
+		fmt.Println()
+	}
 
 	var then Next
 	for _, handler := range proxy.requestHandlers {
 		then = handler.Handle(ctx)
 		switch then {
 		case DONE:
-			//if log {
-			//	ctx.Logf(1, " *** DONE ***")
-			//}
+			if ctx.Trace {
+				fmt.Printf("[TRACE] RequestHandler() - DONE\n")
+			}
 			ctx.DispatchDoneHandlers()
 			return
 		case MOCK:
+			if ctx.Trace {
+				fmt.Printf("[TRACE] RequestHandler() - MOCK\n")
+			}
 			ctx.DispatchResponseHandlers()
 			return
 		case NEXT:
@@ -149,9 +155,9 @@ func (proxy *ProxyHttpServer) DispatchRequestHandlers(ctx *ProxyCtx) {
 			//}
 			continue
 		case FORWARD:
-			//if log {
-			//	ctx.Logf(1, " *** FORWARD ***")
-			//}
+			if ctx.Trace {
+				fmt.Printf("[TRACE] RequestHandler() - FORWARD\n")
+			}
 			if ctx.Resp != nil {
 				// We've got a Resp already, so short circuit the ResponseHandlers.
 				ctx.ForwardResponse(ctx.Resp)
@@ -166,51 +172,53 @@ func (proxy *ProxyHttpServer) DispatchRequestHandlers(ctx *ProxyCtx) {
 			ctx.ForwardResponse(ctx.Resp)
 			return
 		case REJECT:
+			if ctx.Trace {
+				fmt.Printf("[TRACE] RequestHandler() - REJECT\n")
+			}
+			ext := filepath.Ext(ctx.Req.URL.Path)
+			//ctx.Logf("  path: %s  extension: %s", ctx.Req.URL.Path, ext)
+			switch ext {
+			case ".js":
+				//ctx.Logf("  Serving dummy script")
+				ctx.NewEmptyScript()
+			case ".png", ".gif":
+				//ctx.Logf("  Serving dummy %s", ext)
+				ctx.NewEmptyImage(ext)
+			default:
+				// Note that jpg pixels are > 1k in length and are rarely used
+				// so we just return a 502 error to avoid the bandwidth.
+				// Todo: Revisit this if we're seeing too many broken image icons in web pages
+				//ctx.Logf("  Serving 502")
+				//ctx.NewResponse(502, "text/plain; charset=utf-8", "502.1 Blocked by Winston [" + ext + "]")
 
-				ext := filepath.Ext(ctx.Req.URL.Path)
-				//ctx.Logf("  path: %s  extension: %s", ctx.Req.URL.Path, ext)
-				switch ext {
-				case ".js":
-					//ctx.Logf("  Serving dummy script")
-					ctx.NewEmptyScript()
-				case ".png", ".gif":
-					//ctx.Logf("  Serving dummy %s", ext)
-					ctx.NewEmptyImage(ext)
-				default:
-					// Note that jpg pixels are > 1k in length and are rarely used
-					// so we just return a 502 error to avoid the bandwidth.
-					// Todo: Revisit this if we're seeing too many broken image icons in web pages
-					//ctx.Logf("  Serving 502")
-					//ctx.NewResponse(502, "text/plain; charset=utf-8", "502.1 Blocked by Winston [" + ext + "]")
+				title := "Tracker Blocked"
+				errorcode := "504 Blocked by Winston"
+				text := "A website is attempting to track you. For your protection, access to this page has been blocked. It’s recommended that you do NOT visit this site."
+				proceed := "<a href=\"#\" onclick=\"buildURL();return false;\">Visit this page anyway</a>"
+				/*// Friendly error logging
+				if ctx.ResponseError != nil {
+					switch ctx.ResponseError.Error() {
+					case "x509: certificate signed by unknown authority":
+						title = "Website blocked"
+						errorcode = "Certificate signed by unknown authority"
+						text = "The certificate issued by this website was issued by an unknown authority. For your protection, access to this page has been blocked."
+						proceed = ""
+					}
+				}*/
 
-					title := "Tracker Blocked"
-					errorcode := "504 Blocked by Winston"
-					text := "A website is attempting to track you. For your protection, access to this page has been blocked. It’s recommended that you do NOT visit this site."
-					proceed := "<a href=\"#\" onclick=\"buildURL();return false;\">Visit this page anyway</a>"
-					/*// Friendly error logging
-					if ctx.ResponseError != nil {
-						switch ctx.ResponseError.Error() {
-						case "x509: certificate signed by unknown authority":
-							title = "Website blocked"
-							errorcode = "Certificate signed by unknown authority"
-							text = "The certificate issued by this website was issued by an unknown authority. For your protection, access to this page has been blocked."
-							proceed = ""
-						}
-					}*/
-
-					body := strings.Replace(blockedhtml, "%BLOCKED%", errorcode, 1)
-					body = strings.Replace(body, "%TITLE%", title, 1)
-					body = strings.Replace(body, "%TEXT%", text, 1)
-					body = strings.Replace(body, "%PROCEED%", proceed, 1)
-					//ctx.NewResponse(504, "text/plain; charset=utf-8", "504 Blocked by Winston / No response from server")
-					ctx.NewResponse(504, "text/html; charset=utf-8", body)
+				body := strings.Replace(blockedhtml, "%BLOCKED%", errorcode, 1)
+				body = strings.Replace(body, "%TITLE%", title, 1)
+				body = strings.Replace(body, "%TEXT%", text, 1)
+				body = strings.Replace(body, "%PROCEED%", proceed, 1)
+				//ctx.NewResponse(504, "text/plain; charset=utf-8", "504 Blocked by Winston / No response from server")
+				ctx.NewResponse(504, "text/html; charset=utf-8", body)
 
 
 
-					//ctx.NewResponse(504, "text/html; charset=utf-8", strings.Replace(blockedhtml, "Blocked", "502.1 Blocked by Winston", 1))
-				}
+				//ctx.NewResponse(504, "text/html; charset=utf-8", strings.Replace(blockedhtml, "Blocked", "502.1 Blocked by Winston", 1))
+			}
 
-				ctx.ForwardResponse(ctx.Resp)
+			ctx.ForwardResponse(ctx.Resp)
 
 
 			return
@@ -219,6 +227,9 @@ func (proxy *ProxyHttpServer) DispatchRequestHandlers(ctx *ProxyCtx) {
 		}
 	}
 
+	if ctx.Trace {
+		fmt.Printf("[TRACE] RequestHandler() - Completed Chain. FORWARD.\n")
+	}
 
 	ctx.ForwardRequest(ctx.host)
 	ctx.DispatchResponseHandlers()

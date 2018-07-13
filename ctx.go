@@ -138,6 +138,9 @@ type ProxyCtx struct {
 
 	// If a shadow transport is being used, this points to it.
 	ShadowTransport *shadownetwork.ShadowTransport
+
+	// If true, then Winston diagnostic information will be recorded about the current request
+	Trace bool
 }
 
 // Append a message to the context. This will be sent back to the client as a "Winston-Response" header.
@@ -372,11 +375,11 @@ func (ctx *ProxyCtx) ManInTheMiddleHTTPS() error {
 	// Attempt to recover gracefully from a nested panic not caught by the later defer recover.
 	// This is a very rare race condition which happens only under high load but which
 	// unfortunately crashes the device.
-	/*defer func() {
+	defer func() {
 		if r := recover(); r != nil {
-			ctx.Logf(1, "Error (1): Panic while processing MITM request. Recovering gracefully.", r)
+			ctx.Logf(1, "[PANIC] Fatal error while processing MITM request. Recovering gracefully.", r)
 		}
-	}()*/
+	}()
 
 	if ctx.Method != "CONNECT" {
 		panic("method is not CONNECT")
@@ -413,76 +416,6 @@ func (ctx *ProxyCtx) ManInTheMiddleHTTPS() error {
 	}
 
 
-	// If no SNI host was provided, try to spoof the destination and generate a certificate
-	// for future requests.
-	// Note: This was a dumb idea. This mainly happens with smart devices. They don't
-	// trust our CA and there's no way to make them. We just have to whitelist them.
-
-	// RLS 3/16/2018 - Test: certificate generation for IP addresses should be supported now.
-
-	/*
-	if isIpAddress && err != nil  {
-		ctx.Logf(1, "  *** Non-SNI Host - Trying to generate certificate.")
-		if ctx.Tlsfailure != nil {
-			//ctx.Logf(2, "  *** TLS Failure (IP Address)")
-			ctx.Tlsfailure(ctx, false)
-		}
-
-		// We were given an IP address, which is typical of non-SNI requests
-		// We have to go get the certificate and retrieve the organization name
-		// from it in order to generate a proper certificate. This should be
-		// cached so it only needs to be done once for each IP lookup.
-
-		// We don't want to block, so for now just spin up a thread and see
-		// if we can get the certificate from the remote server.
-
-		go func() {
-			//ctx.Logf(1, "  *** ManInTheMiddleHTTPS - Initiating non-SNI certificate generation routine: %s", ctx.host)
-
-			// Dial the destination
-			fmt.Printf("  *** IP Address connect. Skipping TLS security check. This is BAD! \n")
-			conn, _ := tls.Dial("tcp", ctx.host, &tls.Config{InsecureSkipVerify: true})
-			defer conn.Close()
-
-			// Check if an error was received. If so, drop the connection.
-			//if err != nil {
-			//	ctx.Logf("  *** Couldn't connect to destination [%s]", ctx.host)
-			//}
-
-			// See if we have the cert
-			//ctx.Logf(" Do I have a certificate? %v", conn.ConnectionState().PeerCertificates[0])
-			//ctx.Logf("   Do I have a common name? %s", conn.ConnectionState().PeerCertificates[0].Subject.CommonName)
-			//tlsconn.ConnectionState().PeerCertificates[0].Subject.CommonName
-			commonName := conn.ConnectionState().PeerCertificates[0].Subject.CommonName
-
-			// Create a certificate using the IP/hostname pair and cache it
-			ca := ctx.Proxy.MITMCertConfig
-
-			if ctx.MITMCertConfig != nil {
-				ca = ctx.MITMCertConfig
-			}
-
-			// This method creates a certificate for the given IP address
-			certErr := ca.certWithCommonName(ctx.host, commonName)
-
-			if certErr != nil {
-				ctx.Warnf("Cannot sign host certificate with provided CA: %s", certErr)
-				return
-			}
-
-			// Kill the connection, we got what we've needed
-			// conn.Close()
-
-
-		}()
-		// The first request will abort...
-		//ctx.Logf("  *** Exiting non-SNI certificate generation routine")
-
-		return err
-	}
-*/
-
-
 	// This contains the original connection with the client
 	ctx.OriginalRequest = ctx.Req
 
@@ -505,7 +438,6 @@ func (ctx *ProxyCtx) ManInTheMiddleHTTPS() error {
 		// If we make it here, then we opened a client connection and are responsible for closing it.
 		defer ctx.Conn.Close()
 
-		//TODO: cache connections to the remote website
 		r := ctx.Req
 
 		// Set a reasonable timeout to complete the handshake
@@ -531,7 +463,7 @@ func (ctx *ProxyCtx) ManInTheMiddleHTTPS() error {
 
 		//ctx.Logf(1, "  *** Starting handshake with [%s]", r.Host)
 
-		// TODO: Can we avoid handshaking on subsequent connections?
+		// TODO: Can we avoid handshaking on subsequent connections? (this may be done for us by connection pooling but not sure)
 		// Performs the TLS handshake
 		if err := rawClientTls.Handshake(); err != nil {
 			// A handshake error typically only occurs on the client side
@@ -570,6 +502,7 @@ func (ctx *ProxyCtx) ManInTheMiddleHTTPS() error {
 		ctx.Conn = rawClientTls
 		ctx.IsSecure = true
 
+		// This is the reader to our upstream client device
 		clientTlsReader := bufio.NewReader(rawClientTls)
 		//gotSomething := false
 
@@ -581,43 +514,34 @@ func (ctx *ProxyCtx) ManInTheMiddleHTTPS() error {
 		// header in the response to the client.
 		// TODO: some requests still hang indefinitely. Implement a timeout.
 
-
 		for !isEof(clientTlsReader) {
+
 			count = count + 1
-
-			// Use this debug code to read the TLS request
-			/*if strings.Contains(ctx.host, "js-agent.newrelic.com") {
-				ctx.Logf(1, "  *** js-agent.newrelic.com request %d", count)
-
-				/*
-				tp := newTextprotoReader(clientTlsReader)
-				//req = new(Request)
-
-
-				// First line: GET /index.html HTTP/1.0
-				var s string
-				linecount := 0
-				for linecount < 10 {
-					if s, err = tp.ReadLine(); err != nil {
-						ctx.Logf(1, " *** joinme read error: %+v", err)
-					}
-					ctx.Logf(1, " *** joinme : %s", s)
-					linecount++
-				}
-
-			}*/
 
 			// This reads a normal "GET / HTTP/1.1" request from the tunnel, as it thinks its
 			// talking directly to the server now, not to a proxy.
 			subReq, err := http.ReadRequest(clientTlsReader)
 
+			//if strings.Contains(ctx.host, "howsmyssl") {
+			//	fmt.Printf("*** ManInTheMiddleHTTPS() 5 - err=[%s]\n [%s]\n", err, subReq)
+			//}
+
+			// Trace the request
+			if ctx.Trace {
+				fmt.Printf("\n[TRACE] Original Request:\n %s \n ", formatRequest(subReq))
+			}
+
 			if err != nil {
-				//ctx.Warnf("MandInTheMiddleHTTPS: error reading next request: %s", err)
+				// The client request could not be understood. This indicates a problem communicating with the
+				// client, most likely certificate pinning or the client does not have the Winston certificate installed.
+
+				//ctx.Warnf("ManInTheMiddleHTTPS: error reading next request: %s", err)
 				// TODO: Many sites (outlook.office.com, client-channel.google.com, lync.com, etc)
 				// utilize custom SSL protocols which don't conform to web request standards.
 				// For instance, join.me sends "IRVPROTO" as the first line instead of the usual
 				//    GET /index.html HTTP/1.1
 				// These sites have to be auto whitelisted or they'll be blocked.
+				// TODO: Replace standard http.ReadRequest() with new method that can handle these requests.
 				//if count != 2 {
 				ctx.Logf(1, "  *** Unknown TLS protocol request. Whitelisting this client so we don't break things. %d [%s] +%v", count, ctx.host, err.Error())
 
@@ -662,6 +586,13 @@ func (ctx *ProxyCtx) ManInTheMiddleHTTPS() error {
 			//}
 
 			ctx.Proxy.DispatchRequestHandlers(ctx)
+
+			//Diagnostic info
+			// Trace the request
+			if ctx.Trace {
+				fmt.Printf("\n[TRACE] Rewritten request from Winston to downstream server: \n %s \n ", formatRequest(ctx.Req))
+			}
+
 
 			// Force a timeout. Some requests hang forever because they never send an EOF.
 			end := time.Now()
@@ -718,6 +649,33 @@ func (ctx *ProxyCtx) ManInTheMiddleHTTPS() error {
 	}()
 
 	return nil
+}
+
+// formatRequest generates ascii representation of a request
+func formatRequest(r *http.Request) string {
+	// Create return string
+	var request []string
+	// Add the request string
+	url := fmt.Sprintf("%v %v %v", r.Method, r.URL, r.Proto)
+	request = append(request, url)
+	// Add the host
+	request = append(request, fmt.Sprintf("Host: %v", r.Host))
+	// Loop through headers
+	for name, headers := range r.Header {
+		name = strings.ToLower(name)
+		for _, h := range headers {
+			request = append(request, fmt.Sprintf("%v: %v", name, h))
+		}
+	}
+
+	// If this is a POST, add post data
+	if r.Method == "POST" {
+	r.ParseForm()
+	request = append(request, "\n")
+	request = append(request, r.Form.Encode())
+	}
+	// Return the request as a string
+	return strings.Join(request, "\n")
 }
 
 /* Debugging code for TLS handshaking code */
@@ -828,7 +786,7 @@ func (ctx *ProxyCtx) ReturnSignature() {
 
 
 
-// Request handling
+// Forwards a request to a downstream server. This is done after MITM has been established.
 // TODO: Remove host from function parameters
 func (ctx *ProxyCtx) ForwardRequest(host string) error {
 	//ctx.Logf("Sending request %v %v with Host header %q", ctx.Req.Method, ctx.Req.URL.String(), ctx.Req.Host)
@@ -863,32 +821,26 @@ func (ctx *ProxyCtx) ForwardRequest(host string) error {
 	// Send in a pointer to a struct that RoundTrip can modify to let us know if there was an error calling out to the private network
 	dnsbypassctx = context.WithValue(dnsbypassctx, shadownetwork.ShadowTransportFailed, &shadownetwork.ShadowNetworkFailure{})
 
-
 	resp, err := ctx.RoundTrip(ctx.Req.WithContext(dnsbypassctx))
 
-	//fmt.Printf("  RoundTrip() - resp: %+v  err: %+v\n", resp, err)
-	ctx.Resp = resp
-
-
-	// TODO: Need a more elegant way to check for errors. It would be good if roundtripper figured this out.
-	// Check for private network error (socket close)
-	// This occurs if the remote Shadow Peer exists but actively refused the connection.
-/*	if err != nil && err.Error() == "n=0 socket close" {
-		fmt.Printf("  *** socket closed\n")
+	if ctx.Trace {
+		fmt.Printf("[TRACE] RoundTrip() - resp: %+v  err: %+v\n", resp, err)
 	}
 
-	// Check for network connectivity errors
+	// Check to see if the request failed over to the local network and let the caller know.
 	errmsg := dnsbypassctx.Value(shadownetwork.ShadowTransportFailed)
-
-	//fmt.Println("Error message", errmsg)
-	if (errmsg != nil) {
-		//fmt.Println("Error handling")
+	if errmsg != nil {
+		//fmt.Println("[DEBUG] GoProxy - checking error message")
 		errmsgstruct := errmsg.(*shadownetwork.ShadowNetworkFailure)
-		if errmsgstruct.Failed {
-			//fmt.Println("Private network failed.")
-			ctx.PrivateNetwork = false
+		if errmsgstruct != nil {
+			//fmt.Printf("[DEBUG] GoProxy - was private: %t\n", errmsgstruct.Failed)
+			if errmsgstruct.Failed {
+				ctx.PrivateNetwork = false
+			}
 		}
-	}*/
+	}
+
+	ctx.Resp = resp
 
 	if err != nil {
 		ctx.ResponseError = err
@@ -910,12 +862,19 @@ func (ctx *ProxyCtx) ForwardRequest(host string) error {
 func (ctx *ProxyCtx) DispatchResponseHandlers() error {
 	var rejected = false
 
+	if ctx.Trace {
+		fmt.Println()
+	}
+
 	var then Next
 	for _, handler := range ctx.Proxy.responseHandlers {
 		then = handler.Handle(ctx)
 		//ctx.Logf("  ResponseHandler: %s [URL: %s]", then, ctx.Req.URL.Host)
 		switch then {
 		case DONE:
+			if ctx.Trace {
+				fmt.Printf("[TRACE] ResponseHandler() - DONE\n")
+			}
 			return ctx.DispatchDoneHandlers()
 		case NEXT:
 			continue
@@ -924,6 +883,9 @@ func (ctx *ProxyCtx) DispatchResponseHandlers() error {
 		case MITM:
 			panic("MITM doesn't make sense when we are already parsing the request")
 		case REJECT:
+			if ctx.Trace {
+				fmt.Printf("[TRACE] ResponseHandler() - REJECT\n")
+			}
 			rejected = true
 
 			//ctx.Proxy.UpdateBlockedCounter()
@@ -945,64 +907,59 @@ func (ctx *ProxyCtx) DispatchResponseHandlers() error {
 		//ctx.Logf(1, "  *** BLOCKED/ResponseFilter: %s", ctx.Req.URL, ctx.Resp, rejected)
 
 		if rejected {
-			//ctx.Logf("BLOCKED/ResponseFilter: %s", ctx.Req.URL)
+			// Forward a dummy file to the caller if we can tell what it is
+			ext := filepath.Ext(ctx.Req.URL.Path)
+			//ctx.Logf("  path: %s  extension: %s", ctx.Req.URL.Path, ext)
+			switch ext {
+			case ".js":
+				//ctx.Logf("  Serving dummy script")
+				ctx.NewEmptyScript()
+			case ".png", ".gif":
+				//ctx.Logf("  Serving dummy %s", ext)
+				ctx.NewEmptyImage(ext)
+			default:
+				// Note that jpg pixels are > 1k in length and are rarely used
+				// so we just return a 502 error to avoid the bandwidth.
+				// Todo: Revisit this if we're seeing too many broken image icons in web pages
+				// Todo: Refactor Winston specific code to the Winston package.
+				//ctx.NewResponse(502, "text/plain; charset=utf-8", "502.2 Blocked by Winston [" + ext + "]")
 
-			// Send back a 500 response for a blocked request
-			//if ctx.IsSecure && ctx.IsThroughMITM {
-				// The URL was previously allowed, so decrement the allowed counter
-				//ctx.proxy.DecrementAllowedCounter()
-				//ctx.proxy.UpdateBlockedCounter()
-				//ctx.proxy.UpdateBlockedHosts(ctx.Req.Host)
+				title := "Tracker Blocked"
+				errorcode := "502.2 Blocked by Winston"
+				text := "A website is attempting to track you. For your protection, access to this page has been blocked. It’s recommended that you do NOT visit this site."
+				proceed := "<a href=\"#\" onclick=\"buildURL();return false;\">Visit this page anyway</a>"
+				/*// Friendly error logging
+				if ctx.ResponseError != nil {
+					switch ctx.ResponseError.Error() {
+					case "x509: certificate signed by unknown authority":
+						title = "Website blocked"
+						errorcode = "Certificate signed by unknown authority"
+						text = "The certificate issued by this website was issued by an unknown authority. For your protection, access to this page has been blocked."
+						proceed = ""
+					}
+				}*/
 
+				body := strings.Replace(blockedhtml, "%BLOCKED%", errorcode, 1)
+				body = strings.Replace(body, "%TITLE%", title, 1)
+				body = strings.Replace(body, "%TEXT%", text, 1)
+				body = strings.Replace(body, "%PROCEED%", proceed, 1)
+				//ctx.NewResponse(504, "text/plain; charset=utf-8", "504 Blocked by Winston / No response from server")
+				ctx.NewResponse(502, "text/html; charset=utf-8", body)
 
-				// Forward a dummy file to the caller if we can tell what it is
-				ext := filepath.Ext(ctx.Req.URL.Path)
-				//ctx.Logf("  path: %s  extension: %s", ctx.Req.URL.Path, ext)
-				switch ext {
-				case ".js":
-					//ctx.Logf("  Serving dummy script")
-					ctx.NewEmptyScript()
-				case ".png", ".gif":
-					//ctx.Logf("  Serving dummy %s", ext)
-					ctx.NewEmptyImage(ext)
-				default:
-					// Note that jpg pixels are > 1k in length and are rarely used
-					// so we just return a 502 error to avoid the bandwidth.
-					// Todo: Revisit this if we're seeing too many broken image icons in web pages
-					// Todo: Refactor Winston specific code to the Winston package.
-					//ctx.NewResponse(502, "text/plain; charset=utf-8", "502.2 Blocked by Winston [" + ext + "]")
+				//ctx.NewResponse(502, "text/html; charset=utf-8", strings.Replace(blockedhtml, "Blocked", "502.2 Blocked by Winston", 1))
 
-					title := "Tracker Blocked"
-					errorcode := "502.2 Blocked by Winston"
-					text := "A website is attempting to track you. For your protection, access to this page has been blocked. It’s recommended that you do NOT visit this site."
-					proceed := "<a href=\"#\" onclick=\"buildURL();return false;\">Visit this page anyway</a>"
-					/*// Friendly error logging
-					if ctx.ResponseError != nil {
-						switch ctx.ResponseError.Error() {
-						case "x509: certificate signed by unknown authority":
-							title = "Website blocked"
-							errorcode = "Certificate signed by unknown authority"
-							text = "The certificate issued by this website was issued by an unknown authority. For your protection, access to this page has been blocked."
-							proceed = ""
-						}
-					}*/
+			}
 
-					body := strings.Replace(blockedhtml, "%BLOCKED%", errorcode, 1)
-					body = strings.Replace(body, "%TITLE%", title, 1)
-					body = strings.Replace(body, "%TEXT%", text, 1)
-					body = strings.Replace(body, "%PROCEED%", proceed, 1)
-					//ctx.NewResponse(504, "text/plain; charset=utf-8", "504 Blocked by Winston / No response from server")
-					ctx.NewResponse(502, "text/html; charset=utf-8", body)
-
-					//ctx.NewResponse(502, "text/html; charset=utf-8", strings.Replace(blockedhtml, "Blocked", "502.2 Blocked by Winston", 1))
-
-				}
-
-				return ctx.ForwardResponse(ctx.Resp)
+			return ctx.ForwardResponse(ctx.Resp)
 			//} else {
 			//	http.Error(ctx.ResponseWriter, err.Error(), 500)
 			//}
 		} else {
+
+			if ctx.Trace {
+				fmt.Printf("[TRACE] ResponseHandler() - No response was received from server.\n")
+			}
+
 			// Note: Have to send a response back or the client may hang until the browser times out.
 			if len(ctx.Req.URL.String()) > 80 {
 				ctx.Logf(2, "BLOCKED/NoResponse 504: %s", ctx.Req.URL.String()[:80])
@@ -1024,6 +981,11 @@ func (ctx *ProxyCtx) DispatchResponseHandlers() error {
 					title = "Website blocked"
 					errorcode = "Certificate signed by unknown authority"
 					text = "The certificate issued by this website was issued by an unknown authority. For your protection, access to this page has been blocked."
+					proceed = ""
+				default:
+					title = "Network error"
+					errorcode = ctx.ResponseError.Error()
+					text = "This error may be temporary. It may resolve itself by refreshing the page."
 					proceed = ""
 				}
 			}
