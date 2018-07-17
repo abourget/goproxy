@@ -10,6 +10,7 @@ import (
 	"github.com/winston/shadownetwork"
 	"context"
 	//"errors"
+	//"net/http/httputil"
 )
 
 type RoundTripper interface {
@@ -132,20 +133,10 @@ func (ctx *ProxyCtx) _roundTripWithLog(req *http.Request) (*http.Response, error
 func (ctx *ProxyCtx) wrapTransport(tr http.RoundTripper) RoundTripper {
 	return RoundTripperFunc(func(req *http.Request, ctx *ProxyCtx) (*http.Response, error) {
 
-		// Add tracing to a specific domain. This is really helpful in debugging connection issues.
-		/*if strings.Contains(req.URL.String(), "xaxis") {
-			trace := &httptrace.ClientTrace{
-				// A private network request does not currently trigger DNS lookups because these
-				// are resolved by the server.
-				DNSDone: func(dnsInfo httptrace.DNSDoneInfo) {
-					fmt.Printf("DNS Info: %+v\n", dnsInfo)
-				},
-				GotConn: func(connInfo httptrace.GotConnInfo) {
-					fmt.Printf("Got Conn: %+v\n", connInfo)
-				},
-			}
-			req = req.WithContext(httptrace.WithClientTrace(req.Context(), trace))
-			//fmt.Printf("  *** wrapTransport: %s\n", req.URL.String())
+		// Dump request header for both private and local transports
+		/*if strings.Contains(req.URL.String(), "marker_sq.png") {
+			dump, _ := httputil.DumpRequestOut(req, true)
+			fmt.Printf("Request Dump in GoProxy RoundTrip(): %+v\n\n", string(dump))
 		}*/
 
 		//fmt.Println("[DEBUG] GoProxy.RoundTripper() Start")
@@ -155,8 +146,7 @@ func (ctx *ProxyCtx) wrapTransport(tr http.RoundTripper) RoundTripper {
 			fmt.Printf("  *** RoundTrip(): err: %+v\n  resp: %s\n", err, resp)
 		}
 
-		// Check for shadow network errors
-
+		// Check for shadow network errors and inform callers that we're not private.
 		if ctx.PrivateNetwork && ctx.ShadowTransport != nil {
 			if err != nil {
 				// We received an error but the private transport failed over to the local (uncloaked) transport.
@@ -167,30 +157,8 @@ func (ctx *ProxyCtx) wrapTransport(tr http.RoundTripper) RoundTripper {
 					err = nil
 				}
 			}
-
-			// Check to see if we connected but the remote node actively refused the connection
-			/*if err != nil && err.Error() == "n=0 socket close" {
-				//ctx.ShadowTransport.RecordFailedConnection(shadownetwork.ErrorRefusedConnection)
-				err = errors.New(shadownetwork.ErrorConnectionFailed)
-				ctx.PrivateNetwork = false
-
-			} else {
-				// Check for network connectivity errors (the remote node doesn't exist)
-				dnsbypassctx := req.Context()
-
-				errmsg := dnsbypassctx.Value(shadownetwork.ShadowTransportFailed)
-
-				//fmt.Println("Error message", errmsg)
-				if (errmsg != nil) {
-					errmsgstruct := errmsg.(*shadownetwork.ShadowNetworkFailure)
-					if errmsgstruct.Failed {
-						ctx.PrivateNetwork = false
-					}
-				}
-			}*/
 		}
 
-		//fmt.Println("[DEBUG] GoProxy.RoundTripper() End")
 		return resp, err
 	})
 }
