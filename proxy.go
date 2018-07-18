@@ -171,24 +171,6 @@ func (proxy *ProxyHttpServer) SetShadowNetwork(sn *shadownetwork.ShadowNetwork) 
 	proxy.PrivateNetwork = sn
 }
 
-/* Test function - sets up a transport which proxies via Amazon EC2 instance in Ohio.
- */
-/*
-func (proxy *ProxyHttpServer) InitializeProxyTransport() (error) {
-	fmt.Printf("  *** Initializing Proxy Transport\n")
-	proxyURL, _ := url.Parse("http://18.219.150.227:7777")
-	proxy.PrivateTransport = []*http.Transport{
-		&http.Transport{
-			Proxy: http.ProxyURL(proxyURL),
-		}}
-
-	return nil
-}
-*/
-
-
-
-
 
 func (proxy *ProxyHttpServer) LazyWrite(PersistSeconds int) {
 	// RLS 7/7/2017
@@ -238,6 +220,7 @@ func (proxy *ProxyHttpServer) ServeHTTP(w http.ResponseWriter, r *http.Request) 
 		UpdateBlockedHostsByN:	proxy.UpdateBlockedHostsByN,
 		VerbosityLevel: proxy.VerbosityLevel,
 		DeviceType: -1,
+		Trace:		false,
 	}
 
 
@@ -250,25 +233,117 @@ func (proxy *ProxyHttpServer) ServeHTTP(w http.ResponseWriter, r *http.Request) 
 		}
 	}
 
+	// Set up request trace
 	if proxy.Trace != nil {
 		shouldTrace := proxy.Trace(ctx)
 		if shouldTrace {
-			fmt.Printf("[INFO] Tracing request [%s]\n", ctx.Req.URL.String())
-			ctx.Trace = true
+			fmt.Println("*** HTTP trace")
+			setupTrace(ctx)
 		}
 	}
 
 	if r.Method == "CONNECT" {
 		proxy.dispatchConnectHandlers(ctx)
 	} else {
-		//ctx.Logf("Got request %v %v %v %v", r.URL.Path, r.Host, r.Method, r.URL.String())
 		if !r.URL.IsAbs() {
-			proxy.NonProxyHandler.ServeHTTP(w, r)
-			return
+
+			// redirect to local proxy
+			if r.Host == "winston.conf" {
+				proxy.NonProxyHandler.ServeHTTP(w, r)
+				if ctx.Trace {
+					// Complete request trace
+					writeTrace(ctx)
+				}
+				return
+			}
+
+			// Convert to absolute URL
+			//if ctx.Trace {
+			//	fmt.Printf("[INFO] Got relative request %v %v %v %v\n", r.URL.Path, r.Host, r.Method, r.URL.String())
+
+				r.URL.Scheme = "http"
+				r.URL.Host = r.Host //net.JoinHostPort(r.Host, "80")
+
+				//fmt.Printf("[INFO] Rewrote to %s\n", r.URL.String())
+			//}
+
+
 		}
 
 		proxy.DispatchRequestHandlers(ctx)
 	}
+
+	// Complete request trace
+	if ctx.Trace {
+		writeTrace(ctx)
+	}
+
+	// TODO: Suppress whitelist on initial request?
+	// TODO: Perform second request but simulate whitelisting
+
+}
+
+func setupTrace(ctx *ProxyCtx) {
+	fmt.Printf("[INFO] Tracing request [%s]\n", ctx.Req.URL.String())
+
+	ctx.Trace = true
+	ctx.TraceInfo = &TraceInfo{
+		RequestTime: time.Now().Local(),
+	}
+}
+
+func writeTrace(ctx *ProxyCtx) {
+	fmt.Printf("[INFO] Recording trace information [%s]\n", ctx.Req.URL.String())
+	ctx.TraceInfo.RequestDuration = time.Since(ctx.TraceInfo.RequestTime)
+	//ctx.TraceInfo.RequestHeaders = formatRequest(ctx.Req)
+	ctx.TraceInfo.PrivateNetwork = ctx.PrivateNetwork
+	ctx.TraceInfo.MITM = ctx.IsThroughMITM
+
+	// Store the request handlers
+	if ctx.Trace {
+		for name, headers := range ctx.Req.Header {
+			name = strings.ToLower(name)
+			for _, h := range headers {
+				ctx.TraceInfo.RequestHeaders = append(ctx.TraceInfo.RequestHeaders, fmt.Sprintf("%v: %v", name, h))
+			}
+		}
+	}
+
+	cookies := ctx.Req.Header.Get("Cookie")
+	for _, c := range strings.Split(cookies, ";") {
+		ctx.TraceInfo.CookiesSent = append(ctx.TraceInfo.CookiesSent, c)
+	}
+
+	// Note: Response fields are written in OnResponse()
+
+	fmt.Printf("[INFO] Trace Results:\n")
+	fmt.Printf("URL: %s\n", ctx.Req.URL)
+	fmt.Printf("Time: %v\n", ctx.TraceInfo.RequestTime)
+	fmt.Printf("Duration: %v\n", ctx.TraceInfo.RequestDuration)
+	fmt.Printf("Private: %t\n", ctx.TraceInfo.PrivateNetwork)
+	fmt.Printf("Decrypted: %t\n", ctx.TraceInfo.MITM)
+	fmt.Println()
+	fmt.Println("Request:")
+	for _, h := range ctx.TraceInfo.RequestHeaders {
+		fmt.Printf("%+v\n", h)
+	}
+	fmt.Println()
+	fmt.Println("Cookies sent to server:")
+	for _, h := range ctx.TraceInfo.CookiesSent {
+		fmt.Printf("%+v\n", h)
+	}
+
+	fmt.Println()
+	fmt.Println("Response:")
+	for _, h := range ctx.TraceInfo.ResponseHeaders {
+		fmt.Printf("%+v\n", h)
+	}
+	fmt.Println()
+	fmt.Println("Cookies received from server:")
+	for _, h := range ctx.TraceInfo.CookiesReceived {
+		fmt.Printf("%+v\n", h)
+	}
+	fmt.Println()
 }
 
 // ListenAndServe launches all the servers required and listens. Use this method
@@ -450,8 +525,7 @@ func (proxy *ProxyHttpServer) ListenAndServeTLS(httpsAddr string) error {
 			if proxy.Trace != nil {
 				shouldTrace := proxy.Trace(ctx)
 				if shouldTrace {
-					fmt.Printf("[INFO] Tracing request [Trace=true] [%s]\n", ctx.Req.URL.String())
-					ctx.Trace = true
+					setupTrace(ctx)
 				}
 			}
 

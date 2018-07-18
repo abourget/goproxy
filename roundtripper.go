@@ -142,9 +142,9 @@ func (ctx *ProxyCtx) wrapTransport(tr http.RoundTripper) RoundTripper {
 		//fmt.Println("[DEBUG] GoProxy.RoundTripper() Start")
 		resp, err := tr.RoundTrip(req)
 
-		if ctx.Trace {
-			fmt.Printf("  *** RoundTrip(): err: %+v\n  resp: %s\n", err, resp)
-		}
+		//if ctx.Trace && err != nil {
+		//	fmt.Printf("  *** RoundTrip() reported err: %+v\n ", err)
+		//}
 
 		// Check for shadow network errors and inform callers that we're not private.
 		if ctx.PrivateNetwork && ctx.ShadowTransport != nil {

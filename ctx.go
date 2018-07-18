@@ -37,11 +37,11 @@ import (
 type ProxyCtx struct {
 	Method          string
 	SourceIP        string
-	IsSecure        bool // Whether we are handling an HTTPS request with the client
-	IsThroughMITM   bool // Whether the current request is currently being MITM'd
-	IsThroughTunnel bool // Whether the current request is going through a CONNECT tunnel, doing HTTP calls (non-secure)
+	IsSecure        bool              // Whether we are handling an HTTPS request with the client
+	IsThroughMITM   bool              // Whether the current request is currently being MITM'd
+	IsThroughTunnel bool              // Whether the current request is going through a CONNECT tunnel, doing HTTP calls (non-secure)
 
-	// Sniffed and non-sniffed hosts, cached here.
+					  // Sniffed and non-sniffed hosts, cached here.
 	host    string
 	sniHost string
 
@@ -50,97 +50,99 @@ type ProxyCtx struct {
 
 	connectScheme string
 
-	// OriginalRequest holds a copy of the request before doing some HTTP tunnelling
-        // through CONNECT, or doing a man-in-the-middle attack.
+					  // OriginalRequest holds a copy of the request before doing some HTTP tunnelling
+					  // through CONNECT, or doing a man-in-the-middle attack.
 	OriginalRequest *http.Request
 
-	// Contains the request and response streams from the proxy to the
-        // downstream server in the case of a MITM connection
+					  // Contains the request and response streams from the proxy to the
+					  // downstream server in the case of a MITM connection
 	Req            *http.Request
 	ResponseWriter http.ResponseWriter
 
-	// Connections, up (the requester) and downstream (the server we forward to)
+					  // Connections, up (the requester) and downstream (the server we forward to)
 	Conn           net.Conn
-	targetSiteConn net.Conn // used internally when we established a CONNECT session,
-				// to pass through new requests
+	targetSiteConn net.Conn           // used internally when we established a CONNECT session,
+					  // to pass through new requests
 
-	// Resp contains the remote sever's response (if available). This can be nil if the
-	// request wasn't sent yet, or if there was an error trying to fetch the response.
-	// In this case, refer to `ResponseError` for the latest error.
-	// RLS: In the case of MITM, this is the client's response stream
+					  // Resp contains the remote sever's response (if available). This can be nil if the
+					  // request wasn't sent yet, or if there was an error trying to fetch the response.
+					  // In this case, refer to `ResponseError` for the latest error.
+					  // RLS: In the case of MITM, this is the client's response stream
 	Resp *http.Response
 
-	// ResponseError contains the last error, if any, after running `ForwardRequest()`
-	// explicitly, or implicitly forwarding a request through other means (like returning
-	// `FORWARD` in some handlers).
+					  // ResponseError contains the last error, if any, after running `ForwardRequest()`
+					  // explicitly, or implicitly forwarding a request through other means (like returning
+					  // `FORWARD` in some handlers).
 	ResponseError error
 
-	// originalResponseBody holds the first Response.Body (the original Response) in the chain.  This possibly exists if `Resp` is not nil.
+					  // originalResponseBody holds the first Response.Body (the original Response) in the chain.  This possibly exists if `Resp` is not nil.
 	originalResponseBody io.ReadCloser
 
-	// RoundTripper is used to send a request to a remote server when
-	// forwarding a Request.  If you set your own RoundTripper, then
-	// `FakeDestinationDNS` and `LogToHARFile` will have no effect.
+					  // RoundTripper is used to send a request to a remote server when
+					  // forwarding a Request.  If you set your own RoundTripper, then
+					  // `FakeDestinationDNS` and `LogToHARFile` will have no effect.
 	RoundTripper            RoundTripper
 	fakeDestinationDNS      string
 
-	// HAR logging
+					  // HAR logging
 	isLogEnabled            bool
 	isLogWithContent        bool
 
-	// will contain the recent error that occured while trying to send receive or parse traffic
+					  // will contain the recent error that occured while trying to send receive or parse traffic
 	Error                   error
 
-	// UserObjects and UserData allow you to keep data between
-	// Connect, Request and Response handlers.
+					  // UserObjects and UserData allow you to keep data between
+					  // Connect, Request and Response handlers.
 	UserObjects             map[string]interface{}
 	UserData                map[string]string
 
-	// Will connect a request to a response
+					  // Will connect a request to a response
 	Session                 int64
 	Proxy                   *ProxyHttpServer
 
-	// Closure to alert listeners that a TLS handshake failed
-	// RLS 6-29-2017
+					  // Closure to alert listeners that a TLS handshake failed
+					  // RLS 6-29-2017
 	Tlsfailure              func(ctx *ProxyCtx, untrustedCertificate bool)
 
-	// References to persistent caches for statistics collection
-	// RLS 7-5-2017
-	IgnoreCounter		bool		// if true, this request won't be counted (used for streaming)
+					  // References to persistent caches for statistics collection
+					  // RLS 7-5-2017
+	IgnoreCounter		bool // if true, this request won't be counted (used for streaming)
 	UpdateAllowedCounter    func()
 	UpdateBlockedCounter    func()
 	UpdateBlockedCounterByN func(int)
 	UpdateBlockedHostsByN   func(string, int)
 
-	// Client signature
-	// https://blog.squarelemon.com/tls-fingerprinting/
+					  // Client signature
+					  // https://blog.squarelemon.com/tls-fingerprinting/
 	CipherSignature         string
 
 	NewBodyLength           int
 	VerbosityLevel          uint16
 
-	// 11/2/2017 - Used for replacement macros (user agents)
+					  // 11/2/2017 - Used for replacement macros (user agents)
 	DeviceType int
 
-	// 2/16/2018 - Whitelist flag. If set, response filtering will be turned off and the
-	// local DNS will be bypassed. This allows the resource to run as originally intended
-	// (privacy leaks and all).
-	Whitelisted bool
+					  // 2/16/2018 - Whitelist flag. If set, response filtering will be turned off and the
+					  // local DNS will be bypassed. This allows the resource to run as originally intended
+					  // (privacy leaks and all).
+	Whitelisted     bool
 
-	// Keeps a list of any messages we want to pass back to the client
-	StatusMessage []string
+					  // Keeps a list of any messages we want to pass back to the client
+	StatusMessage   []string
 
-	// Request handler sets this to true if it thinks it is a first party request
-	FirstParty bool
+					  // Request handler sets this to true if it thinks it is a first party request
+	FirstParty      bool
 
-	// Set to true to use private network
-	PrivateNetwork bool
+					  // Set to true to use private network
+	PrivateNetwork  bool
 
-	// If a shadow transport is being used, this points to it.
+					  // If a shadow transport is being used, this points to it.
 	ShadowTransport *shadownetwork.ShadowTransport
 
-	// If true, then Winston diagnostic information will be recorded about the current request
-	Trace bool
+					  // If true, then Winston diagnostic information will be recorded about the current request
+	Trace           bool
+
+	TraceInfo       *TraceInfo         // Information about the original request/response
 }
 
 // Append a message to the context. This will be sent back to the client as a "Winston-Response" header.
@@ -522,15 +524,6 @@ func (ctx *ProxyCtx) ManInTheMiddleHTTPS() error {
 			// talking directly to the server now, not to a proxy.
 			subReq, err := http.ReadRequest(clientTlsReader)
 
-			//if strings.Contains(ctx.host, "howsmyssl") {
-			//	fmt.Printf("*** ManInTheMiddleHTTPS() 5 - err=[%s]\n [%s]\n", err, subReq)
-			//}
-
-			// Trace the request
-			if ctx.Trace {
-				fmt.Printf("\n[TRACE] Original Request:\n %s \n ", formatRequest(subReq))
-			}
-
 			if err != nil {
 				// The client request could not be understood. This indicates a problem communicating with the
 				// client, most likely certificate pinning or the client does not have the Winston certificate installed.
@@ -587,30 +580,15 @@ func (ctx *ProxyCtx) ManInTheMiddleHTTPS() error {
 
 			ctx.Proxy.DispatchRequestHandlers(ctx)
 
-			//Diagnostic info
-			// Trace the request
-			if ctx.Trace {
-				fmt.Printf("\n[TRACE] Rewritten request from Winston to downstream server: \n %s \n ", formatRequest(ctx.Req))
-			}
-
-
 			// Force a timeout. Some requests hang forever because they never send an EOF.
 			end := time.Now()
 			duration := end.Sub(start) / time.Millisecond
 			if count > 1 {
 				ctx.Logf(1, "*** clientTlsReader %d %dms [%s]", count, duration, ctx.host)
 			}
-			//if duration > 10000 {
-			//	ctx.Logf(1, "*** Timeout %d %dms [%s]", count, duration, ctx.host)
-			//	return
-			//}
 
 		}
 
-
-		//if gotSomething {
-		//	ctx.Logf(1, "*** clientTlsReader - out of loop")
-		//}
 		// We automatically whitelist all ip addresses because these are very likely to
 		// be associated with streaming services.
 		//if !gotSomething || isIpAddress {
@@ -646,6 +624,12 @@ func (ctx *ProxyCtx) ManInTheMiddleHTTPS() error {
 				//ctx.Logf("  *** Client was dropped. Not whitelisting. [%s]", ctx.Req.URL)
 			}
 		}
+
+		// MITM calls are asynchronous so we have to record the trace information here
+		if ctx.Trace {
+			writeTrace(ctx)
+		}
+
 	}()
 
 	return nil
@@ -821,10 +805,13 @@ func (ctx *ProxyCtx) ForwardRequest(host string) error {
 	// Send in a pointer to a struct that RoundTrip can modify to let us know if there was an error calling out to the private network
 	dnsbypassctx = context.WithValue(dnsbypassctx, shadownetwork.ShadowTransportFailed, &shadownetwork.ShadowNetworkFailure{})
 
+
+
 	resp, err := ctx.RoundTrip(ctx.Req.WithContext(dnsbypassctx))
 
-	if ctx.Trace {
-		fmt.Printf("[TRACE] RoundTrip() - resp: %+v  err: %+v\n", resp, err)
+	// Log RoundTrip error if one was received
+	if ctx.Trace && err != nil {
+		ctx.TraceInfo.RoundTripError = err.Error()
 	}
 
 	// Check to see if the request failed over to the local network and let the caller know.
@@ -862,19 +849,12 @@ func (ctx *ProxyCtx) ForwardRequest(host string) error {
 func (ctx *ProxyCtx) DispatchResponseHandlers() error {
 	var rejected = false
 
-	if ctx.Trace {
-		fmt.Println()
-	}
-
 	var then Next
 	for _, handler := range ctx.Proxy.responseHandlers {
 		then = handler.Handle(ctx)
 		//ctx.Logf("  ResponseHandler: %s [URL: %s]", then, ctx.Req.URL.Host)
 		switch then {
 		case DONE:
-			if ctx.Trace {
-				fmt.Printf("[TRACE] ResponseHandler() - DONE\n")
-			}
 			return ctx.DispatchDoneHandlers()
 		case NEXT:
 			continue
@@ -883,9 +863,6 @@ func (ctx *ProxyCtx) DispatchResponseHandlers() error {
 		case MITM:
 			panic("MITM doesn't make sense when we are already parsing the request")
 		case REJECT:
-			if ctx.Trace {
-				fmt.Printf("[TRACE] ResponseHandler() - REJECT\n")
-			}
 			rejected = true
 
 			//ctx.Proxy.UpdateBlockedCounter()
@@ -955,10 +932,6 @@ func (ctx *ProxyCtx) DispatchResponseHandlers() error {
 			//	http.Error(ctx.ResponseWriter, err.Error(), 500)
 			//}
 		} else {
-
-			if ctx.Trace {
-				fmt.Printf("[TRACE] ResponseHandler() - No response was received from server.\n")
-			}
 
 			// Note: Have to send a response back or the client may hang until the browser times out.
 			if len(ctx.Req.URL.String()) > 80 {
