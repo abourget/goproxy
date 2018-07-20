@@ -286,20 +286,9 @@ func (c *GoproxyConfig) certWithCommonName(hostname string, commonName string) e
 				return nil
 			}
 
-			// Todo: Check the validity of the certificate. We need to figure out how to
-			// query the installed trusted roots of the operating system. This is needed
-			// to block SHA-1 certificates. For now, the browser will be responsible for this.
-			/*root, _ := x509.SystemCertPool()
-			if _, err := origcert.Verify(x509.VerifyOptions{
-				DNSName: hostname,
-				Roots: root,	// Commented out to use default roots of the operating system
-			}); err == nil {
-				fmt.Printf("  *** The original certificate was valid.\n")
-				//return nil
-			} else {
-				fmt.Printf("  *** The original certificate was invalid. Err: %+v\n", err)
-			}*/
-			// Check upstream server's certificate and deny if it is encoded in SHA-1
+			//fmt.Printf("[DEBUG] certWithCommonName() - successfully verified certificate chain.\n")
+
+			// TODO: Check upstream server's certificate and deny if it is encoded in SHA-1
 			// https://ssldecoder.org/?host=sha1-intermediate.badssl.com&port=&csr=&s=
 
 		}
@@ -386,7 +375,6 @@ func (c *GoproxyConfig) certWithCommonName(hostname string, commonName string) e
 	}
 
 	//if experiment {
-	//	//fmt.Printf("  *** New cert created for %s.\n     Subject: %+v\n     DNS Names:%+v\n     IssuingCertificateURL: %+v\n     Issuer: %+v\n     Valid: %+v - %+v\n", hostname, tlsc.Leaf.Subject, tlsc.Leaf.DNSNames, tlsc.Leaf.IssuingCertificateURL, tlsc.Leaf.Issuer, tlsc.Leaf.NotBefore, tlsc.Leaf.NotAfter)
 	//	fmt.Printf("[DEBUG] certWithCommonName - New cert created. Subject: %+v\n  Issuer: %+v\n  AuthorityKeyId=%v\n", tlsc.Leaf.Subject.CommonName, tlsc.Leaf.Issuer.CommonName, tlsc.Leaf.AuthorityKeyId)
 	//}
 	// Todo: Should this be moved higher so we don't repeatedly request the same certificate from downstream server?
