@@ -52,6 +52,7 @@ func (ctx *ProxyCtx) RoundTrip(req *http.Request) (*http.Response, error) {
 					//if strings.Contains(req.URL.String(), "whatis") {
 						//fmt.Printf("  *** RoundTrip() ShadowTransport was nil - %s\n", req.URL)
 					//}
+					//fmt.Printf("[DEBUG] RoundTripper() - using Proxy.Transport 1\n")
 					tr = ctx.Proxy.Transport
 
 					// Ensures we report the correct cloaked status back to the caller
@@ -59,18 +60,21 @@ func (ctx *ProxyCtx) RoundTrip(req *http.Request) (*http.Response, error) {
 				} else {
 					// Point to the shadow transport so we can pass values to and from http.Request
 
-					//if strings.Contains(req.URL.String(), "whatis") {
-
-					//}
+					//fmt.Printf("[DEBUG] RoundTripper() - using PrivateTransport\n")
 					requestcontext = context.WithValue(requestcontext, shadownetwork.ShadowTransportKey, ctx.ShadowTransport)
 
 					tr = ctx.ShadowTransport.Transport
 					//fmt.Printf("  *** RoundTrip() successfully hooked into Shadow Transport - %s \n %+v\n", req.URL, ctx.ShadowTransport)
 				}
-
 			} else {
-				//fmt.Printf("  *** Using local transport")
 				tr = ctx.Proxy.Transport
+
+				// TEST
+				//if ctx.Trace {
+				//	fmt.Printf("[DEBUG] RoundTripper() - using Proxy.Transport 2\n")
+				//	fmt.Printf("[DEBUG] RoundTripper() - TLSClientConfig %v\n", tr.(*http.Transport).TLSClientConfig)
+				//	fmt.Printf("[DEBUG] RoundTripper() - TLSClientConfig.VerifyPeerCertificates %v\n", tr.(*http.Transport).TLSClientConfig.VerifyPeerCertificate)
+				//}
 
 				// Ensures we report the correct cloaked status back to the caller
 				ctx.PrivateNetwork = false
@@ -91,7 +95,6 @@ func (ctx *ProxyCtx) RoundTrip(req *http.Request) (*http.Response, error) {
 
 	resp, err := ctx._roundTripWithLog(req.WithContext(requestcontext))
 	//resp, err := ctx._roundTripWithLog(req)
-
 
 	return resp, err
 }
@@ -158,6 +161,8 @@ func (ctx *ProxyCtx) wrapTransport(tr http.RoundTripper) RoundTripper {
 				}
 			}
 		}
+
+
 
 		return resp, err
 	})

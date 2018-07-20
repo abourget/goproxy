@@ -154,7 +154,6 @@ func (proxy *ProxyHttpServer) DispatchRequestHandlers(ctx *ProxyCtx) {
 			ctx.ForwardResponse(ctx.Resp)
 			return
 		case REJECT:
-
 			ext := filepath.Ext(ctx.Req.URL.Path)
 			//ctx.Logf("  path: %s  extension: %s", ctx.Req.URL.Path, ext)
 			switch ext {
@@ -175,16 +174,7 @@ func (proxy *ProxyHttpServer) DispatchRequestHandlers(ctx *ProxyCtx) {
 				errorcode := "504 Blocked by Winston"
 				text := "A website is attempting to track you. For your protection, access to this page has been blocked. It’s recommended that you do NOT visit this site."
 				proceed := "<a href=\"#\" onclick=\"buildURL();return false;\">Visit this page anyway</a>"
-				/*// Friendly error logging
-				if ctx.ResponseError != nil {
-					switch ctx.ResponseError.Error() {
-					case "x509: certificate signed by unknown authority":
-						title = "Website blocked"
-						errorcode = "Certificate signed by unknown authority"
-						text = "The certificate issued by this website was issued by an unknown authority. For your protection, access to this page has been blocked."
-						proceed = ""
-					}
-				}*/
+
 
 				body := strings.Replace(blockedhtml, "%BLOCKED%", errorcode, 1)
 				body = strings.Replace(body, "%TITLE%", title, 1)
@@ -206,7 +196,6 @@ func (proxy *ProxyHttpServer) DispatchRequestHandlers(ctx *ProxyCtx) {
 			panic(fmt.Sprintf("Invalid value %v for Next after calling %v", then, handler))
 		}
 	}
-
 
 	ctx.ForwardRequest(ctx.host)
 	ctx.DispatchResponseHandlers()

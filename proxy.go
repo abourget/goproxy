@@ -19,17 +19,14 @@ import (
 	"time"
 	"fmt"
 	"encoding/binary"
-//	"github.com/elico/go-linux-tproxy-master"
 	"github.com/honnef.co/go-conntrack"
 	"strconv"
-	//"sort"
 	"encoding/hex"
 	"crypto/md5"
 	"context"
 	"crypto/tls"
-
-	//"github.com/winston/shadowtransport"
 	"github.com/winston/shadownetwork"
+	//"crypto/x509"
 )
 
 // The basic proxy type. Implements http.Handler.
@@ -146,10 +143,13 @@ func NewProxyHttpServer() *ProxyHttpServer {
 	}
 
 
+
 	// RLS 3/18/2018 - Add session ticket support
 	// Setting a relatively low number will force tickets out more quickly, helping to prevent against snooping attacks.
 	proxy.Transport.TLSClientConfig.ClientSessionCache = tls.NewLRUClientSessionCache(25)
-	//fmt.Printf("  *** TLSClientConfig: %+v\n", proxy.Transport.TLSClientConfig)
+
+	// RLS 7/19/2018 - The default transport has to point to our custom TLS config
+	//proxy.Transport.TLSClientConfig.VerifyPeerCertificate = proxy.MITMCertConfig.VerifyPeerCertificate
 
 	// RLS 2/15/2018
 	// This looks for a proxy on the network and sets up a dialer to call it.
@@ -159,6 +159,7 @@ func NewProxyHttpServer() *ProxyHttpServer {
 
 	return &proxy
 }
+
 
 // Call after the private network has been initialized to have proxy automatically redirect requests through it.
 // The proxy will simply forward requests through the local network until this is called.
@@ -343,6 +344,12 @@ func writeTrace(ctx *ProxyCtx) {
 	for _, h := range ctx.TraceInfo.CookiesReceived {
 		fmt.Printf("%+v\n", h)
 	}
+
+	if ctx.TraceInfo.RoundTripError != "" {
+		fmt.Println()
+		fmt.Printf("Server reported error: %s\n", ctx.TraceInfo.RoundTripError)
+	}
+
 	fmt.Println()
 }
 

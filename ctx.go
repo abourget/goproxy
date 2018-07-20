@@ -30,6 +30,8 @@ import (
 	"context"
 	"github.com/benburkert/dns"
 	"github.com/winston/shadownetwork"
+	//"github.com/grantae/certinfo"
+	//"crypto/x509"
 )
 
 // ProxyCtx is the Proxy context, contains useful information about every request. It is passed to
@@ -121,20 +123,16 @@ type ProxyCtx struct {
 
 					  // 11/2/2017 - Used for replacement macros (user agents)
 	DeviceType int
-
-					  // 2/16/2018 - Whitelist flag. If set, response filtering will be turned off and the
-					  // local DNS will be bypassed. This allows the resource to run as originally intended
-					  // (privacy leaks and all).
-	Whitelisted     bool
+	Whitelisted     	bool	  // If true, response filtering will be completely disabled and local DNS will be bypassed.
 
 					  // Keeps a list of any messages we want to pass back to the client
-	StatusMessage   []string
+	StatusMessage   	[]string
 
 					  // Request handler sets this to true if it thinks it is a first party request
-	FirstParty      bool
+	FirstParty      	bool
 
 					  // Set to true to use private network
-	PrivateNetwork  bool
+	PrivateNetwork  	bool
 
 					  // If a shadow transport is being used, this points to it.
 	ShadowTransport *shadownetwork.ShadowTransport
@@ -407,6 +405,14 @@ func (ctx *ProxyCtx) ManInTheMiddleHTTPS() error {
 		}
 	}
 
+	// DEBUG - ignore all other MITM requests
+	//if !strings.Contains(ctx.host, "xaxis") {
+	//	return nil
+	//}
+
+	//fmt.Printf("[DEBUG] Ctx/ManInTheMiddleHTTPS- %s\n", ctx.host)
+
+
 	// This is our TLS server to handle client requests. See signer.go and certs.go.
 	tlsConfig, err := ctx.tlsConfig(signHost)
 
@@ -468,6 +474,7 @@ func (ctx *ProxyCtx) ManInTheMiddleHTTPS() error {
 		// TODO: Can we avoid handshaking on subsequent connections? (this may be done for us by connection pooling but not sure)
 		// Performs the TLS handshake
 		if err := rawClientTls.Handshake(); err != nil {
+			fmt.Printf("[DEBUG] ctx.TLSHandshake error - %s\n", ctx.host)
 			// A handshake error typically only occurs on the client side
 			// when pinned Certificates are being used, ie: a mobile
 			// application refuses to trust our local CA. We need to
@@ -516,6 +523,7 @@ func (ctx *ProxyCtx) ManInTheMiddleHTTPS() error {
 		// header in the response to the client.
 		// TODO: some requests still hang indefinitely. Implement a timeout.
 
+
 		for !isEof(clientTlsReader) {
 
 			count = count + 1
@@ -523,6 +531,7 @@ func (ctx *ProxyCtx) ManInTheMiddleHTTPS() error {
 			// This reads a normal "GET / HTTP/1.1" request from the tunnel, as it thinks its
 			// talking directly to the server now, not to a proxy.
 			subReq, err := http.ReadRequest(clientTlsReader)
+
 
 			if err != nil {
 				// The client request could not be understood. This indicates a problem communicating with the
@@ -775,7 +784,6 @@ func (ctx *ProxyCtx) ReturnSignature() {
 func (ctx *ProxyCtx) ForwardRequest(host string) error {
 	//ctx.Logf("Sending request %v %v with Host header %q", ctx.Req.Method, ctx.Req.URL.String(), ctx.Req.Host)
 
-
 	/*if strings.Contains(host, "xaxis") {
 		ctx.Logf(1, "  *** ForwardRequest() - Xaxis spotted.")
 	}*/
@@ -801,12 +809,33 @@ func (ctx *ProxyCtx) ForwardRequest(host string) error {
 	// openssl s_client -connect xxxxx.com:443 |tee logfile
 	//
 	// Also consider debugging TLS with Curl: https://curl.haxx.se/docs/sslcerts.html
+	// This command displays helpful info, such as the location of the local certificate store. If you want the actual
+	// certificate being served by the site, you will need to ensure it's not being blocked by DNS.
+	//	curl -kv https://xxxxx.com:443
+	//
+	// To configure local CA certificates
+	//
+	// Standard Linux certs (some are bad, like Wosign)
+	//	dpkg-reconfigure ca-certificates
+	// this will regenerate the file in /etc/ca-certificates.conf (see http://manpages.ubuntu.com/manpages/bionic/man8/update-ca-certificates.8.html)
+	//
+	// A better source can be found at https://android.googlesource.com/platform/system/ca-certificates/+/master/files/
+	// Untar to /usr/share/ca-certificates and copy all of the filenames to the /etc/ca-certificates.conf file
+	//
+	// Then run
+	//	update-ca-certificates
+	// This will use the above file to regenerate /etc/ssl/certs
+
+
+
 
 	// Send in a pointer to a struct that RoundTrip can modify to let us know if there was an error calling out to the private network
 	dnsbypassctx = context.WithValue(dnsbypassctx, shadownetwork.ShadowTransportFailed, &shadownetwork.ShadowNetworkFailure{})
 
 
-
+	/*if ctx.Trace {
+		fmt.Printf("[DEBUG] ForwardRequest() - TLSClientConfig.VerifyPeerCertificates %v\n", ctx.Proxy.Transport.TLSClientConfig.VerifyPeerCertificate)
+	}*/
 	resp, err := ctx.RoundTrip(ctx.Req.WithContext(dnsbypassctx))
 
 	// Log RoundTrip error if one was received
@@ -905,16 +934,6 @@ func (ctx *ProxyCtx) DispatchResponseHandlers() error {
 				errorcode := "502.2 Blocked by Winston"
 				text := "A website is attempting to track you. For your protection, access to this page has been blocked. It’s recommended that you do NOT visit this site."
 				proceed := "<a href=\"#\" onclick=\"buildURL();return false;\">Visit this page anyway</a>"
-				/*// Friendly error logging
-				if ctx.ResponseError != nil {
-					switch ctx.ResponseError.Error() {
-					case "x509: certificate signed by unknown authority":
-						title = "Website blocked"
-						errorcode = "Certificate signed by unknown authority"
-						text = "The certificate issued by this website was issued by an unknown authority. For your protection, access to this page has been blocked."
-						proceed = ""
-					}
-				}*/
 
 				body := strings.Replace(blockedhtml, "%BLOCKED%", errorcode, 1)
 				body = strings.Replace(body, "%TITLE%", title, 1)
@@ -1250,16 +1269,17 @@ func (ctx *ProxyCtx) tlsConfig(host string) (*tls.Config, error) {
 		ca = ctx.MITMCertConfig
 	}
 
-
+	// Ensure that the certificate for the target site has been generated
 
 	err := ca.cert(host)
 	if err != nil {
+		fmt.Printf("[DEBUG] Certificate signing error: %+v\n", err)
 		ctx.Warnf("Cannot sign host certificate with provided CA: %s", err)
 		return nil, err
 	}
 
-	// Hook the client Hello in order to generate fingerprint
-	//ca.GetCertificate = ctx.getCertificateHook
+	// Hook the certificate chain verification
+	ca.Config.VerifyPeerCertificate = ca.VerifyPeerCertificate
 	return ca.Config, nil
 }
 
