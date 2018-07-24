@@ -365,7 +365,7 @@ func (proxy *ProxyHttpServer) ListenAndServe(addr string) error {
 
 func (proxy *ProxyHttpServer) ListenAndServeTLS(httpsAddr string) error {
 	ln, err := net.Listen("tcp", httpsAddr)
-	//log.Printf("ListenAndServeTLS...")
+	//log.Printf("*** ListenAndServeTLS called... %s\n", httpsAddr)
 
 	// Alternate socket based listener which can receive requests from packets marked with
 	// IP addresses not belonging to this server. Slow but may be useful.
@@ -384,15 +384,6 @@ func (proxy *ProxyHttpServer) ListenAndServeTLS(httpsAddr string) error {
 		go func(c net.Conn) {
 			//log.Printf(" *** INCOMING TLS CONNECTION - source: %s / destination: %s", c.RemoteAddr().String(), c.LocalAddr().String())
 			tlsConn, err := vhost.TLS(c)
-
-			// This doesn't work...
-			// Make sure we close the connection after we're done, even if we error out.
-			// This should also close the underlying TCP connection.
-			//defer func() {
-			//	if tlsConn != nil {
-			//		tlsConn.Close()
-			//	}
-			//}()
 
 			if err != nil {
 				log.Printf("Error accepting new connection (err 3) - %v", err)

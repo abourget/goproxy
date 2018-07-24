@@ -62,7 +62,7 @@ func (proxy *ProxyHttpServer) HandleDone(f Handler) {
 //////
 
 func (proxy *ProxyHttpServer) dispatchConnectHandlers(ctx *ProxyCtx) {
-
+	//fmt.Printf("[DEBUG] dispatchConnectHandlers() \n")
 	// We haven't made a connection to the destination site yet. Here we're just hijacking
 	// the connection back to the local client.
 	hij, ok := ctx.ResponseWriter.(http.Hijacker)
@@ -94,6 +94,7 @@ func (proxy *ProxyHttpServer) dispatchConnectHandlers(ctx *ProxyCtx) {
 			break
 
 		case MITM:
+			//fmt.Printf("[DEBUG] dispatchConnectHandlers() - calling MITM.\n")
 			err := ctx.ManInTheMiddle()
 			if err != nil {
 				ctx.Logf(1, "ERROR: Couldn't MITM: %s", err)
@@ -107,8 +108,6 @@ func (proxy *ProxyHttpServer) dispatchConnectHandlers(ctx *ProxyCtx) {
 			// What happens if we don't return anything?
 			return
 		case SIGNATURE:
-			//ctx.Logf(1, "  *** dispatchConnectHandlers:SIGNATURE")
-			//ctx.ReturnSignature()
 			return
 		case DONE:
 			return

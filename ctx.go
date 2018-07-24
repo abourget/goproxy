@@ -718,6 +718,7 @@ func (ctx *ProxyCtx) ForwardConnect() error {
 		}
 	}*/
 
+
 	targetSiteConn, err := ctx.Proxy.connectDialContext(dnsbypassctx, "tcp", ctx.host)
 	if err != nil {
 		ctx.httpError(err)
@@ -739,7 +740,6 @@ func (ctx *ProxyCtx) ForwardConnect() error {
 	go ctx.closeTogether(toClose)
 
 
-	//ctx.Logf(4, "  *** ForwardConnect: Completed copy [%s]", ctx.host)
 
 	/*go ctx.copyAndClose(targetSiteConn.(*net.TCPConn), ctx.Conn.(*net.TCPConn))
 	go ctx.copyAndClose(ctx.Conn.(*net.TCPConn), targetSiteConn.(*net.TCPConn))

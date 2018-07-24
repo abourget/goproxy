@@ -6,7 +6,7 @@ import (
 	"fmt"
 
 	"github.com/hashicorp/go-rootcerts"
-	"time"
+	//"time"
 )
 
 var GoproxyCaConfig *GoproxyConfig
@@ -18,13 +18,13 @@ var GoproxyCaConfig *GoproxyConfig
 func rootCAs(c *rootcerts.Config) *tls.Config {
 
 	// Test code: Print out the system CAs
-	start := time.Now()
-	certs, err := x509.SystemCertPool()
-	end := time.Now()
-	if err != nil {
-		panic(err)
-	}
-	fmt.Printf("[INFO] Found %d system CA certs in %v\n", len(certs.Subjects()), end.Sub(start))
+	//start := time.Now()
+	//certs, err := x509.SystemCertPool()
+	//end := time.Now()
+	//if err != nil {
+	//	panic(err)
+	//}
+	//fmt.Printf("[INFO] Found %d system CA certs in %v\n", len(certs.Subjects()), end.Sub(start))
 	//for _, s := range certs.Subjects() {
 	//	fmt.Printf("Found: %s\n", s)
 	//}
@@ -43,7 +43,7 @@ func rootCAs(c *rootcerts.Config) *tls.Config {
 	}
 
 
-	err = rootcerts.ConfigureTLS(t, c)
+	err := rootcerts.ConfigureTLS(t, c)
 	if err != nil {
 		fmt.Println("[Warning] Error loading root certs", err)
 	}
