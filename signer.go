@@ -25,6 +25,9 @@ import (
 	"fmt"
 	"github.com/benburkert/dns"
 	"github.com/nathanejohnson/intransport"
+	"encoding/gob"
+	"io/ioutil"
+	"os"
 )
 
 // OrganizationName is the name your CA cert will be signed with. It
@@ -69,9 +72,49 @@ type GoproxyConfig struct {
 
 // NewConfig creates a MITM config using the CA certificate and
 // private key to generate on-the-fly certificates.
-func NewConfig(ca *x509.Certificate, privateKey interface{}) (*GoproxyConfig, error) {
+func NewConfig(filename string, ca *x509.Certificate, privateKey interface{}) (*GoproxyConfig, error) {
+	needcert := true
+	var priv *rsa.PrivateKey
+	var err error
 
-	priv, err := rsa.GenerateKey(rand.Reader, 2048)
+	if filename != "" {
+		_, err := os.Stat(filename)
+
+		if !os.IsNotExist(err) {
+			// File exists. Read it.
+			buf, err := ioutil.ReadFile(filename)
+			if err == nil {
+				config := rsa.PrivateKey{}
+				dec := gob.NewDecoder(bytes.NewReader(buf))
+				err = dec.Decode(&config)
+				if err == nil {
+					// Found an existing certificate
+					fmt.Println("[INFO] Using cached private key")
+					priv = &config
+					needcert = false
+				}
+			}
+		}
+	}
+
+
+	if needcert {
+		priv, err = rsa.GenerateKey(rand.Reader, 2048)
+	}
+
+	// Save the key to disk
+	if filename != "" && err == nil {
+		var buff bytes.Buffer
+		enc := gob.NewEncoder(&buff)
+		err = enc.Encode(priv)
+		if err == nil {
+			err = ioutil.WriteFile(filename, buff.Bytes(), 0644)
+		} else {
+			fmt.Printf("[ERROR] Couldn't persist private key to disk %+v\n", err)
+		}
+	}
+
+
 	if err != nil {
 		return nil, err
 	}
