@@ -474,35 +474,14 @@ func (ctx *ProxyCtx) ManInTheMiddleHTTPS() error {
 		// TODO: Can we avoid handshaking on subsequent connections? (this may be done for us by connection pooling but not sure)
 		// Performs the TLS handshake
 		if err := rawClientTls.Handshake(); err != nil {
-			fmt.Printf("[DEBUG] ctx.TLSHandshake error - %s\n", ctx.host)
 			// A handshake error typically only occurs on the client side
 			// when pinned Certificates are being used, ie: a mobile
-			// application refuses to trust our local CA. We need to
-			// determine if the target site would have been blocked by
-			// our DNS server. If it would have gone through, then we
-			// should let listeners know that we've found a domain that
-			// should probably be whitelisted.
-
-			//ctx.Logf(1, "Cannot handshake client %v %v", r.Host, err)
+			// application refuses to trust our local CA.
 
 			// Is anyone listening? Let them know the TLS handshake failed.
 			if ctx.Tlsfailure != nil {
-				//if strings.Contains(r.Host, "google.com") {
-				//	fmt.Printf("  *** TLS Failure (Handshake error) %+v Err: %+v", ctx.Req.URL, err)
-				//}
-				// A handshake error occurred. This could be caused by transmission problems or
-				// new protocols. In either case, we don't want to flag the device as bad.
-				// RLS 3/30/3028 - Google handshakes through Firefox tend to throw EOF errors
-				// during the handshake, whitelisting the client. We'll ignore these as they
-				// seem to be intermittent and related to keystroke capture/auto-complete.
-				if !strings.Contains(err.Error(), "EOF") {
-
-					/*if strings.HasPrefix(ctx.CipherSignature, "51ab") {
-						fmt.Printf("  *** TLS Handshake failure: %s \n", err.Error())
-					}*/
-
-					ctx.Tlsfailure(ctx, false)
-				}
+				//fmt.Printf("[DEBUG] ctx.TLSHandshake error (client) - %s %+v [%s]\n", ctx.Req.URL.String(), err, ctx.CipherSignature)
+				ctx.Tlsfailure(ctx, true)
 			}
 
 			return
