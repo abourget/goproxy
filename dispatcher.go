@@ -62,7 +62,7 @@ func (proxy *ProxyHttpServer) HandleDone(f Handler) {
 //////
 
 func (proxy *ProxyHttpServer) dispatchConnectHandlers(ctx *ProxyCtx) {
-	//fmt.Printf("[DEBUG] dispatchConnectHandlers() \n")
+	//fmt.Printf("[DEBUG] dispatchConnectHandlers() [%s]\n", ctx.host)
 	// We haven't made a connection to the destination site yet. Here we're just hijacking
 	// the connection back to the local client.
 	hij, ok := ctx.ResponseWriter.(http.Hijacker)
@@ -94,7 +94,7 @@ func (proxy *ProxyHttpServer) dispatchConnectHandlers(ctx *ProxyCtx) {
 			break
 
 		case MITM:
-			//fmt.Printf("[DEBUG] dispatchConnectHandlers() - calling MITM.\n")
+			//fmt.Printf("[DEBUG] dispatchConnectHandlers() - calling MITM. [%s]\n", ctx.host)
 			err := ctx.ManInTheMiddle()
 			if err != nil {
 				ctx.Logf(1, "ERROR: Couldn't MITM: %s", err)
@@ -103,6 +103,7 @@ func (proxy *ProxyHttpServer) dispatchConnectHandlers(ctx *ProxyCtx) {
 			return
 
 		case REJECT:
+			//fmt.Printf("[DEBUG] dispatchConnectHandlers() - REJECT. [%s]\n", ctx.host)
 			ctx.RejectConnect()
 
 			// What happens if we don't return anything?
@@ -117,7 +118,7 @@ func (proxy *ProxyHttpServer) dispatchConnectHandlers(ctx *ProxyCtx) {
 		}
 	}
 
-
+	//fmt.Printf("[DEBUG] dispatchConnectHandlers() - FORWARD. [%s]\n", ctx.host)
 	if err := ctx.ForwardConnect(); err != nil {
 		ctx.Logf(1, "ERROR: Failed forwarding in fallback clause: %s", err)
 	}

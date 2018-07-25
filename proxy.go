@@ -394,7 +394,7 @@ func (proxy *ProxyHttpServer) ListenAndServeTLS(httpsAddr string) error {
 			// Non-SNI request handling routine
 			var nonSNIHost net.IP
 			if tlsConn.Host() == "" {
-				//log.Printf("   *** non-SNI client detected - source: %s / destination: %s", c.RemoteAddr().String(), c.LocalAddr().String())
+				log.Printf("   *** non-SNI client detected - source: %s / destination: %s", c.RemoteAddr().String(), c.LocalAddr().String())
 
 				// Some devices (Smarthome devices and especially anything by Amazon) do not
 				// send the hostname in the SNI extension. To get around this, we will query
@@ -436,7 +436,7 @@ func (proxy *ProxyHttpServer) ListenAndServeTLS(httpsAddr string) error {
 			var Host = tlsConn.Host()
 			if Host == "" {
 				Host = nonSNIHost.String()
-				//proxy.Logf(6, "  Non-SNI request - destination: [%s]\n", Host)
+				//log.Printf("  Non-SNI request - destination: [%s]\n", Host)
 			}
 
 
@@ -484,7 +484,7 @@ func (proxy *ProxyHttpServer) ListenAndServeTLS(httpsAddr string) error {
 
 			ctx.host = connectReq.URL.Host
 			//if tlsConn.Host() == "" {
-			//	log.Printf("*** ListenAndServeTLS - ctx.host [%s]", ctx.host)
+			//	log.Printf("*** ListenAndServeTLS 1 - ctx.host [%s]", ctx.host)
 			//}
 			if strings.IndexRune(ctx.host, ':') == -1 {
 				if connectReq.URL.Scheme == "http" {
@@ -527,6 +527,7 @@ func (proxy *ProxyHttpServer) ListenAndServeTLS(httpsAddr string) error {
 				}
 			}
 
+			//log.Printf("*** ListenAndServeTLS 2 - ctx.host [%s]", ctx.host)
 			proxy.dispatchConnectHandlers(ctx)
 
 		}(c)

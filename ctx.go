@@ -405,7 +405,7 @@ func (ctx *ProxyCtx) ManInTheMiddleHTTPS() error {
 		}
 	}
 
-	// DEBUG - ignore all other MITM requests
+	// DEBUG - uncomment to ignore all other MITM requests
 	//if !strings.Contains(ctx.host, "xaxis") {
 	//	return nil
 	//}
@@ -468,8 +468,7 @@ func (ctx *ProxyCtx) ManInTheMiddleHTTPS() error {
 			fmt.Printf("  *** tlsConfig for %s\n %+v \n\n %+v\n\n", ctx.host, tlsConfig.NameToCertificate, tlsConfig.NameToCertificate[signHost].Leaf.Subject)
 		}*/
 
-
-		//ctx.Logf(1, "  *** Starting handshake with [%s]", r.Host)
+		//fmt.Printf("[DEBUG] Ctx/ManInTheMiddleHTTPS - Prehandshake [%s]\n", ctx.host)
 
 		// TODO: Can we avoid handshaking on subsequent connections? (this may be done for us by connection pooling but not sure)
 		// Performs the TLS handshake
@@ -487,6 +486,8 @@ func (ctx *ProxyCtx) ManInTheMiddleHTTPS() error {
 			return
 		}
 
+		//fmt.Printf("[DEBUG] Ctx/ManInTheMiddleHTTPS - TLS Handshake completed successfully [%s]\n", ctx.host)
+
 		ctx.Conn = rawClientTls
 		ctx.IsSecure = true
 
@@ -503,7 +504,10 @@ func (ctx *ProxyCtx) ManInTheMiddleHTTPS() error {
 		// TODO: some requests still hang indefinitely. Implement a timeout.
 
 
+		// Main processing loop for successful TLS connections
 		for !isEof(clientTlsReader) {
+
+			//fmt.Printf("[DEBUG] Ctx/ManInTheMiddleHTTPS - About to read request from tunnel [%s]\n", ctx.host)
 
 			count = count + 1
 
@@ -515,6 +519,8 @@ func (ctx *ProxyCtx) ManInTheMiddleHTTPS() error {
 			if err != nil {
 				// The client request could not be understood. This indicates a problem communicating with the
 				// client, most likely certificate pinning or the client does not have the Winston certificate installed.
+
+				fmt.Printf("[DEBUG] Ctx/ManInTheMiddleHTTPS - Error reading request from tunnel [%s] %s\n", ctx.host, err)
 
 				//ctx.Warnf("ManInTheMiddleHTTPS: error reading next request: %s", err)
 				// TODO: Many sites (outlook.office.com, client-channel.google.com, lync.com, etc)
@@ -543,6 +549,8 @@ func (ctx *ProxyCtx) ManInTheMiddleHTTPS() error {
 				return //errors.New("Non-HTTP protocol detected in TLS packet. Whitelisted domain. Try again.")
 			}
 
+			//fmt.Printf("[DEBUG] Ctx/ManInTheMiddleHTTPS - successfully read request from tunnel [%s]\n", ctx.host)
+
 			//gotSomething = true
 
 			subReq.URL.Scheme = "https"
@@ -566,50 +574,47 @@ func (ctx *ProxyCtx) ManInTheMiddleHTTPS() error {
 			//	ctx.Logf("  *** ManInTheMiddleHTTPS (Sling) - Dispatching request handlers...")
 			//}
 
+			//fmt.Printf("[DEBUG] Ctx/ManInTheMiddleHTTPS - Dispatching request handlers [%s]\n", ctx.host)
+
 			ctx.Proxy.DispatchRequestHandlers(ctx)
+
+			//fmt.Printf("[DEBUG] Ctx/ManInTheMiddleHTTPS - Back from request handlers [%s]\n", ctx.host)
 
 			// Force a timeout. Some requests hang forever because they never send an EOF.
 			end := time.Now()
 			duration := end.Sub(start) / time.Millisecond
 			if count > 1 {
-				ctx.Logf(1, "*** clientTlsReader %d %dms [%s]", count, duration, ctx.host)
+				ctx.Logf(1, "[INFO] clientTlsReader %d %dms [%s]", count, duration, ctx.host)
 			}
 
 		}
 
-		// We automatically whitelist all ip addresses because these are very likely to
-		// be associated with streaming services.
-		//if !gotSomething || isIpAddress {
-		// TODO: Redirects don't return anything so these are whitelisting domains. Can we check to see if some TLS data was exchanged?
-		if isIpAddress {
+		// Record a TLS failure with IP addresses so they are auto-whitelisted. These tend to be streaming requests.
+		// Some clients (Google Mobile in particular) will handshake but then drop the connection after they process
+		// the certificate. We have to whitelist these or Google Play, Google Photos and other Google clients will
+		// not work with Winston.
+		// TODO: Diagnose the root of Google Android certificate errors
+		if count == 0 || isIpAddress {
+			//fmt.Printf("[DEBUG] Ctx/ManInTheMiddleHTTPS - Was IP address or client dropped connection [%s] [%s]\n", ctx.host, ctx.CipherSignature)
+
 			//ctx.Logf("Client dropped connection. Checking TLS Failure stats... [%s]", ctx.Req.URL)
 
 			// Note: Some websites (google in particular) send HTTPS requests as keep alives
 			// and don't close them. They end up timing out. We don't want to whitelist these.
-			// In contrast, smart devices and TVs close the connection immediately when they
+			// In contrast, smart clients and devices close the connection immediately when they
 			// don't trust the certificate. We'll use this here to prevent whitelisting
 			// keep alive requests while detecting smart devices that should be tunnelled.
-
 			end := time.Now()
 			duration := end.Sub(start) / time.Millisecond
 
 			if duration < 30 || isIpAddress {
-				//if ctx.proxy.CheckTLSFailure(signHost) {
-					ctx.Logf(6, "WARN: Client dropped connection or IP address detected. Whitelisting this device... [%s]", ctx.Req.URL)
+				ctx.Logf(1, "[WARN] Client dropped connection or IP address detected. Whitelisting this device... [%s]", ctx.Req.URL)
 
-					// whitelist certain sites across an entire network.
-					if ctx.Tlsfailure != nil {
-
-						/*if strings.HasPrefix(ctx.CipherSignature, "51ab") {
-							fmt.Printf("  *** TLS Failure (client dropped connection) %s \n", ctx.host)
-						}*/
-
-						ctx.Logf(2, "  *** TLS Failure (client dropped connection) [%s]", ctx.host)
-						ctx.Tlsfailure(ctx, false)
-					}
-				//}
-			} else {
-				//ctx.Logf("  *** Client was dropped. Not whitelisting. [%s]", ctx.Req.URL)
+				// whitelist certain sites across an entire network.
+				if ctx.Tlsfailure != nil {
+					ctx.Logf(1, "[ERROR] TLS Failure (client dropped connection) [%s]", ctx.host)
+					ctx.Tlsfailure(ctx, false)
+				}
 			}
 		}
 
@@ -617,6 +622,8 @@ func (ctx *ProxyCtx) ManInTheMiddleHTTPS() error {
 		if ctx.Trace {
 			writeTrace(ctx)
 		}
+
+		//fmt.Printf("[DEBUG] Ctx/ManInTheMiddleHTTPS - Done [%s]\n", ctx.host)
 
 	}()
 
