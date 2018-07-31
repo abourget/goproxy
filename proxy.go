@@ -118,6 +118,9 @@ type ProxyHttpServer struct {
 	// here so it can be retrieved by a follow up http request if necessary.
 	LastSignature string
 
+	// RoundTripper which supports non-http protocols
+	NonHTTPRoundTripper *NonHTTPRoundTripper
+
 }
 
 // New proxy server, logs to StdErr by default
@@ -140,6 +143,9 @@ func NewProxyHttpServer() *ProxyHttpServer {
 		harLog:          har.New(),
 		harLogEntryCh:   make(chan harReqAndResp, 10),
 		harFlushRequest: make(chan string, 10),
+		NonHTTPRoundTripper: &NonHTTPRoundTripper{
+			TLSClientConfig: tlsClientSkipVerify,
+		},
 	}
 
 
@@ -148,8 +154,10 @@ func NewProxyHttpServer() *ProxyHttpServer {
 	// Setting a relatively low number will force tickets out more quickly, helping to prevent against snooping attacks.
 	proxy.Transport.TLSClientConfig.ClientSessionCache = tls.NewLRUClientSessionCache(25)
 
-	// RLS 7/19/2018 - The default transport has to point to our custom TLS config
-	//proxy.Transport.TLSClientConfig.VerifyPeerCertificate = proxy.MITMCertConfig.VerifyPeerCertificate
+	// RLS 7/30/2018 - Adds support for non-http protocols
+	proxy.Transport.RegisterProtocol("nonhttp", proxy.NonHTTPRoundTripper)
+	proxy.Transport.RegisterProtocol("nonhttps", proxy.NonHTTPRoundTripper)
+	//proxy.NonHTTPRoundTripper.DialContext = proxy.Transport.DialContext
 
 	// RLS 2/15/2018
 	// This looks for a proxy on the network and sets up a dialer to call it.
@@ -394,7 +402,7 @@ func (proxy *ProxyHttpServer) ListenAndServeTLS(httpsAddr string) error {
 			// Non-SNI request handling routine
 			var nonSNIHost net.IP
 			if tlsConn.Host() == "" {
-				log.Printf("   *** non-SNI client detected - source: %s / destination: %s", c.RemoteAddr().String(), c.LocalAddr().String())
+				//log.Printf("   *** non-SNI client detected - source: %s / destination: %s", c.RemoteAddr().String(), c.LocalAddr().String())
 
 				// Some devices (Smarthome devices and especially anything by Amazon) do not
 				// send the hostname in the SNI extension. To get around this, we will query
@@ -436,7 +444,7 @@ func (proxy *ProxyHttpServer) ListenAndServeTLS(httpsAddr string) error {
 			var Host = tlsConn.Host()
 			if Host == "" {
 				Host = nonSNIHost.String()
-				//log.Printf("  Non-SNI request - destination: [%s]\n", Host)
+				//log.Printf("[DEBUG]  Non-SNI request detected - destination: [%s]\n", Host)
 			}
 
 
@@ -503,8 +511,6 @@ func (proxy *ProxyHttpServer) ListenAndServeTLS(httpsAddr string) error {
 			// Create a signature string for the accepted ciphers
 
 			if tlsConn.ClientHelloMsg != nil && len(tlsConn.ClientHelloMsg.CipherSuites) > 0 {
-
-
 				// RLS 10/10/2017 - Expanded signature
 				// Generate a fingerprint for the client. This enables us to whitelist
 				// failed TLS queries on a per-client basis.

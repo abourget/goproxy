@@ -1,6 +1,6 @@
 package auth
 
-import (
+/*import (
 	"bytes"
 	"encoding/base64"
 	"io/ioutil"
@@ -8,7 +8,8 @@ import (
 	"strings"
 
 	"github.com/abourget/goproxy"
-)
+)*/
+/*
 
 var unauthorizedMsg = []byte("407 Proxy Authentication Required")
 
@@ -74,3 +75,4 @@ func ProxyBasic(proxy *goproxy.ProxyHttpServer, realm string, f func(user, passw
 	proxy.OnRequest().Do(Basic(realm, f))
 	proxy.OnRequest().HandleConnect(BasicConnect(realm, f))
 }
+*/

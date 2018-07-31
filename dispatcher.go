@@ -167,14 +167,11 @@ func (proxy *ProxyHttpServer) DispatchRequestHandlers(ctx *ProxyCtx) {
 				// Note that jpg pixels are > 1k in length and are rarely used
 				// so we just return a 502 error to avoid the bandwidth.
 				// Todo: Revisit this if we're seeing too many broken image icons in web pages
-				//ctx.Logf("  Serving 502")
-				//ctx.NewResponse(502, "text/plain; charset=utf-8", "502.1 Blocked by Winston [" + ext + "]")
 
 				title := "Tracker Blocked"
 				errorcode := "504 Blocked by Winston"
 				text := "A website is attempting to track you. For your protection, access to this page has been blocked. It’s recommended that you do NOT visit this site."
 				proceed := "<a href=\"#\" onclick=\"buildURL();return false;\">Visit this page anyway</a>"
-
 
 				body := strings.Replace(blockedhtml, "%BLOCKED%", errorcode, 1)
 				body = strings.Replace(body, "%TITLE%", title, 1)
@@ -182,10 +179,6 @@ func (proxy *ProxyHttpServer) DispatchRequestHandlers(ctx *ProxyCtx) {
 				body = strings.Replace(body, "%PROCEED%", proceed, 1)
 				//ctx.NewResponse(504, "text/plain; charset=utf-8", "504 Blocked by Winston / No response from server")
 				ctx.NewResponse(504, "text/html; charset=utf-8", body)
-
-
-
-				//ctx.NewResponse(504, "text/html; charset=utf-8", strings.Replace(blockedhtml, "Blocked", "502.1 Blocked by Winston", 1))
 			}
 
 			ctx.ForwardResponse(ctx.Resp)

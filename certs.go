@@ -51,42 +51,16 @@ func rootCAs(c *rootcerts.Config) *tls.Config {
 	return t
 }
 
-/*
-// RLS 7/24/2018 - CA certificate is cached for one week to reduce startup time.
+// Used for unit testing
 func LoadDefaultConfig() error {
-	fmt.Printf("[DEBUG] LoadDefaultConfig filename=%s\n", filename)
-	needcert := true
-	_, err := os.Stat(filename)
-	// TODO: Check the date and regenerate once a week
-	if !os.IsNotExist(err) {
-		// File exists. Read it.
-		buf, err := ioutil.ReadFile(filename)
-		if err == nil {
-			config := GoproxyConfig{}
-			dec := gob.NewDecoder(bytes.NewReader(buf))
-			err = dec.Decode(&config)
-			if err == nil {
-				// Found an existing certificate
-				fmt.Println("[INFO] Using cached intermediate certificate")
-				GoproxyCaConfig = &config
-				needcert = false
-			}
-		}
+	config, err := LoadCAConfig("", CA_CERT, CA_KEY)
+	if err != nil {
+		return fmt.Errorf("Error parsing builtin CA: %s", err.Error())
 	}
-
-	if needcert {
-		config, err := LoadCAConfig(CA_CERT, CA_KEY)
-		if err != nil {
-			return fmt.Errorf("Error parsing builtin CA: %s", err.Error())
-		}
-		GoproxyCaConfig = config
-
-
-
-	}
-	return nil
+	GoproxyCaConfig = config
+	return err
 }
-*/
+
 
 // Load a CAConfig bundle from by arrays.  You can then load them into
 // the proxy with `proxy.SetMITMCertConfig. If filename is non-nil, will attempt to load from disk.

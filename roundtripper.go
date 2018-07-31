@@ -48,11 +48,6 @@ func (ctx *ProxyCtx) RoundTrip(req *http.Request) (*http.Response, error) {
 			if ctx.PrivateNetwork && ctx.Proxy.PrivateNetwork != nil {
 				ctx.ShadowTransport = ctx.Proxy.PrivateNetwork.Transport()
 				if ctx.ShadowTransport == nil {
-					// ShadowTransport was nil for some reason. Use local transport.
-					//if strings.Contains(req.URL.String(), "whatis") {
-						//fmt.Printf("  *** RoundTrip() ShadowTransport was nil - %s\n", req.URL)
-					//}
-					//fmt.Printf("[DEBUG] RoundTripper() - using Proxy.Transport 1\n")
 					tr = ctx.Proxy.Transport
 
 					// Ensures we report the correct cloaked status back to the caller
@@ -86,7 +81,7 @@ func (ctx *ProxyCtx) RoundTrip(req *http.Request) (*http.Response, error) {
 			ctx.Proxy.FlushIdleConnections = false
 		}
 
-		ctx.RoundTripper = ctx.wrapTransport(tr)
+		ctx.RoundTripper = ctx.wrapTransport(&tr)
 	}
 
 	if ctx.isLogEnabled {
@@ -133,7 +128,7 @@ func (ctx *ProxyCtx) _roundTripWithLog(req *http.Request) (*http.Response, error
 	return resp, err
 }
 
-func (ctx *ProxyCtx) wrapTransport(tr http.RoundTripper) RoundTripper {
+func (ctx *ProxyCtx) wrapTransport(tr *http.RoundTripper) RoundTripper {
 	return RoundTripperFunc(func(req *http.Request, ctx *ProxyCtx) (*http.Response, error) {
 
 		// Dump request header for both private and local transports
@@ -143,7 +138,7 @@ func (ctx *ProxyCtx) wrapTransport(tr http.RoundTripper) RoundTripper {
 		}*/
 
 		//fmt.Println("[DEBUG] GoProxy.RoundTripper() Start")
-		resp, err := tr.RoundTrip(req)
+		resp, err := (*tr).RoundTrip(req)
 
 		//if ctx.Trace && err != nil {
 		//	fmt.Printf("  *** RoundTrip() reported err: %+v\n ", err)

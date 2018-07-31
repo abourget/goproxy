@@ -22,7 +22,7 @@ func TestRequestTracer(t *testing.T) {
 		// Create a new ctx object. We only need the Req property.
 		URL := "https://microsoft.com/test/notourpage.aspx?query=213"
 		r := httptest.NewRequest("GET", URL, nil)
-		ctx := &goproxy.ProxyCtx{
+		ctx := &ProxyCtx{
 			Req:            r,
 		}
 
@@ -32,7 +32,7 @@ func TestRequestTracer(t *testing.T) {
 		// This should match
 		URL = "https://microsoft.com/test/getpage.aspx?query=213"
 		r = httptest.NewRequest("GET", URL, nil)
-		ctx = &goproxy.ProxyCtx{
+		ctx = &ProxyCtx{
 			Req:            r,
 		}
 

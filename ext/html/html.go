@@ -1,5 +1,6 @@
 // extension to goproxy that will allow you to easily filter web browser related content.
 package goproxy_html
+/*
 
 import (
 	"bytes"
@@ -102,3 +103,4 @@ func (rfcb *readFirstCloseBoth) Close() error {
 	}
 	return err2
 }
+*/

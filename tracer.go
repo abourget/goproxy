@@ -46,7 +46,7 @@ func (tr *RequestTracer) RequestTrace(match []byte, seconds int) {
 	if tr == nil {
 		return
 	}
-
+	
 	tr.Requests = append(tr.Requests, traceRequest{
 		matchbytes:	match,
 		expires:	time.Now().Add(time.Second * time.Duration(seconds)),

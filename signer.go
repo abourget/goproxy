@@ -56,6 +56,8 @@ func getWildcardHost(host string) string {
 // Used to resolve certificate chains (Global)
 var certtransport	*intransport.InTransport
 
+// Global lock on the certificate store. Locks cannot be copied so they were removed from GoproxyConfig.
+var certmu          	sync.RWMutex
 
 // Config is a set of configuration values that are used to build TLS configs
 // capable of MITM.
@@ -65,7 +67,6 @@ type GoproxyConfig struct {
 	priv            *rsa.PrivateKey
 	keyID           []byte
 	validity        time.Duration
-	certmu          sync.RWMutex
 	*tls.Config
 	bypassDnsDialer *net.Dialer // Custom DNS resolver
 }
@@ -192,24 +193,14 @@ func (c *GoproxyConfig) cert(hostname string) error {
 // Removes the certificate associated with the given hostname from the cache. This is necessary if we change the
 // whitelist or blacklist settings for a domain.
 func (c *GoproxyConfig) FlushCert(hostname string) {
-	fmt.Printf("[DEBUG] FlushCert(%s)\n", hostname)
-
-	_, ok := c.NameToCertificate[hostname]
-	if !ok {
-		fmt.Println("[DEBUG] Didn't find existing certificate")
-	}
-
 	// Remove the port if it exists.
 	host, _, err := net.SplitHostPort(hostname)
 	if err == nil {
 		hostname = host
 	}
+	certmu.Lock()
+	defer certmu.Unlock()
 	delete(c.NameToCertificate, hostname)
-
-	_, ok = c.NameToCertificate[hostname]
-	if !ok {
-		fmt.Println("[DEBUG] The certificate has been deleted")
-	}
 }
 
 // If commonName is provided, it will be used in the certificate. This is used to
@@ -217,7 +208,6 @@ func (c *GoproxyConfig) FlushCert(hostname string) {
 // TODO: commonName may no longer be needed. Refactor to remove it.
 // TODO: Should we remember bad requests so we don't keep making them? Routine is subject to an internal flood attack.
 func (c *GoproxyConfig) certWithCommonName(hostname string, commonName string) error {
-
 	originalhostname := hostname
 
 	//experiment := false
@@ -235,24 +225,15 @@ func (c *GoproxyConfig) certWithCommonName(hostname string, commonName string) e
 
 	// Is this an IP address?
 	isIP := false
-	ip := net.ParseIP(hostname);
+	ip := net.ParseIP(host);
 	if ip != nil {
 		isIP = true
 	}
 
-	// Convert to a wildcard host (*.example.com)
-	// Keep our hostname for the experiment
-	/*
-	if !experiment && !isIP {
-		hostname = getWildcardHost(hostname)
-	}
-	*/
-
 	// Get the certificate from the local cache
-	c.certmu.RLock()
+	certmu.RLock()
 	tlsc, ok := c.NameToCertificate[hostname]
-	c.certmu.RUnlock()
-
+	certmu.RUnlock()
 
 	if ok {
 		//if experiment {
@@ -298,13 +279,8 @@ func (c *GoproxyConfig) certWithCommonName(hostname string, commonName string) e
 	}
 
 	var conn *tls.Conn
-
+	// TODO: This breaks the original goproxy unit tests.
 	conn, err = tls.DialWithDialer(c.bypassDnsDialer, "tcp", originalhostname + ":" + port, &tls.Config{InsecureSkipVerify: true})
-
-
-
-
-
 
 	if err != nil {
 		return err
@@ -341,8 +317,8 @@ func (c *GoproxyConfig) certWithCommonName(hostname string, commonName string) e
 
 
 	// Create a new certificate
-	c.certmu.Lock()
-	defer c.certmu.Unlock()
+	certmu.Lock()
+	defer certmu.Unlock()
 
 	serial, err := rand.Int(rand.Reader, MaxSerialNumber)
 	if err != nil {
