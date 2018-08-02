@@ -12,7 +12,6 @@ package goproxy
 import (
 	"time"
 	"bytes"
-	//"fmt"
 )
 
 // Used to store information about a roundtrip.
@@ -56,11 +55,18 @@ func (tr *RequestTracer) RequestTrace(match []byte, seconds int) {
 // Returns true if the given request should be traced and removes the item from the trace request list.
 func (tr *RequestTracer) Trace(ctx *ProxyCtx) (bool) {
 
+
 	// Check for active trace request
 	if len(tr.Requests) > 0 {
 		for ind, req := range tr.Requests {
 			if req.expires.After(time.Now()) {
 				b, err := ctx.Req.URL.MarshalBinary()
+				// If URL is relative, preface with the host
+				if !ctx.Req.URL.IsAbs() {
+					host := []byte(ctx.Req.Host)
+					b = append(host, b...)
+					//fmt.Printf("[WARN] Relative URL sent to Trace: %s\n", string(b))
+				}
 				if err == nil {
 					if bytes.Contains(b, req.matchbytes) {
 						//fmt.Printf("*** Trace matched: %s\n, req.matchbytes")

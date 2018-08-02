@@ -147,6 +147,9 @@ type ProxyCtx struct {
 	Trace           bool
 
 	TraceInfo       *TraceInfo        // Information about the original request/response
+	SkipRequestHandler bool	  // If set to true, then response handler will be skipped
+	SkipResponseHandler bool	  // If set to true, then response handler will be skipped
+
 }
 
 // Append a message to the context. This will be sent back to the client as a "Winston-Response" header.

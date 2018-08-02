@@ -242,13 +242,58 @@ func (proxy *ProxyHttpServer) ServeHTTP(w http.ResponseWriter, r *http.Request) 
 		}
 	}
 
+	// TEST
+	if strings.Contains(r.Host, "secureclock") {
+		fmt.Printf("[DEBUG] Skipping response handler requested: %s\n", ctx.host)
+		ctx.SkipResponseHandler = true
+	}
+
+
 	// Set up request trace
 	if proxy.Trace != nil {
 		shouldTrace := proxy.Trace(ctx)
 		if shouldTrace {
-			fmt.Println("*** HTTP trace")
 			setupTrace(ctx)
 		}
+	}
+
+	if ctx.Trace {
+		// Duplicate the request and send it through as whitelisted. This will show us the original
+		// information without any modification.
+		ctxOrig := &ProxyCtx{
+			Method:         r.Method,
+			SourceIP:       r.RemoteAddr, // pick it from somewhere else ? have a plugin to override this ?
+			Req:            r,
+			ResponseWriter: w,
+			UserData:       make(map[string]string),
+			UserObjects:    make(map[string]interface{}),
+			Session:        atomic.AddInt64(&proxy.sess, 1),
+			Proxy:          proxy,
+			MITMCertConfig: proxy.MITMCertConfig,
+			Tlsfailure:	proxy.Tlsfailure,
+			UpdateAllowedCounter:	proxy.UpdateAllowedCounter,
+			UpdateBlockedCounter:	proxy.UpdateBlockedCounter,
+			UpdateBlockedCounterByN:	proxy.UpdateBlockedCounterByN,
+			UpdateBlockedHostsByN:	proxy.UpdateBlockedHostsByN,
+			VerbosityLevel: proxy.VerbosityLevel,
+			DeviceType: -1,
+			Trace:			true,
+			SkipRequestHandler: 	true,
+			SkipResponseHandler: 	true,
+		}
+
+		r.URL.Scheme = "http"
+		r.URL.Host = r.Host //net.JoinHostPort(r.Host, "80")
+
+		setupTrace(ctxOrig)
+		proxy.DispatchRequestHandlers(ctxOrig)
+
+		fmt.Println("[INFO] Unmodified Request/Response")
+		fmt.Println("===========================")
+		writeTrace(ctxOrig)
+		fmt.Println("===========================")
+		fmt.Println()
+
 	}
 
 	if r.Method == "CONNECT" {
@@ -284,7 +329,12 @@ func (proxy *ProxyHttpServer) ServeHTTP(w http.ResponseWriter, r *http.Request) 
 
 	// Complete request trace
 	if ctx.Trace {
+		fmt.Println("Modified Request/Response")
+		fmt.Println("===========================")
 		writeTrace(ctx)
+		fmt.Println("===========================")
+		fmt.Println("[INFO] Trace Complete")
+
 	}
 
 	// TODO: Suppress whitelist on initial request?
@@ -293,7 +343,6 @@ func (proxy *ProxyHttpServer) ServeHTTP(w http.ResponseWriter, r *http.Request) 
 }
 
 func setupTrace(ctx *ProxyCtx) {
-	fmt.Printf("[INFO] Tracing request [%s]\n", ctx.Req.URL.String())
 
 	ctx.Trace = true
 	ctx.TraceInfo = &TraceInfo{
@@ -302,7 +351,8 @@ func setupTrace(ctx *ProxyCtx) {
 }
 
 func writeTrace(ctx *ProxyCtx) {
-	fmt.Printf("[INFO] Recording trace information [%s]\n", ctx.Req.URL.String())
+	fmt.Println()
+	fmt.Printf("[INFO] Trace Results:\n")
 	ctx.TraceInfo.RequestDuration = time.Since(ctx.TraceInfo.RequestTime)
 	//ctx.TraceInfo.RequestHeaders = formatRequest(ctx.Req)
 	ctx.TraceInfo.PrivateNetwork = ctx.PrivateNetwork
@@ -325,7 +375,7 @@ func writeTrace(ctx *ProxyCtx) {
 
 	// Note: Response fields are written in OnResponse()
 
-	fmt.Printf("[INFO] Trace Results:\n")
+
 	fmt.Printf("URL: %s\n", ctx.Req.URL)
 	fmt.Printf("Time: %v\n", ctx.TraceInfo.RequestTime)
 	fmt.Printf("Duration: %v\n", ctx.TraceInfo.RequestDuration)
@@ -423,8 +473,6 @@ func (proxy *ProxyHttpServer) ListenAndServeTLS(httpsAddr string) error {
 					return
 				} else {
 					sourcePort, _ = strconv.Atoi(c.RemoteAddr().String()[(portIndex+1):])
-					//log.Printf("  port (string): %d  err: %v\n", port, converror)
-
 				}
 
 				if sourcePort == 0 {
