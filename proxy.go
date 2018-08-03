@@ -27,6 +27,8 @@ import (
 	"crypto/tls"
 	"github.com/winston/shadownetwork"
 	//"crypto/x509"
+	"github.com/valyala/fasthttp/fasthttputil"
+	"io/ioutil"
 )
 
 // The basic proxy type. Implements http.Handler.
@@ -242,18 +244,11 @@ func (proxy *ProxyHttpServer) ServeHTTP(w http.ResponseWriter, r *http.Request) 
 		}
 	}
 
-	// TEST
-	if strings.Contains(r.Host, "secureclock") {
-		fmt.Printf("[DEBUG] Skipping response handler requested: %s\n", ctx.host)
-		ctx.SkipResponseHandler = true
-	}
-
-
 	// Set up request trace
 	if proxy.Trace != nil {
 		shouldTrace := proxy.Trace(ctx)
 		if shouldTrace {
-			setupTrace(ctx)
+			setupTrace(ctx, "Unmodified request")
 		}
 	}
 
@@ -285,14 +280,10 @@ func (proxy *ProxyHttpServer) ServeHTTP(w http.ResponseWriter, r *http.Request) 
 		r.URL.Scheme = "http"
 		r.URL.Host = r.Host //net.JoinHostPort(r.Host, "80")
 
-		setupTrace(ctxOrig)
+		setupTrace(ctxOrig, "Unmodified Request")
 		proxy.DispatchRequestHandlers(ctxOrig)
 
-		fmt.Println("[INFO] Unmodified Request/Response")
-		fmt.Println("===========================")
 		writeTrace(ctxOrig)
-		fmt.Println("===========================")
-		fmt.Println()
 
 	}
 
@@ -329,87 +320,12 @@ func (proxy *ProxyHttpServer) ServeHTTP(w http.ResponseWriter, r *http.Request) 
 
 	// Complete request trace
 	if ctx.Trace {
-		fmt.Println("Modified Request/Response")
-		fmt.Println("===========================")
 		writeTrace(ctx)
-		fmt.Println("===========================")
-		fmt.Println("[INFO] Trace Complete")
 
 	}
-
-	// TODO: Suppress whitelist on initial request?
-	// TODO: Perform second request but simulate whitelisting
 
 }
 
-func setupTrace(ctx *ProxyCtx) {
-
-	ctx.Trace = true
-	ctx.TraceInfo = &TraceInfo{
-		RequestTime: time.Now().Local(),
-	}
-}
-
-func writeTrace(ctx *ProxyCtx) {
-	fmt.Println()
-	fmt.Printf("[INFO] Trace Results:\n")
-	ctx.TraceInfo.RequestDuration = time.Since(ctx.TraceInfo.RequestTime)
-	//ctx.TraceInfo.RequestHeaders = formatRequest(ctx.Req)
-	ctx.TraceInfo.PrivateNetwork = ctx.PrivateNetwork
-	ctx.TraceInfo.MITM = ctx.IsThroughMITM
-
-	// Store the request handlers
-	if ctx.Trace {
-		for name, headers := range ctx.Req.Header {
-			name = strings.ToLower(name)
-			for _, h := range headers {
-				ctx.TraceInfo.RequestHeaders = append(ctx.TraceInfo.RequestHeaders, fmt.Sprintf("%v: %v", name, h))
-			}
-		}
-	}
-
-	cookies := ctx.Req.Header.Get("Cookie")
-	for _, c := range strings.Split(cookies, ";") {
-		ctx.TraceInfo.CookiesSent = append(ctx.TraceInfo.CookiesSent, c)
-	}
-
-	// Note: Response fields are written in OnResponse()
-
-
-	fmt.Printf("URL: %s\n", ctx.Req.URL)
-	fmt.Printf("Time: %v\n", ctx.TraceInfo.RequestTime)
-	fmt.Printf("Duration: %v\n", ctx.TraceInfo.RequestDuration)
-	fmt.Printf("Private: %t\n", ctx.TraceInfo.PrivateNetwork)
-	fmt.Printf("Decrypted: %t\n", ctx.TraceInfo.MITM)
-	fmt.Println()
-	fmt.Println("Request:")
-	for _, h := range ctx.TraceInfo.RequestHeaders {
-		fmt.Printf("%+v\n", h)
-	}
-	fmt.Println()
-	fmt.Println("Cookies sent to server:")
-	for _, h := range ctx.TraceInfo.CookiesSent {
-		fmt.Printf("%+v\n", h)
-	}
-
-	fmt.Println()
-	fmt.Println("Response:")
-	for _, h := range ctx.TraceInfo.ResponseHeaders {
-		fmt.Printf("%+v\n", h)
-	}
-	fmt.Println()
-	fmt.Println("Cookies received from server:")
-	for _, h := range ctx.TraceInfo.CookiesReceived {
-		fmt.Printf("%+v\n", h)
-	}
-
-	if ctx.TraceInfo.RoundTripError != "" {
-		fmt.Println()
-		fmt.Printf("Server reported error: %s\n", ctx.TraceInfo.RoundTripError)
-	}
-
-	fmt.Println()
-}
 
 // ListenAndServe launches all the servers required and listens. Use this method
 // if you want to start listeners for transparent proxying.
@@ -539,9 +455,6 @@ func (proxy *ProxyHttpServer) ListenAndServeTLS(httpsAddr string) error {
 
 
 			ctx.host = connectReq.URL.Host
-			//if tlsConn.Host() == "" {
-			//	log.Printf("*** ListenAndServeTLS 1 - ctx.host [%s]", ctx.host)
-			//}
 			if strings.IndexRune(ctx.host, ':') == -1 {
 				if connectReq.URL.Scheme == "http" {
 					ctx.host += ":80"
@@ -577,12 +490,114 @@ func (proxy *ProxyHttpServer) ListenAndServeTLS(httpsAddr string) error {
 			if proxy.Trace != nil {
 				shouldTrace := proxy.Trace(ctx)
 				if shouldTrace {
-					setupTrace(ctx)
+					setupTrace(ctx, "Modified Request")
+					fmt.Printf("[TRACE] Dispatching original connect handlers to %+v\n", ctx.Req.URL)
 				}
 			}
 
 			//log.Printf("*** ListenAndServeTLS 2 - ctx.host [%s]", ctx.host)
 			proxy.dispatchConnectHandlers(ctx)
+
+			// If tracing, run the same request but skip any filtering.
+			if ctx.Trace {
+
+				// Wait a little while for the original request to complete
+				// TODO: Use a channel for this
+				time.Sleep(10 * time.Second)
+
+				fmt.Printf("[TRACE] Running parallel https request to %s\n", ctx.Req.URL)
+				// Create a bidirectional, in-memory connection with fake client
+				var pipe *fasthttputil.PipeConns
+				pipe = fasthttputil.NewPipeConns()
+
+				// Create a mock client
+				fakeclient := http.Client{
+					Transport: &http.Transport{
+						TLSClientConfig: &tls.Config{
+							InsecureSkipVerify: true,
+						},
+						DialContext: func(ctx context.Context, network string, addr string) (net.Conn, error) {
+							return pipe.Conn1(), nil
+						},
+					},
+				}
+
+				// Make the request
+				Url := ctx.Req.URL.String()
+				go func() {
+					request, err := http.NewRequest("GET", Url, nil)
+
+					for k, v := range ctx.TraceInfo.originalheaders {
+						fmt.Printf("Copy header: %s : %s\n", k, v)
+						request.Header.Set(k, v)
+					}
+
+					fakeresp, err := fakeclient.Do(request)
+					if err != nil {
+						fmt.Printf("[TRACE] Fake client didn't receive a response. err=%+v\n", err)
+					}
+
+					defer fakeresp.Body.Close()
+
+					_, err = ioutil.ReadAll(fakeresp.Body)
+					if err != nil {
+						fmt.Printf("[TRACE] Error while reading body. %+v\n", err)
+						return
+					}
+					// Process the response and close
+					//fmt.Printf("[TRACE] %s  resp.Body: %+v\n", status, string(body))
+
+
+				}()
+
+				// Handshakes with our fake client. The connection should already be open.
+				tlsConnClient, err := vhost.TLS(pipe.Conn2())
+				if err != nil {
+					fmt.Printf("[TRACE] Error - server couldn't open pipe to fake client. Unmodified https response not available. $+v\n", err)
+				} else {
+					connectReqCopy := &http.Request{
+						Method: "CONNECT",
+						URL: connectReq.URL,
+						Host:   Host,
+						Header: make(http.Header),
+					}
+					respClient := dumbResponseWriter{tlsConnClient}
+
+					// Duplicate the request and send it through as whitelisted. This will show us the original
+					// information without any modification.
+					ctxOrig := &ProxyCtx{
+						Method:         connectReqCopy.Method,
+						SourceIP:       connectReqCopy.RemoteAddr, // pick it from somewhere else ? have a plugin to override this ?
+						Req:            connectReqCopy,
+						ResponseWriter: respClient,
+						UserData:       make(map[string]string),
+						UserObjects:    make(map[string]interface{}),
+						Session:        atomic.AddInt64(&proxy.sess, 1),
+						Proxy:          proxy,
+						MITMCertConfig: proxy.MITMCertConfig,
+						Tlsfailure:        proxy.Tlsfailure,
+						UpdateAllowedCounter:        proxy.UpdateAllowedCounter,
+						UpdateBlockedCounter:        proxy.UpdateBlockedCounter,
+						UpdateBlockedCounterByN:        proxy.UpdateBlockedCounterByN,
+						UpdateBlockedHostsByN:        proxy.UpdateBlockedHostsByN,
+						VerbosityLevel: proxy.VerbosityLevel,
+						DeviceType: -1,
+						CipherSignature:        ctx.CipherSignature,
+						sniffedTLS:             ctx.sniffedTLS,
+						sniHost:                ctx.sniHost,
+						host:			ctx.host,
+						Trace:                  true,
+						SkipRequestHandler:     true,
+						SkipResponseHandler:    true,
+					}
+
+					setupTrace(ctxOrig, "Unmodified Request")
+					fmt.Printf("[TRACE] Dispatching connect handlers to %+v\n", ctxOrig.Req.URL)
+					proxy.dispatchConnectHandlers(ctxOrig)
+
+
+				}
+			}
 
 		}(c)
 	}

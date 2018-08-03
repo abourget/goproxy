@@ -80,7 +80,6 @@ func (proxy *ProxyHttpServer) dispatchConnectHandlers(ctx *ProxyCtx) {
 
 	var then Next
 
-
 	for _, handler := range proxy.connectHandlers {
 
 		then = handler.Handle(ctx)
@@ -191,5 +190,16 @@ func (proxy *ProxyHttpServer) DispatchRequestHandlers(ctx *ProxyCtx) {
 	}
 
 	ctx.ForwardRequest(ctx.host)
+
+	// If we're tracing, we need to copy the original headers so that we can duplicate the request
+	// TODO: Duplicate the request body
+	if ctx.Trace {
+		ctx.TraceInfo.originalheaders = make(map[string]string)
+		for name, headers := range ctx.Req.Header {
+			for _, h := range headers {
+				ctx.TraceInfo.originalheaders[name] = h
+			}
+		}
+	}
 	ctx.DispatchResponseHandlers()
 }

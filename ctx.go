@@ -574,7 +574,6 @@ func (ctx *ProxyCtx) ManInTheMiddleHTTPS() error {
 		ctx.IsThroughMITM = true
 		ctx.Proxy.DispatchRequestHandlers(ctx)
 
-
 		// Auto-whitelist failed TLS connections and IP addresses. These tend to be streaming requests.
 		// Some clients (Google Mobile in particular) will handshake but then drop the connection after they process
 		// the certificate. We have to whitelist these or Google Play, Google Photos and other Google clients will
@@ -1070,6 +1069,7 @@ func (ctx *ProxyCtx) ReturnSignature() {
 // Forwards a request to a downstream server. This is done after MITM has been established.
 // TODO: Remove host from function parameters
 func (ctx *ProxyCtx) ForwardRequest(host string) error {
+
 	// If the request was whitelisted, then use the upstream DNS.
 	dnsbypassctx := ctx.Req.Context()
 	if ctx.Whitelisted {
@@ -1095,6 +1095,7 @@ func (ctx *ProxyCtx) ForwardRequest(host string) error {
 			ctx.Req.URL.Scheme = "nonhttp"
 		}
 	}
+
 	resp, err := ctx.RoundTrip(ctx.Req.WithContext(dnsbypassctx))
 	if err != nil {
 		fmt.Printf("[DEBUG] ForwardRequest() - RoundTrip err=%+v\n", err)
@@ -1130,15 +1131,30 @@ func (ctx *ProxyCtx) ForwardRequest(host string) error {
 	return nil
 }
 
+func (ctx *ProxyCtx) writeResponseHeaders() {
+	if ctx.Resp == nil {
+		fmt.Println("[ERROR] No response to write headers for...")
+		return
+	}
+	for name, headers := range ctx.Resp.Header {
+		name = strings.ToLower(name)
+		for _, h := range headers {
+			ctx.TraceInfo.ResponseHeaders = append(ctx.TraceInfo.ResponseHeaders, fmt.Sprintf("%v: %v", name, h))
+		}
+	}
+}
+
 func (ctx *ProxyCtx) DispatchResponseHandlers() error {
 	var rejected = false
-
 	var then Next
 	for _, handler := range ctx.Proxy.responseHandlers {
 		then = handler.Handle(ctx)
 		//ctx.Logf("  ResponseHandler: %s [URL: %s]", then, ctx.Req.URL.Host)
 		switch then {
 		case DONE:
+			if ctx.Trace {
+				ctx.writeResponseHeaders()
+			}
 			return ctx.DispatchDoneHandlers()
 		case NEXT:
 			continue
@@ -1165,8 +1181,6 @@ func (ctx *ProxyCtx) DispatchResponseHandlers() error {
 	// In the case of a MITM attack, we can either drop the connection or
 	// return a status 500 code.
 	if ctx.Resp == nil || rejected {
-		//ctx.Logf(1, "  *** BLOCKED/ResponseFilter: %s", ctx.Req.URL, ctx.Resp, rejected)
-
 		if rejected {
 			// Forward a dummy file to the caller if we can tell what it is
 			ext := filepath.Ext(ctx.Req.URL.Path)
@@ -1252,7 +1266,12 @@ func (ctx *ProxyCtx) DispatchResponseHandlers() error {
 		return nil
 	}
 
-	return ctx.ForwardResponse(ctx.Resp)
+	if ctx.Trace {
+		ctx.writeResponseHeaders()
+	}
+	ret := ctx.ForwardResponse(ctx.Resp)
+
+	return ret
 }
 
 func (ctx *ProxyCtx) DispatchDoneHandlers() error {
@@ -1284,7 +1303,7 @@ func (ctx *ProxyCtx) DispatchDoneHandlers() error {
 }
 
 func (ctx *ProxyCtx) ForwardResponse(resp *http.Response) error {
-	//ctx.Logf("  *** ForwardResponse ***")
+
 	if ctx.IsThroughMITM && ctx.IsSecure {
 		return ctx.forwardMITMResponse(ctx.Resp)
 	}
@@ -1341,10 +1360,10 @@ func (ctx *ProxyCtx) ForwardResponse(resp *http.Response) error {
 
 // RLS: 8/14/2017 - Added support for Content Length instead of chunking. To use, set the ctx.NewBodyLength property.
 func (ctx *ProxyCtx) forwardMITMResponse(resp *http.Response) error {
-
 	// Make sure we close the original response body to prevent memory leaks. This has to be
 	// done no matter what.
 	defer resp.Body.Close();
+
 
 	text := resp.Status
 	//ctx.Logf("In forwardMITMResponse  Status: %s", text)
@@ -1415,7 +1434,6 @@ func (ctx *ProxyCtx) forwardMITMResponse(resp *http.Response) error {
 			ctx.Warnf("Cannot write fixed length TLS response from mitm'd client: %v", err)
 			return err
 		}
-
 	}
 
 	if _, err := io.WriteString(ctx.Conn, "\r\n"); err != nil {
