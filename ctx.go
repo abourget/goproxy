@@ -476,10 +476,13 @@ func (ctx *ProxyCtx) ManInTheMiddleHTTPS() error {
 		//defer rawClientTls.Close()
 
 		// Performs the TLS handshake
+		if ctx.Trace {
+			fmt.Printf("[DEBUG] About to handshake: %s\n", ctx.host)
+		}
 		if err := rawClientTls.Handshake(); err != nil {
-			//if !strings.Contains(err.Error(), "unknown certificate") {
-			//	fmt.Printf("[DEBUG] ctx.TLSHandshake error (client) - %s %+v [%s]\n", ctx.Req.URL.String(), err, ctx.CipherSignature)
-			//}
+			if ctx.Trace {
+				fmt.Printf("[DEBUG] Handshake failed: %s err=%+v\n", ctx.host, err)
+			}
 
 			// A handshake error typically only occurs on the client side
 			// when pinned Certificates are being used, ie: a mobile
@@ -493,6 +496,9 @@ func (ctx *ProxyCtx) ManInTheMiddleHTTPS() error {
 			}
 
 			return
+		}
+		if ctx.Trace {
+			fmt.Printf("[DEBUG] Handshake succeeded: %s\n", ctx.host)
 		}
 
 		ctx.Conn = rawClientTls
@@ -513,11 +519,24 @@ func (ctx *ProxyCtx) ManInTheMiddleHTTPS() error {
 		var subReq *http.Request
 		subReq, err = http.ReadRequest(clientTlsReader)
 
+		if err != nil && err == io.EOF {
+			// The client hung up. Browsers commonly do this when they cache resources.
+			fmt.Printf("[DEBUG] Client hung up on TLS connection. This may be normal. [%s]\n", ctx.host)
+			return
+		}
+
+		if ctx.Trace {
+			fmt.Printf("[DEBUG] Read request results: %s err=%+v\n", ctx.host, err)
+		}
+
 		// If we read anything, then we know there wasn't a certificate failure.
 		n := buf.Len()
 
 		// We failed to parse a standard http request. Try to parse it as non-http.
 		if err != nil && n > 0 {
+			if ctx.Trace {
+				fmt.Printf("[DEBUG] Creating new non-httprequest: %s \n", ctx.host)
+			}
 			// Manually create a new request
 
 			subReq = &http.Request{
@@ -555,6 +574,9 @@ func (ctx *ProxyCtx) ManInTheMiddleHTTPS() error {
 		//}
 
 		if err != nil {
+			if ctx.Trace {
+				fmt.Printf("[DEBUG] Request creation failed: %s err=%+v\n", ctx.host, err)
+			}
 			// The client request could not be understood. This indicates a problem communicating with the
 			// client, most likely certificate pinning or the client does not have the Winston certificate installed.
 			if err.Error() != "EOF" {
@@ -572,6 +594,9 @@ func (ctx *ProxyCtx) ManInTheMiddleHTTPS() error {
 
 		ctx.Req = subReq
 		ctx.IsThroughMITM = true
+		if ctx.Trace {
+			fmt.Printf("[DEBUG] About to call DispatchRequestHandlers: %s \n", ctx.host)
+		}
 		ctx.Proxy.DispatchRequestHandlers(ctx)
 
 		// Auto-whitelist failed TLS connections and IP addresses. These tend to be streaming requests.
@@ -1367,6 +1392,9 @@ func (ctx *ProxyCtx) forwardMITMResponse(resp *http.Response) error {
 
 	text := resp.Status
 	//ctx.Logf("In forwardMITMResponse  Status: %s", text)
+	if ctx.Trace {
+		fmt.Printf("[TRACE] Response protocol: %s\n", resp.Proto)
+	}
 	statusCode := strconv.Itoa(resp.StatusCode) + " "
 	if strings.HasPrefix(text, statusCode) {
 		text = text[len(statusCode):]

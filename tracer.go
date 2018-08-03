@@ -117,7 +117,6 @@ func writeTrace(ctx *ProxyCtx) {
 	ctx.TraceInfo.MITM = ctx.IsThroughMITM
 
 	// Store the request handlers
-	fmt.Printf("# Request Headers 1: %d\n", len(ctx.TraceInfo.RequestHeaders))
 	if ctx.Trace {
 		for name, headers := range ctx.Req.Header {
 			name = strings.ToLower(name)
@@ -142,7 +141,6 @@ func writeTrace(ctx *ProxyCtx) {
 	fmt.Printf("Decrypted: %t\n", ctx.TraceInfo.MITM)
 	fmt.Println()
 	fmt.Println("Request:")
-	fmt.Printf("# Request Headers 2: %d\n", len(ctx.TraceInfo.RequestHeaders))
 	for _, h := range ctx.TraceInfo.RequestHeaders {
 		fmt.Printf("%+v\n", h)
 	}

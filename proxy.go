@@ -495,6 +495,11 @@ func (proxy *ProxyHttpServer) ListenAndServeTLS(httpsAddr string) error {
 				}
 			}
 
+
+			if ctx.Trace {
+				fmt.Printf("[TRACE] CLIENTHELLO [%s] [Vers=%v] =\n%+v\n\n", ctx.CipherSignature, (*tlsConn.ClientHelloMsg).Vers, *tlsConn.ClientHelloMsg)
+			}
+
 			//log.Printf("*** ListenAndServeTLS 2 - ctx.host [%s]", ctx.host)
 			proxy.dispatchConnectHandlers(ctx)
 
@@ -528,13 +533,14 @@ func (proxy *ProxyHttpServer) ListenAndServeTLS(httpsAddr string) error {
 					request, err := http.NewRequest("GET", Url, nil)
 
 					for k, v := range ctx.TraceInfo.originalheaders {
-						fmt.Printf("Copy header: %s : %s\n", k, v)
+						//fmt.Printf("Copy header: %s : %s\n", k, v)
 						request.Header.Set(k, v)
 					}
 
 					fakeresp, err := fakeclient.Do(request)
 					if err != nil {
 						fmt.Printf("[TRACE] Fake client didn't receive a response. err=%+v\n", err)
+						return
 					}
 
 					defer fakeresp.Body.Close()
