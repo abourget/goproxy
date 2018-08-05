@@ -99,6 +99,9 @@ type ProxyHttpServer struct {
 	// RLS 6-29-2017
 	Tlsfailure func(ctx *ProxyCtx, untrustedCertificate bool)
 
+	// Closure to give listeners a chance to service a request directly. Return true if handled.
+	HandleHTTP func(ctx *ProxyCtx) (bool)
+
 	// References to persistent caches for statistics collection
 	// RLS 7-5-2017
 	blockedmu sync.Mutex
@@ -252,7 +255,52 @@ func (proxy *ProxyHttpServer) ServeHTTP(w http.ResponseWriter, r *http.Request) 
 		}
 	}
 
+	if r.Method == "CONNECT" {
+		proxy.dispatchConnectHandlers(ctx)
+	} else {
+		if ctx.Trace {
+			fmt.Printf("[DEBUG] ServeHTTP() - Host: %s  IsAbs: %t\n", r.Host, r.URL.IsAbs())
+		}
+
+		if !r.URL.IsAbs() {
+			if ctx.Trace {
+				fmt.Printf("[DEBUG] ServeHTTP() - Host: %s\n", r.Host)
+			}
+
+			r.URL.Scheme = "http"
+			r.URL.Host = r.Host //net.JoinHostPort(r.Host, "80")
+
+			// Give listener a chance to service the request
+			if proxy.HandleHTTP != nil {
+				if proxy.HandleHTTP(ctx) {
+					return
+				}
+			//if r.Host == "winston.conf" {
+			//	// TODO: Callback to Winston handler here
+			//	proxy.NonProxyHandler.ServeHTTP(w, r)
+			//	if ctx.Trace {
+			//		// Complete request trace
+			//		writeTrace(ctx)
+			//	}
+			//	return
+			}
+
+
+		}
+
+		proxy.DispatchRequestHandlers(ctx)
+	}
+
+	// Complete request trace
 	if ctx.Trace {
+		writeTrace(ctx)
+
+	}
+
+	// Duplicate the request but skip the request and response handling
+	if ctx.Trace {
+		// TODO: Use channel instead of sleeping
+		time.Sleep(10 * time.Second)
 		// Duplicate the request and send it through as whitelisted. This will show us the original
 		// information without any modification.
 		ctxOrig := &ProxyCtx{
@@ -284,43 +332,6 @@ func (proxy *ProxyHttpServer) ServeHTTP(w http.ResponseWriter, r *http.Request) 
 		proxy.DispatchRequestHandlers(ctxOrig)
 
 		writeTrace(ctxOrig)
-
-	}
-
-	if r.Method == "CONNECT" {
-		proxy.dispatchConnectHandlers(ctx)
-	} else {
-		if !r.URL.IsAbs() {
-
-			// redirect to local proxy
-			if r.Host == "winston.conf" {
-				proxy.NonProxyHandler.ServeHTTP(w, r)
-				if ctx.Trace {
-					// Complete request trace
-					writeTrace(ctx)
-				}
-				return
-			}
-
-			// Convert to absolute URL
-			//if ctx.Trace {
-			//	fmt.Printf("[INFO] Got relative request %v %v %v %v\n", r.URL.Path, r.Host, r.Method, r.URL.String())
-
-				r.URL.Scheme = "http"
-				r.URL.Host = r.Host //net.JoinHostPort(r.Host, "80")
-
-				//fmt.Printf("[INFO] Rewrote to %s\n", r.URL.String())
-			//}
-
-
-		}
-
-		proxy.DispatchRequestHandlers(ctx)
-	}
-
-	// Complete request trace
-	if ctx.Trace {
-		writeTrace(ctx)
 
 	}
 
@@ -397,7 +408,6 @@ func (proxy *ProxyHttpServer) ListenAndServeTLS(httpsAddr string) error {
 				}
 
 				for _, flow := range connections {
-
 					if flow.Original.SPort == sourcePort {
 						nonSNIHost = flow.Original.Destination
 					}
@@ -411,15 +421,11 @@ func (proxy *ProxyHttpServer) ListenAndServeTLS(httpsAddr string) error {
 				//log.Printf("[DEBUG]  Non-SNI request detected - destination: [%s]\n", Host)
 			}
 
-
-
 			// Check for local host
 			if strings.HasPrefix(Host, "192.168") {
 				//log.Printf("  *** non-SNI attempt at local host. Dropping request: [%s]\n", Host)
 				return
 			}
-
-
 
 			connectReq := &http.Request{
 				Method: "CONNECT",

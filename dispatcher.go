@@ -117,8 +117,8 @@ func (proxy *ProxyHttpServer) dispatchConnectHandlers(ctx *ProxyCtx) {
 		}
 	}
 
-	//fmt.Printf("[DEBUG] dispatchConnectHandlers() - FORWARD. [%s]\n", ctx.host)
 	if err := ctx.ForwardConnect(); err != nil {
+		//fmt.Printf("[DEBUG] dispatchConnectHandlers() - err from ForwardConnect(). [%s]\n", ctx.host, err)
 		ctx.Logf(1, "ERROR: Failed forwarding in fallback clause: %s", err)
 	}
 
@@ -154,7 +154,7 @@ func (proxy *ProxyHttpServer) DispatchRequestHandlers(ctx *ProxyCtx) {
 			return
 		case REJECT:
 			ext := filepath.Ext(ctx.Req.URL.Path)
-			//ctx.Logf("  path: %s  extension: %s", ctx.Req.URL.Path, ext)
+			//fmt.Printf("[DEBUG] DispatchRequestHandlers() - REJECT. [%s]\n", ctx.host)
 			switch ext {
 			case ".js":
 				//ctx.Logf("  Serving dummy script")
