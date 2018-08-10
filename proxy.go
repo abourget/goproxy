@@ -235,6 +235,7 @@ func (proxy *ProxyHttpServer) ServeHTTP(w http.ResponseWriter, r *http.Request) 
 		VerbosityLevel: proxy.VerbosityLevel,
 		DeviceType: -1,
 		Trace:		false,
+		RequestTime:	time.Now(),
 	}
 
 
@@ -258,15 +259,7 @@ func (proxy *ProxyHttpServer) ServeHTTP(w http.ResponseWriter, r *http.Request) 
 	if r.Method == "CONNECT" {
 		proxy.dispatchConnectHandlers(ctx)
 	} else {
-		if ctx.Trace {
-			fmt.Printf("[DEBUG] ServeHTTP() - Host: %s  IsAbs: %t\n", r.Host, r.URL.IsAbs())
-		}
-
 		if !r.URL.IsAbs() {
-			if ctx.Trace {
-				fmt.Printf("[DEBUG] ServeHTTP() - Host: %s\n", r.Host)
-			}
-
 			r.URL.Scheme = "http"
 			r.URL.Host = r.Host //net.JoinHostPort(r.Host, "80")
 
@@ -275,14 +268,6 @@ func (proxy *ProxyHttpServer) ServeHTTP(w http.ResponseWriter, r *http.Request) 
 				if proxy.HandleHTTP(ctx) {
 					return
 				}
-			//if r.Host == "winston.conf" {
-			//	// TODO: Callback to Winston handler here
-			//	proxy.NonProxyHandler.ServeHTTP(w, r)
-			//	if ctx.Trace {
-			//		// Complete request trace
-			//		writeTrace(ctx)
-			//	}
-			//	return
 			}
 
 
@@ -323,6 +308,8 @@ func (proxy *ProxyHttpServer) ServeHTTP(w http.ResponseWriter, r *http.Request) 
 			Trace:			true,
 			SkipRequestHandler: 	true,
 			SkipResponseHandler: 	true,
+			RequestTime:	time.Now(),
+
 		}
 
 		r.URL.Scheme = "http"
@@ -457,6 +444,8 @@ func (proxy *ProxyHttpServer) ListenAndServeTLS(httpsAddr string) error {
 				UpdateBlockedHostsByN:	proxy.UpdateBlockedHostsByN,
 				VerbosityLevel: proxy.VerbosityLevel,
 				DeviceType: -1,
+				RequestTime:	time.Now(),
+
 			}
 
 
@@ -497,16 +486,21 @@ func (proxy *ProxyHttpServer) ListenAndServeTLS(httpsAddr string) error {
 				shouldTrace := proxy.Trace(ctx)
 				if shouldTrace {
 					setupTrace(ctx, "Modified Request")
-					fmt.Printf("[TRACE] Dispatching original connect handlers to %+v\n", ctx.Req.URL)
 				}
 			}
 
 
-			if ctx.Trace {
-				fmt.Printf("[TRACE] CLIENTHELLO [%s] [Vers=%v] =\n%+v\n\n", ctx.CipherSignature, (*tlsConn.ClientHelloMsg).Vers, *tlsConn.ClientHelloMsg)
-			}
+			//if ctx.Trace {
+			//	fmt.Printf("[TRACE] CLIENTHELLO [%s] [Vers=%v] =\n%+v\n\n", ctx.CipherSignature, (*tlsConn.ClientHelloMsg).Vers, *tlsConn.ClientHelloMsg)
+			//}
 
-			//log.Printf("*** ListenAndServeTLS 2 - ctx.host [%s]", ctx.host)
+			// Force cloaking but skip filtering. Used for debugging purposes.
+			//if strings.Contains(ctx.host, "facebook.com") {
+			//	ctx.SkipRequestHandler = true
+			//	ctx.SkipResponseHandler = true
+			//	ctx.PrivateNetwork = true
+			//}
+
 			proxy.dispatchConnectHandlers(ctx)
 
 			// If tracing, run the same request but skip any filtering.
@@ -516,7 +510,7 @@ func (proxy *ProxyHttpServer) ListenAndServeTLS(httpsAddr string) error {
 				// TODO: Use a channel for this
 				time.Sleep(10 * time.Second)
 
-				fmt.Printf("[TRACE] Running parallel https request to %s\n", ctx.Req.URL)
+				//fmt.Printf("[TRACE] Running parallel https request to %s\n", ctx.Req.URL)
 				// Create a bidirectional, in-memory connection with fake client
 				var pipe *fasthttputil.PipeConns
 				pipe = fasthttputil.NewPipeConns()
@@ -622,37 +616,27 @@ func GenerateSignature(h *vhost.ClientHelloMsg, debug bool) (string) {
 	var b bytes.Buffer
 	var logbuf bytes.Buffer
 
-	// For some reason, the first cipher signature is always a different number on the same client.
-	// This may be a bug in vhost, so we'll skip it.
-	i := 0
+	// Google clients based on BoringSSL will return semi-random cipher suites. These should be ignored
+	// but we can use their presence as an additional bit of entropy.
+	// Ref: https://tools.ietf.org/html/draft-davidben-tls-grease-01#section-5
 	for _, suite := range h.CipherSuites {
-		if i > 0 {
-			b.Write([]byte (strconv.Itoa(int(suite))))
+		switch suite {
+			case 2570, 6682, 10794, 14906, 19018, 23130, 27242, 31354, 35466, 39578, 43690, 47802, 51914, 56026, 60138, 64250:
+			default:
+				b.Write([]byte (strconv.Itoa(int(suite))))
 		}
 
-		if debug {
-			logbuf.Write([]byte (strconv.Itoa(int(suite))))
-			logbuf.Write([]byte ("-"))
-		}
-
-		i++
 	}
 	b.Write([]byte ("-"))
 
 	// Create string for curves. The first value is often different for the same client, so we ignore it.
-	i = 0
 	for _, curve := range h.SupportedCurves {
-		if i > 0 {
+		switch curve {
+		case 2570, 6682, 10794, 14906, 19018, 23130, 27242, 31354, 35466, 39578, 43690, 47802, 51914, 56026, 60138, 64250:
+		default:
 			b.Write([]byte (strconv.Itoa(int(curve))))
-			//b.Write([]byte ("-"))
 		}
 
-		if debug {
-			logbuf.Write([]byte (strconv.Itoa(int(curve))))
-			logbuf.Write([]byte ("-"))
-		}
-
-		i++
 	}
 	b.Write([]byte ("-"))
 
@@ -692,11 +676,10 @@ func GenerateSignature(h *vhost.ClientHelloMsg, debug bool) (string) {
 	hasher.Write([]byte(signature))
 	encodedsignature := hex.EncodeToString(hasher.Sum(nil))
 
-	if debug {
-		log.Printf("  *** detected target client: [%s] - [%s]\n", encodedsignature, signature)
-	}
+	//if debug {
+	//	log.Printf("  *** detected target client: [%s] - [%s]\n", encodedsignature, signature)
+	//}
 
-	//return signature
 	return encodedsignature
 }
 

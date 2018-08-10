@@ -108,6 +108,8 @@ func setupTrace(ctx *ProxyCtx, tracename string) {
 
 func writeTrace(ctx *ProxyCtx) {
 	fmt.Println()
+	fmt.Println()
+	fmt.Println()
 	fmt.Printf("[INFO] Trace Results [%s]:\n", ctx.TraceInfo.Name)
 	fmt.Println("===========================")
 	fmt.Println()

@@ -73,6 +73,7 @@ func (proxy *ProxyHttpServer) dispatchConnectHandlers(ctx *ProxyCtx) {
 	// This sets up a new connection to the original client
 	conn, _, err := hij.Hijack()
 	if err != nil {
+		fmt.Printf("[DEBUG] dispatchConnectHandlers() Hijack error [%s]\n", ctx.host, err)
 		panic("cannot hijack connection " + err.Error())
 	}
 
@@ -81,7 +82,7 @@ func (proxy *ProxyHttpServer) dispatchConnectHandlers(ctx *ProxyCtx) {
 	var then Next
 
 	for _, handler := range proxy.connectHandlers {
-
+		//fmt.Printf("[DEBUG] dispatchConnectHandlers() Loop [%s]\n", ctx.host)
 		then = handler.Handle(ctx)
 
 		switch then {
@@ -90,10 +91,11 @@ func (proxy *ProxyHttpServer) dispatchConnectHandlers(ctx *ProxyCtx) {
 
 		case FORWARD:
 			// Don't update allowed metrics for whitelisted sites
+			//fmt.Printf("[DEBUG] dispatchConnectHandlers() - FORWARD. [%s]\n", ctx.host)
 			break
 
 		case MITM:
-			//fmt.Printf("[DEBUG] dispatchConnectHandlers() - calling MITM. [%s]\n", ctx.host)
+			//fmt.Printf("[DEBUG] dispatchConnectHandlers() - MITM. [%s]\n", ctx.host)
 			err := ctx.ManInTheMiddle()
 			if err != nil {
 				ctx.Logf(1, "ERROR: Couldn't MITM: %s", err)
@@ -111,7 +113,6 @@ func (proxy *ProxyHttpServer) dispatchConnectHandlers(ctx *ProxyCtx) {
 			return
 		case DONE:
 			return
-
 		default:
 			panic(fmt.Sprintf("Invalid value %v for Next after calling %v", then, handler))
 		}

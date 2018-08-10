@@ -33,8 +33,6 @@ import (
 	//"github.com/grantae/certinfo"
 	//"crypto/x509"
 	"net/url"
-	//"golang.org/x/net/lex/httplex"
-	//"os"
 )
 
 var NonHTTPRequest = "nonhttprequest"
@@ -149,6 +147,7 @@ type ProxyCtx struct {
 	TraceInfo       *TraceInfo        // Information about the original request/response
 	SkipRequestHandler bool	  // If set to true, then response handler will be skipped
 	SkipResponseHandler bool	  // If set to true, then response handler will be skipped
+	RequestTime		time.Time	// Time the request was started. Useful for debugging.
 
 }
 
@@ -387,12 +386,11 @@ func (ctx *ProxyCtx) ManInTheMiddleHTTPS() error {
 	// Attempt to recover gracefully from a nested panic not caught by the later defer recover.
 	// This is a very rare race condition which happens only under high load but which
 	// unfortunately crashes the device.
-	/*defer func() {
+	defer func() {
 		if r := recover(); r != nil {
 			ctx.Logf(1, "[PANIC] Fatal error while processing MITM request. Recovering gracefully.", r)
 		}
 	}()
-	*/
 
 	if ctx.Method != "CONNECT" {
 		panic("method is not CONNECT")
@@ -476,13 +474,10 @@ func (ctx *ProxyCtx) ManInTheMiddleHTTPS() error {
 		//defer rawClientTls.Close()
 
 		// Performs the TLS handshake
-		if ctx.Trace {
-			fmt.Printf("[DEBUG] About to handshake: %s\n", ctx.host)
-		}
+		//if ctx.Trace {
+		//	fmt.Printf("[DEBUG] About to handshake: %s\n", ctx.host)
+		//}
 		if err := rawClientTls.Handshake(); err != nil {
-			if ctx.Trace {
-				fmt.Printf("[DEBUG] Handshake failed: %s err=%+v\n", ctx.host, err)
-			}
 
 			// A handshake error typically only occurs on the client side
 			// when pinned Certificates are being used, ie: a mobile
@@ -496,9 +491,6 @@ func (ctx *ProxyCtx) ManInTheMiddleHTTPS() error {
 			}
 
 			return
-		}
-		if ctx.Trace {
-			fmt.Printf("[DEBUG] Handshake succeeded: %s\n", ctx.host)
 		}
 
 		ctx.Conn = rawClientTls
@@ -520,14 +512,31 @@ func (ctx *ProxyCtx) ManInTheMiddleHTTPS() error {
 		subReq, err = http.ReadRequest(clientTlsReader)
 
 		if err != nil && err == io.EOF {
-			// The client hung up. Browsers commonly do this when they cache resources.
-			fmt.Printf("[DEBUG] Client hung up on TLS connection. This may be normal. [%s]\n", ctx.host)
+			// The client dropped the connection. This indicates a problem communicating through the client TLS tunnel
+			// most likely due certificate pinning or the client does not have the Winston certificate installed.
+			// Note that when browser tabs are closed, they may rapidly shut down all TLS connections in progress.
+			// We attempt to filter these out by only registering a TLS certificate error if the connection closed
+			// pretty quickly. This works because Firefox typically takes a few seconds to drop the connection,
+			// while untrusting clients will drop the connection immediately.
+			if ctx.RequestTime.Add(time.Second * 1).After(time.Now()) {
+				//fmt.Printf("[DEBUG] Client hung up on TLS connection after handshake (1). Calling NoCertificate(). [%s] [%s] elapsed time: %s\n", ctx.host, ctx.CipherSignature, time.Since(ctx.RequestTime))
+				if ctx.Tlsfailure != nil {
+					ctx.Tlsfailure(ctx, true)
+				}
+			}
 			return
 		}
 
-		if ctx.Trace {
-			fmt.Printf("[DEBUG] Read request results: %s err=%+v\n", ctx.host, err)
-		}
+		//if ctx.Trace {
+			//fmt.Printf("[DEBUG] Read request results: %s err=%+v\n", ctx.host, err)
+
+			// Uncomment to print out raw request.
+			//fmt.Printf("[DEBUG] Read so far:\n%s\n", buf.String())
+
+			// Uncomment to read rest of request.body. Will prevent request from completing.
+			//body, ok := ioutil.ReadAll(clientTlsReader)
+			//fmt.Printf("[DEBUG] Remaining Request.Body [%t]:\n%s\n", ok, string(body))
+		//}
 
 		// If we read anything, then we know there wasn't a certificate failure.
 		n := buf.Len()
@@ -577,14 +586,10 @@ func (ctx *ProxyCtx) ManInTheMiddleHTTPS() error {
 			if ctx.Trace {
 				fmt.Printf("[DEBUG] Request creation failed: %s err=%+v\n", ctx.host, err)
 			}
-			// The client request could not be understood. This indicates a problem communicating with the
-			// client, most likely certificate pinning or the client does not have the Winston certificate installed.
-			if err.Error() != "EOF" {
-				//fmt.Printf("[DEBUG] Ctx/ManInTheMiddleHTTPS - Error parsing HTTP Request [%s] %+v\n% bytes\nReq\n%s\n", ctx.host, err, n, buf[:n])
-				if ctx.Tlsfailure != nil {
-					fmt.Println("[DEBUG] malformed HTTP request - calling whitelisting logic")
-					ctx.Tlsfailure(ctx, false)
-				}
+			//	fmt.Printf("[DEBUG] Client hung up on TLS connection after handshake (2). Calling NoCertificate(). [%s] [%s] elapsed time: %s\n", ctx.host, ctx.CipherSignature, time.Since(ctx.RequestTime))
+			if ctx.Tlsfailure != nil {
+				fmt.Println("[DEBUG] malformed HTTP request - calling whitelisting logic")
+				ctx.Tlsfailure(ctx, true)
 			}
 			return
 		}
@@ -594,9 +599,6 @@ func (ctx *ProxyCtx) ManInTheMiddleHTTPS() error {
 
 		ctx.Req = subReq
 		ctx.IsThroughMITM = true
-		if ctx.Trace {
-			fmt.Printf("[DEBUG] About to call DispatchRequestHandlers: %s \n", ctx.host)
-		}
 		ctx.Proxy.DispatchRequestHandlers(ctx)
 
 		// Auto-whitelist failed TLS connections and IP addresses. These tend to be streaming requests.
@@ -1125,6 +1127,8 @@ func (ctx *ProxyCtx) ForwardRequest(host string) error {
 	resp, err := ctx.RoundTrip(ctx.Req.WithContext(dnsbypassctx))
 	//if err != nil {
 	//	fmt.Printf("[DEBUG] ForwardRequest() - RoundTrip err=%+v\n", err)
+	//} else {
+	//	fmt.Printf("[DEBUG] ForwardRequest() - was ok (no err)\n")
 	//}
 
 	// Log RoundTrip error if one was received
@@ -1171,42 +1175,53 @@ func (ctx *ProxyCtx) writeResponseHeaders() {
 }
 
 func (ctx *ProxyCtx) DispatchResponseHandlers() error {
+	//fmt.Println("[DEBUG] DispatchResponseHandlers()")
+
 	var rejected = false
 	var then Next
 	for _, handler := range ctx.Proxy.responseHandlers {
+		//fmt.Println("[DEBUG] DispatchResponseHandlers() Loop")
 		then = handler.Handle(ctx)
-		//ctx.Logf("  ResponseHandler: %s [URL: %s]", then, ctx.Req.URL.Host)
+		//fmt.Printf("[DEBUG] DispatchResponseHandlers: %s [URL: %s]\n", then, ctx.Req.URL.Host)
 		switch then {
 		case DONE:
+			//fmt.Println("[DEBUG] DispatchResponseHandlers() DONE")
 			if ctx.Trace {
 				ctx.writeResponseHeaders()
 			}
 			return ctx.DispatchDoneHandlers()
 		case NEXT:
+			//fmt.Println("[DEBUG] DispatchResponseHandlers() NEXT")
 			continue
 		case FORWARD:
+			//fmt.Println("[DEBUG] DispatchResponseHandlers() FORWARD")
 			break
 		case MITM:
+			//fmt.Println("[DEBUG] DispatchResponseHandlers() MITM")
 			panic("MITM doesn't make sense when we are already parsing the request")
 		case REJECT:
+			//fmt.Println("[DEBUG] DispatchResponseHandlers() REJECT")
 			rejected = true
 
-			//ctx.Proxy.UpdateBlockedCounter()
-			//ctx.Proxy.UpdateBlockedHosts(ctx.Req.Host)
-			//panic("REJECT a response ? then do what, send a 500 back ?")
 		case SIGNATURE:
+			//fmt.Println("[DEBUG] DispatchResponseHandlers() SIGNATURE")
 			// Do nothing. We're just returning the client signature.
 			//ctx.Logf(1, " *** DispatchResponseHandlers:SIGNATURE")
 		default:
+			//fmt.Println("[DEBUG] DispatchResponseHandlers() DEFAULT")
 			panic(fmt.Sprintf("Invalid value %v for Next after calling %v", then, handler))
 		}
 	}
 
+	//if ctx.Resp == nil {
+	//	fmt.Println("[ERROR] DispatchResponseHandlers() - Response was nil")
+	//}
 	// A nil Resp means that the connection was dropped without even a status
 	// code. This is typical if our DNS redirects to a closed port on this device.
 	// In the case of a MITM attack, we can either drop the connection or
 	// return a status 500 code.
 	if ctx.Resp == nil || rejected {
+		//fmt.Println("[DEBUG] DispatchResponseHandlers() Resp was nil or rejected")
 		if rejected {
 			// Forward a dummy file to the caller if we can tell what it is
 			ext := filepath.Ext(ctx.Req.URL.Path)
@@ -1295,6 +1310,8 @@ func (ctx *ProxyCtx) DispatchResponseHandlers() error {
 	if ctx.Trace {
 		ctx.writeResponseHeaders()
 	}
+
+	//fmt.Println("[DEBUG] DispatchResponseHandlers() Calling ForwardResponse...")
 	ret := ctx.ForwardResponse(ctx.Resp)
 
 	return ret
@@ -1329,6 +1346,8 @@ func (ctx *ProxyCtx) DispatchDoneHandlers() error {
 }
 
 func (ctx *ProxyCtx) ForwardResponse(resp *http.Response) error {
+
+	//fmt.Printf("[DEBUG] ForwardResponse()")
 
 	if ctx.IsThroughMITM && ctx.IsSecure {
 		return ctx.forwardMITMResponse(ctx.Resp)
@@ -1392,7 +1411,7 @@ func (ctx *ProxyCtx) forwardMITMResponse(resp *http.Response) error {
 
 
 	text := resp.Status
-	//ctx.Logf("In forwardMITMResponse  Status: %s", text)
+	//fmt.Printf("[DEBUG] forwardMITMResponse()  Status: %s", text)
 	if ctx.Trace {
 		fmt.Printf("[TRACE] Response protocol: %s\n", resp.Proto)
 	}
@@ -1441,7 +1460,7 @@ func (ctx *ProxyCtx) forwardMITMResponse(resp *http.Response) error {
 		// Chunk the body back to the caller
 		chunked := newChunkedWriter(ctx.Conn)
 
-		// Do we need to close the resp.Body here?
+		// This reads the body into the writer
 		if _, err := io.Copy(chunked, resp.Body); err != nil {
 			ctx.Warnf("Cannot write TLS response body from mitm'd client: %v / host: %s", err, ctx.host)
 			return err
