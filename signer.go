@@ -164,7 +164,7 @@ func WhitelistedDNSDialer() (*net.Dialer) {
 
 	proxy := dns.NameServers{
 		&net.UDPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 54},
-	}.Upstream(rand.Reader)
+	}.First()
 
 	dnsclient.Transport = &dns.Transport{
 		Proxy: proxy,
@@ -283,6 +283,7 @@ func (c *GoproxyConfig) certWithCommonName(hostname string, commonName string) e
 	conn, err = tls.DialWithDialer(c.bypassDnsDialer, "tcp", originalhostname + ":" + port, &tls.Config{InsecureSkipVerify: true})
 
 	if err != nil {
+		fmt.Printf("[DEBUG] Signer.go - Error while dialing: %v\n", err)
 		return err
 	} else {
 		// Only close the connection if we couldn't connect.

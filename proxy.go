@@ -15,10 +15,9 @@ import (
 	"github.com/inconshreveable/go-vhost"
 	"github.com/abourget/goproxy/har"
 	"net/url"
-	"github.com/peterbourgon/diskv"
+	//"github.com/peterbourgon/diskv"
 	"time"
 	"fmt"
-	"encoding/binary"
 	"github.com/honnef.co/go-conntrack"
 	"strconv"
 	"encoding/hex"
@@ -104,17 +103,14 @@ type ProxyHttpServer struct {
 
 	// References to persistent caches for statistics collection
 	// RLS 7-5-2017
-	blockedmu sync.Mutex
-	BlockedStats *diskv.Diskv
+	//blockedmu sync.Mutex
+	//BlockedStats *diskv.Diskv
 
-	allowedmu sync.Mutex
-	AllowedStats *diskv.Diskv
-
-	blockedhostsmu sync.Mutex
-	BlockedHosts *diskv.Diskv
-
-	//failuremu sync.Mutex
-	//FailedStats *diskv.Diskv
+	//allowedmu sync.Mutex
+	//AllowedStats *diskv.Diskv
+	//
+	//blockedhostsmu sync.Mutex
+	//BlockedHosts *diskv.Diskv
 
 	// If set to true, then the next HTTP request will flush all idle connections. Will be reset to false afterwards.
 	FlushIdleConnections bool
@@ -126,6 +122,8 @@ type ProxyHttpServer struct {
 	// RoundTripper which supports non-http protocols
 	NonHTTPRoundTripper *NonHTTPRoundTripper
 
+	UpdateAllowedCounter func(string, string, int)
+	UpdateBlockedCounter func(string, string, int)
 }
 
 // New proxy server, logs to StdErr by default
@@ -186,31 +184,6 @@ func (proxy *ProxyHttpServer) SetShadowNetwork(sn *shadownetwork.ShadowNetwork) 
 }
 
 
-func (proxy *ProxyHttpServer) LazyWrite(PersistSeconds int) {
-	// RLS 7/7/2017
-	// Set up a thread to occasionally persist the stats caches to disk
-	if PersistSeconds > 0 {
-		ticker := time.NewTicker(time.Second * time.Duration(PersistSeconds))
-		go func() {
-			for {
-				select {
-				case <-ticker.C:
-					//fmt.Println(" *** PERSISTING CACHES *** ")
-					if proxy.AllowedStats != nil {
-						proxy.AllowedStats.Persist()
-					}
-					if proxy.BlockedStats != nil {
-						proxy.BlockedStats.Persist()
-					}
-					if proxy.BlockedHosts != nil {
-						proxy.BlockedHosts.Persist()
-					}
-				}
-
-			}
-		}()
-	}
-}
 // Standard net/http function. Shouldn't be used directly, http.Serve will use it.
 func (proxy *ProxyHttpServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	//r.Header["X-Forwarded-For"] = w.RemoteAddr()	
@@ -228,10 +201,6 @@ func (proxy *ProxyHttpServer) ServeHTTP(w http.ResponseWriter, r *http.Request) 
 		Proxy:          proxy,
 		MITMCertConfig: proxy.MITMCertConfig,
 		Tlsfailure:	proxy.Tlsfailure,
-		UpdateAllowedCounter:	proxy.UpdateAllowedCounter,
-		UpdateBlockedCounter:	proxy.UpdateBlockedCounter,
-		UpdateBlockedCounterByN:	proxy.UpdateBlockedCounterByN,
-		UpdateBlockedHostsByN:	proxy.UpdateBlockedHostsByN,
 		VerbosityLevel: proxy.VerbosityLevel,
 		DeviceType: -1,
 		Trace:		false,
@@ -299,10 +268,6 @@ func (proxy *ProxyHttpServer) ServeHTTP(w http.ResponseWriter, r *http.Request) 
 			Proxy:          proxy,
 			MITMCertConfig: proxy.MITMCertConfig,
 			Tlsfailure:	proxy.Tlsfailure,
-			UpdateAllowedCounter:	proxy.UpdateAllowedCounter,
-			UpdateBlockedCounter:	proxy.UpdateBlockedCounter,
-			UpdateBlockedCounterByN:	proxy.UpdateBlockedCounterByN,
-			UpdateBlockedHostsByN:	proxy.UpdateBlockedHostsByN,
 			VerbosityLevel: proxy.VerbosityLevel,
 			DeviceType: -1,
 			Trace:			true,
@@ -358,8 +323,10 @@ func (proxy *ProxyHttpServer) ListenAndServeTLS(httpsAddr string) error {
 			tlsConn, err := vhost.TLS(c)
 
 			if err != nil {
-				log.Printf("Error accepting new connection (err 3) - %v", err)
+				// Someone connected and dropped. Don't care.
+				//log.Printf("Error accepting new connection (err 3) - %v", err)
 				//log.Printf(" *** BAD TLS CONNECTION? - source: %s / destination: %s", c.RemoteAddr().String(), c.LocalAddr().String())
+				return
 			}
 
 
@@ -438,10 +405,6 @@ func (proxy *ProxyHttpServer) ListenAndServeTLS(httpsAddr string) error {
 				Proxy:          proxy,
 				MITMCertConfig: proxy.MITMCertConfig,
 				Tlsfailure:	proxy.Tlsfailure,
-				UpdateAllowedCounter:	proxy.UpdateAllowedCounter,
-				UpdateBlockedCounter:	proxy.UpdateBlockedCounter,
-				UpdateBlockedCounterByN:	proxy.UpdateBlockedCounterByN,
-				UpdateBlockedHostsByN:	proxy.UpdateBlockedHostsByN,
 				VerbosityLevel: proxy.VerbosityLevel,
 				DeviceType: -1,
 				RequestTime:	time.Now(),
@@ -485,6 +448,9 @@ func (proxy *ProxyHttpServer) ListenAndServeTLS(httpsAddr string) error {
 			if proxy.Trace != nil {
 				shouldTrace := proxy.Trace(ctx)
 				if shouldTrace {
+
+					//fmt.Printf("ClientHELLO: \n %+v\n", tlsConn.ClientHelloMsg)
+
 					setupTrace(ctx, "Modified Request")
 				}
 			}
@@ -495,7 +461,7 @@ func (proxy *ProxyHttpServer) ListenAndServeTLS(httpsAddr string) error {
 			//}
 
 			// Force cloaking but skip filtering. Used for debugging purposes.
-			//if strings.Contains(ctx.host, "facebook.com") {
+			//if strings.Contains(ctx.host, "nyt") || strings.Contains(ctx.host, "aha.io") {
 			//	ctx.SkipRequestHandler = true
 			//	ctx.SkipResponseHandler = true
 			//	ctx.PrivateNetwork = true
@@ -545,13 +511,13 @@ func (proxy *ProxyHttpServer) ListenAndServeTLS(httpsAddr string) error {
 
 					defer fakeresp.Body.Close()
 
-					_, err = ioutil.ReadAll(fakeresp.Body)
+					body, err := ioutil.ReadAll(fakeresp.Body)
 					if err != nil {
 						fmt.Printf("[TRACE] Error while reading body. %+v\n", err)
 						return
 					}
 					// Process the response and close
-					//fmt.Printf("[TRACE] %s  resp.Body: %+v\n", status, string(body))
+					fmt.Printf("[TRACE] resp.Body [%d bytes]: %+v\n", len(body), string(body))
 
 
 				}()
@@ -582,10 +548,6 @@ func (proxy *ProxyHttpServer) ListenAndServeTLS(httpsAddr string) error {
 						Proxy:          proxy,
 						MITMCertConfig: proxy.MITMCertConfig,
 						Tlsfailure:        proxy.Tlsfailure,
-						UpdateAllowedCounter:        proxy.UpdateAllowedCounter,
-						UpdateBlockedCounter:        proxy.UpdateBlockedCounter,
-						UpdateBlockedCounterByN:        proxy.UpdateBlockedCounterByN,
-						UpdateBlockedHostsByN:        proxy.UpdateBlockedHostsByN,
 						VerbosityLevel: proxy.VerbosityLevel,
 						DeviceType: -1,
 						CipherSignature:        ctx.CipherSignature,
@@ -701,166 +663,7 @@ func (proxy *ProxyHttpServer) Logf(level uint16, msg string, v ...interface{}) {
 	}
 }
 
-// TODO: Refactor the logging functions into the Winston package
-func (proxy *ProxyHttpServer) UpdateBlockedCounter() {
-	proxy.UpdateBlockedCounterByN(1)
-}
 
-func (proxy *ProxyHttpServer) UpdateBlockedCounterByN(amount int) {
-	//fmt.Printf("UpdateBlockedCounter...\n")
-
-	if proxy.BlockedStats == nil {
-		return
-	}
-
-	proxy.blockedmu.Lock()
-	defer proxy.blockedmu.Unlock()
-
-	// Convert today's date to a string
-	key := time.Now().Format("2006-01-02")
-	// Get the current count
-	value, err := proxy.BlockedStats.Read(key)
-
-	// If the entry doesn't exist, create it
-	if err != nil {
-		//fmt.Printf("UpdateBlockedCounter: previous value was 0\n")
-		b := make([]byte, 8)
-		binary.BigEndian.PutUint64(b, uint64(amount))
-		proxy.BlockedStats.Write(key, b)
-	} else {
-		//fmt.Printf("UpdateBlockedCounter: incrementing... %v\n", value)
-
-
-		currentValue := binary.BigEndian.Uint64(value)
-		//fmt.Printf("UpdateBlockedCounter: previous value %d\n", currentValue)
-		// Convert from byte array to int, increment, then convert back
-		b := make([]byte, 8)
-		binary.BigEndian.PutUint64(b, currentValue + uint64(amount))
-		proxy.BlockedStats.WriteMem(key, b)
-		//fmt.Printf("UpdateBlockedCounter: new value %d\n", currentValue + 1)
-	}
-
-}
-
-func (proxy *ProxyHttpServer) UpdateAllowedCounter() {
-	if proxy.AllowedStats == nil {
-		return
-	}
-	// Convert today's date to a string
-	key := time.Now().Format("2006-01-02")
-	// Get the current count
-
-	// Have to put this in mutex otherwise we end up in race conditions with other threads.
-	// This leads to corrupted cache, broken cache and panics.
-	proxy.allowedmu.Lock()
-	defer proxy.allowedmu.Unlock()
-	value, err := proxy.AllowedStats.Read(key)
-
-	//fmt.Printf("\n\nRetrieved Allowed Stats... trying again. Was it cached?\n\n")
-	//value, err = proxy.AllowedStats.Read(key)
-
-	// If the entry doesn't exist, create it
-	if err != nil {
-		b := make([]byte, 8)
-		binary.BigEndian.PutUint64(b, 1)
-		proxy.AllowedStats.Write(key, b)
-	} else {
-		// Increment and save
-
-		currentValue := binary.BigEndian.Uint64(value)
-		//fmt.Printf("UpdateAllowedCounter: previous value %d\n", currentValue)
-		// Convert from byte array to int, increment, then convert back
-		b := make([]byte, 8)
-		binary.BigEndian.PutUint64(b, currentValue + 1)
-		proxy.AllowedStats.WriteMem(key, b)
-		//fmt.Printf("UpdateAllowedCounter: new value %d\n", currentValue + 1)
-	}
-
-}
-
-// Call if the DNS blocks a page that was previously allowed through
-func (proxy *ProxyHttpServer) DecrementAllowedCounter() {
-	//fmt.Printf("DecrementAllowedCounter...\n")
-
-	if proxy.AllowedStats == nil {
-		return
-	}
-
-	// Convert today's date to a string
-	key := time.Now().Format("2006-01-02")
-	proxy.allowedmu.Lock()
-	defer proxy.allowedmu.Unlock()
-
-	// Get the current count
-	value, err := proxy.AllowedStats.Read(key)
-
-	// If the entry doesn't exist, create it
-	if err != nil {
-		//fmt.Printf("DecrementAllowedCounter: previous value was 0. Nothing to do.\n")
-
-	} else {
-		// Increment and save
-
-		currentValue := binary.BigEndian.Uint64(value)
-		// Convert from byte array to int, increment, then convert back
-		b := make([]byte, 8)
-		binary.BigEndian.PutUint64(b, currentValue - 1)
-		proxy.AllowedStats.WriteMem(key, b)
-		//fmt.Printf("DecrementAllowedCounter: new value %d\n", currentValue - 1)
-
-	}
-
-}
-
-func (proxy *ProxyHttpServer) UpdateBlockedHosts(host string, ) {
-	proxy.UpdateBlockedHostsByN(host, 1)
-}
-
-// Increments the number of times we blocked a particular host
-// This is used for reporting purposes.
-func (proxy *ProxyHttpServer) UpdateBlockedHostsByN(host string, amount int) {
-	//fmt.Printf("UpdateBlockedHosts...\n")
-
-
-	if proxy.BlockedHosts == nil {
-		return
-	}
-
-	proxy.blockedhostsmu.Lock()
-	defer proxy.blockedhostsmu.Unlock()
-
-	host = stripPort(host)
-
-	// Get the current count
-	value, err := proxy.BlockedHosts.Read(host)
-
-	//proxy.Logf(1, "  *** blockedhost %s err=%+v", host, err)
-
-	// TODO: Add error checking in case we get an invalid value. This could happen with a storage error.
-
-	// If the entry doesn't exist, create it
-	if err != nil {
-		//fmt.Printf("UpdateBlockedHosts - host: [%s]\n", host)
-		b := make([]byte, 8)
-		binary.BigEndian.PutUint64(b, uint64(amount))
-		proxy.BlockedHosts.Write(host, b)
-	} else {
-		//fmt.Printf("UpdateBlockedHosts: incrementing... %v\n", value)
-		// Increment and save
-		//fmt.Printf("UpdateBlockedHosts - host: [%s] [%d]\n", host, value)
-		currentValue := binary.BigEndian.Uint64(value)
-
-		//proxy.Logf(1, "  *** blockedhost %s currentvalue=%d", host, currentValue)
-
-		//fmt.Printf("UpdateBlockedHosts: previous value %d\n", currentValue)
-		// Convert from byte array to int, increment, then convert back
-		b := make([]byte, 8)
-		binary.BigEndian.PutUint64(b, currentValue + uint64(amount))
-		proxy.BlockedHosts.WriteMem(host, b)
-		//fmt.Printf("UpdateBlockedHosts: new value %d\n", currentValue + 1)
-	}
-
-}
 
 
 // SetMITMCertConfig sets the CA Config to be used to sign man-in-the-middle'd

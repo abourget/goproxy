@@ -45,7 +45,8 @@ func (ctx *ProxyCtx) RoundTrip(req *http.Request) (*http.Response, error) {
 			addendum = append(addendum, fmt.Sprintf(", sni=%q, fakedns=%q", transport.TLSClientConfig.ServerName, ctx.fakeDestinationDNS))
 			tr = transport
 		} else {
-			if ctx.PrivateNetwork && ctx.Proxy.PrivateNetwork != nil {
+			if ctx.PrivateNetwork && ctx.Proxy.PrivateNetwork != nil  {
+				// && strings.Contains(req.URL.String(), "nyt")
 				ctx.ShadowTransport = ctx.Proxy.PrivateNetwork.Transport()
 				if ctx.ShadowTransport == nil {
 					tr = ctx.Proxy.Transport

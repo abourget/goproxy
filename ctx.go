@@ -113,13 +113,9 @@ type ProxyCtx struct {
 					  // References to persistent caches for statistics collection
 					  // RLS 7-5-2017
 	IgnoreCounter		bool // if true, this request won't be counted (used for streaming)
-	UpdateAllowedCounter    func()
-	UpdateBlockedCounter    func()
-	UpdateBlockedCounterByN func(int)
-	UpdateBlockedHostsByN   func(string, int)
 
-					  // Client signature
-					  // https://blog.squarelemon.com/tls-fingerprinting/
+	// Client signature
+	// https://blog.squarelemon.com/tls-fingerprinting/
 	CipherSignature         string
 
 	NewBodyLength           int
@@ -527,11 +523,12 @@ func (ctx *ProxyCtx) ManInTheMiddleHTTPS() error {
 			return
 		}
 
+		//if strings.Contains(ctx.host, "aha.io") {
 		//if ctx.Trace {
 			//fmt.Printf("[DEBUG] Read request results: %s err=%+v\n", ctx.host, err)
 
 			// Uncomment to print out raw request.
-			//fmt.Printf("[DEBUG] Read so far:\n%s\n", buf.String())
+			//fmt.Printf("[DEBUG] Read so far (%d bytes):\n%s\n", buf.Len(), buf.String())
 
 			// Uncomment to read rest of request.body. Will prevent request from completing.
 			//body, ok := ioutil.ReadAll(clientTlsReader)
@@ -1396,7 +1393,6 @@ func (ctx *ProxyCtx) ForwardResponse(resp *http.Response) error {
 	if err := resp.Body.Close(); err != nil {
 		ctx.Warnf("Can't close response body %v", err)
 	}
-	//ctx.Logf("Copied %d bytes to client, error=%v", nr, err)
 
 	ctx.DispatchDoneHandlers()
 
