@@ -17,22 +17,16 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
-//	"time"
 	"github.com/inconshreveable/go-vhost"
-//	"encoding/base64"
 	"path/filepath"
-	//"net/http/httputil"
-//	"net/url"
 	"time"
-//	"encoding/binary"
 	"net/textproto"
 	"sync"
 	"context"
 	"github.com/benburkert/dns"
 	"github.com/winston/shadownetwork"
-	//"github.com/grantae/certinfo"
-	//"crypto/x509"
 	"net/url"
+	"crypto/rand"
 )
 
 var NonHTTPRequest = "nonhttprequest"
@@ -277,15 +271,21 @@ func (ctx *ProxyCtx) SetConnectScheme(scheme string) {
 
 // ManInTheMiddle triggers either a full-fledged MITM when done through HTTPS, otherwise, simply tunnels future HTTP requests through the CONNECT stream, dispatching calls to the Request Handlers
 func (ctx *ProxyCtx) ManInTheMiddle() error {
-	if ctx.Method != "CONNECT" {
-		panic("method is not CONNECT")
-	}
+	//if ctx.Method != "CONNECT" {
+	//	panic("method is not CONNECT")
+	//}
 
 	if ctx.getConnectScheme() == "http" {
-		return ctx.TunnelHTTP()
+		// There's no need for TunnelHTTP()... it doesn't do anything.
+		//return ctx.TunnelHTTP()
+
+		//fmt.Println("[INFO] ManInTheMiddle() - bypassing TunnelHTTP(). This should only happen for websockets requests.")
+		ctx.Proxy.DispatchRequestHandlers(ctx)
 	} else {
 		return ctx.ManInTheMiddleHTTPS()
 	}
+	return nil
+
 }
 
 // TunnelHTTP assumes the current connection is a plain HTTP tunnel,
@@ -296,28 +296,29 @@ func (ctx *ProxyCtx) ManInTheMiddle() error {
 //
 // You can also find the original CONNECT request in `ctx.OriginalRequest`.
 func (ctx *ProxyCtx) TunnelHTTP() error {
-	if ctx.Method != "CONNECT" {
-		panic("method is not CONNECT")
-	}
+	//if ctx.Method != "CONNECT" {
+	//	panic("method is not CONNECT")
+	//}
+	fmt.Printf("[DEBUG] TunnelHTTP() %s\n", ctx.host)
 
-	if !ctx.sniffedTLS {
+	if ctx.IsSecure && !ctx.sniffedTLS {
 		fmt.Println("[TODO] Check HTTP 1/0 response to sender here (2).")
 		ctx.Conn.Write([]byte("HTTP/1.0 200 OK\r\n\r\n"))
 	}
 
-	//if strings.Contains(ctx.host, "js-agent.newrelic.com") {
-	//	ctx.Logf(2, "  *** newrelic - TunnelHTTP")
-	//}
-
 	//ctx.Logf("Assuming CONNECT is plain HTTP tunneling, mitm proxying it")
+
 	targetSiteConn, err := ctx.Proxy.connectDial("tcp", ctx.host)
 	if err != nil {
+		fmt.Printf("[DEBUG] TunnelHTTP() error %+v\n", err)
 		ctx.Warnf("Error dialing to %s: %s", ctx.host, err.Error())
 		return err
 	}
 
 	ctx.OriginalRequest = ctx.Req
 	ctx.targetSiteConn = targetSiteConn
+
+	// Note: RoundTripper() will be ignored if a non-http protocol is detected
 	ctx.RoundTripper = RoundTripperFunc(func(req *http.Request, ctx *ProxyCtx) (*http.Response, error) {
 
 		// Those requests will go through the CONNECT'ed tunnel, not Dial out directly on our own.
@@ -335,21 +336,26 @@ func (ctx *ProxyCtx) TunnelHTTP() error {
 		return resp, nil
 	})
 
-	for {
-		client := bufio.NewReader(ctx.Conn)
-		req, err := http.ReadRequest(client)
-		if err != nil && err != io.EOF {
-			ctx.Warnf("cannot read request of MITM HTTP client: %+#v", err)
-		}
-		if err != nil {
-			return err
-		}
-
-		ctx.Req = req
+	//for {
+		// RLS - We already have the request. Not sure why they are trying to read it again. This hangs.
+		//client := bufio.NewReader(ctx.Conn)
+		//req, err := http.ReadRequest(client)
+		//fmt.Printf("[DEBUG] TunnelHTTP() 4.2 %s\n", ctx.host)
+		//if err != nil && err != io.EOF {
+		//	ctx.Warnf("cannot read request of MITM HTTP client: %+#v", err)
+		//}
+		//fmt.Printf("[DEBUG] TunnelHTTP() 4.3 %s\n", ctx.host)
+		//if err != nil {
+		//	fmt.Printf("[DEBUG] TunnelHTTP() 4.4 %s\n", ctx.host)
+		//	return err
+		//}
+		//fmt.Printf("[DEBUG] TunnelHTTP() 4.5 %s\n", ctx.host)
+		//ctx.Req = req
 		ctx.IsThroughTunnel = true
 
+		fmt.Printf("[DEBUG] TunnelHTTP() dispatching request handlers...\n")
 		ctx.Proxy.DispatchRequestHandlers(ctx)
-	}
+	//}
 
 	return nil
 }
@@ -540,9 +546,9 @@ func (ctx *ProxyCtx) ManInTheMiddleHTTPS() error {
 
 		// We failed to parse a standard http request. Try to parse it as non-http.
 		if err != nil && n > 0 {
-			if ctx.Trace {
+			//if ctx.Trace {
 				fmt.Printf("[DEBUG] Creating new non-httprequest: %s \n", ctx.host)
-			}
+			//}
 			// Manually create a new request
 
 			subReq = &http.Request{
@@ -596,6 +602,9 @@ func (ctx *ProxyCtx) ManInTheMiddleHTTPS() error {
 
 		ctx.Req = subReq
 		ctx.IsThroughMITM = true
+		if ctx.IsNonHttpProtocol {
+			fmt.Printf("[DEBUG] ManInTheMiddleHTTPS() - About to call DispatchRequestHandlers")
+		}
 		ctx.Proxy.DispatchRequestHandlers(ctx)
 
 		// Auto-whitelist failed TLS connections and IP addresses. These tend to be streaming requests.
@@ -1095,6 +1104,97 @@ func (ctx *ProxyCtx) ReturnSignature() {
 // This will use the above file to regenerate /etc/ssl/certs
 
 
+// Used for protocols that are "http-like" (ie: websockets).
+// Opens a connection, serializes the original request to it and sets up a tunnel, allowing further
+// communication to take place (if none, it will close).
+// TODO: Should we add websockets support so we can inspect packets?
+// TODO: Add P2P support
+// TODO: Add Timeouts
+func (ctx *ProxyCtx) ForwardNonHTTPRequest(host string) error {
+	var targetSiteConn net.Conn
+	var err error
+
+	 //If the request was whitelisted, then use the upstream DNS.
+	dnsbypassctx := ctx.Req.Context()
+	if ctx.Whitelisted {
+		dnsbypassctx = context.WithValue(ctx.Req.Context(), dns.UpstreamKey, 0)
+	}
+
+	// Send in a pointer to a struct that RoundTrip can modify to let us know if there was an error calling out to the private network
+	dnsbypassctx = context.WithValue(dnsbypassctx, shadownetwork.ShadowTransportFailed, &shadownetwork.ShadowNetworkFailure{})
+
+	if !ctx.IsSecure {
+		targetSiteConn, err = ctx.Proxy.Transport.DialContext(dnsbypassctx, "tcp", ctx.host)
+		if err != nil {
+			fmt.Printf("[DEBUG] ForwardNonHTTPRequest: Couldn't dial tcp connection - error - %+v\n", err)
+			ctx.httpError(err)
+			return err
+		}
+	} else {
+		// Set up a TLS connection to the downstream site
+		targetSiteConn, err = tls.DialWithDialer(HijackedDNSDialer(), "tcp", ctx.host, &tls.Config{InsecureSkipVerify: false})
+		if err != nil {
+			fmt.Printf("[DEBUG] ForwardNonHTTPRequest: Couldn't dial TLS connection - error - %+v\n", err)
+			ctx.httpError(err)
+			return err
+		}
+	}
+
+	// Write request to server
+	err = ctx.Req.Write(targetSiteConn)
+	if err != nil {
+		fmt.Printf("[DEBUG] ForwardNonHTTPRequest(): couldn't write request - error - %+v\n", err)
+		return err
+	}
+
+	toClose := make(chan net.Conn)
+
+	go ctx.copyAndClose(targetSiteConn, ctx.Conn, toClose)
+	go ctx.copyAndClose(ctx.Conn, targetSiteConn, toClose)
+
+	// Block here so callers don't proceed until the request has completed.
+	ctx.closeTogether(toClose)
+
+	fmt.Printf("[DEBUG] ForwardNonHTTPRequest() - Closing websockets connection\n")
+
+	// Check to see if the request failed over to the local network and let the caller know.
+	//errmsg := dnsbypassctx.Value(shadownetwork.ShadowTransportFailed)
+	//if errmsg != nil {
+	//	errmsgstruct := errmsg.(*shadownetwork.ShadowNetworkFailure)
+	//	if errmsgstruct != nil {
+	//		if errmsgstruct.Failed {
+	//			ctx.PrivateNetwork = false
+	//		}
+	//	}
+	//}
+
+
+	return nil
+}
+
+// Returns a DNS dialer which can bypass local DNS
+func HijackedDNSDialer() (*net.Dialer) {
+	dnsclient := new(dns.Client)
+
+	proxy := dns.NameServers{
+		&net.UDPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 53},
+		&net.UDPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 54},
+	}.Upstream(rand.Reader)
+
+	dnsclient.Transport = &dns.Transport{
+		Proxy: proxy,
+	}
+
+	// This is a http/s dialer with a custom DNS resolver.
+	dialer := &net.Dialer{
+		Resolver: &net.Resolver{
+			PreferGo: true,
+			Dial: dnsclient.Dial,
+		},
+	}
+
+	return dialer
+}
 
 // Forwards a request to a downstream server. This is done after MITM has been established.
 // TODO: Remove host from function parameters
@@ -1110,36 +1210,11 @@ func (ctx *ProxyCtx) ForwardRequest(host string) error {
 	// Send in a pointer to a struct that RoundTrip can modify to let us know if there was an error calling out to the private network
 	dnsbypassctx = context.WithValue(dnsbypassctx, shadownetwork.ShadowTransportFailed, &shadownetwork.ShadowNetworkFailure{})
 
-	if !ctx.IsNonHttpProtocol {
-		ctx.removeProxyHeaders()
-	} else {
-		// Roundtrip a non-HTTP request. This lets the transport know that it should bypass the
-		// usual http RoundTripper and use our custom non-HTTP protocol RoundTripper
+	ctx.removeProxyHeaders()
 
-		fmt.Printf("[DEBUG] ForwardRequest() - non-http protocol [%s] [%s]\n", ctx.Req.URL.Scheme, ctx.host)
 
-		// Add the original request to the context object
-		dnsbypassctx = context.WithValue(dnsbypassctx, NonHTTPRequest, &ctx.NonHTTPRequest)
-		// Set the scheme to nonhttp/s.
-		if ctx.Req.URL.Scheme == "https" {
-			ctx.Req.URL.Scheme = "nonhttps"
-		} else {
-			ctx.Req.URL.Scheme = "nonhttp"
-		}
-	}
-
-	if ctx.IsNonHttpProtocol {
-		fmt.Printf("[DEBUG] ForwardRequest() - About to roundTrip [%s]\n", ctx.host)
-	}
 
 	resp, err := ctx.RoundTrip(ctx.Req.WithContext(dnsbypassctx))
-	if ctx.IsNonHttpProtocol {
-		if err != nil {
-			fmt.Printf("[DEBUG] ForwardRequest() - RoundTrip err=%+v\n", err)
-		} else {
-			fmt.Printf("[DEBUG] ForwardRequest() - was ok (no err)\n")
-		}
-	}
 
 	// Log RoundTrip error if one was received
 	if ctx.Trace && err != nil {
@@ -1361,8 +1436,6 @@ func (ctx *ProxyCtx) ForwardResponse(resp *http.Response) error {
 	if ctx.IsThroughMITM && ctx.IsSecure {
 		return ctx.forwardMITMResponse(ctx.Resp)
 	}
-
-	fmt.Printf("[DEBUG] ForwardResponse [%s]\n", ctx.host)
 
 	w := ctx.ResponseWriter
 

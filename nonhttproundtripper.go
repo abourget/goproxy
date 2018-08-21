@@ -71,7 +71,6 @@ func (tr *NonHTTPRoundTripper) RoundTrip(req *http.Request) (*http.Response, err
 	}
 
 	originalrequest := or.(*[]byte)
-	fmt.Printf("[DEBUG] RoundTrip() - original request: %s\n\n", string(*originalrequest))
 
 	for {
 		treq := &transportRequest{Request: req}
@@ -128,17 +127,20 @@ func writerequest(r *http.Request, w io.Writer, originalrequest *[]byte) (err er
 	}
 
 	// TODO: Write it here
+
+	err = r.Write(w)
+
 	//_, err = fmt.Fprintf(w, "%s %s HTTP/1.1\r\n")
-	n, err := w.Write(*originalrequest)
+	//n, err := w.Write(*originalrequest)
 	if err != nil {
-		fmt.Printf("[DEBUG] Writing response err:\n")
+		fmt.Printf("[DEBUG] Writing request err:\n")
 		return err
 	}
 
 
 	if bw, ok := w.(*bufio.Writer); ok {
 		if err := bw.Flush(); err != nil {
-			fmt.Printf("[DEBUG] Writing response err 2:\n")
+			fmt.Printf("[DEBUG] Writing request err 2:\n")
 			return err
 		}
 	}
@@ -146,7 +148,7 @@ func writerequest(r *http.Request, w io.Writer, originalrequest *[]byte) (err er
 	if bw != nil {
 		return bw.Flush()
 	}
-	fmt.Printf("[DEBUG] Wrote %d bytes:\n", n)
+	fmt.Printf("[DEBUG] Wrote request:\n")
 	return nil
 }
 

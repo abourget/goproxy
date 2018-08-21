@@ -233,7 +233,16 @@ func (proxy *ProxyHttpServer) ServeHTTP(w http.ResponseWriter, r *http.Request) 
 		}
 	}
 
-	if r.Method == "CONNECT" {
+	// Check for websockets request. These need to be tunneled like a CONNECT request.
+	nonhttpprotocol := false
+	if ctx.Req.Header.Get("Upgrade") != "" {
+		nonhttpprotocol = true
+		ctx.IsNonHttpProtocol = true
+		//ctx.Req.URL.Scheme = "wss"
+	}
+
+
+	if r.Method == "CONNECT" || nonhttpprotocol {
 		proxy.dispatchConnectHandlers(ctx)
 	} else {
 		// Give listener a chance to service the request
@@ -462,12 +471,12 @@ func (proxy *ProxyHttpServer) ListenAndServeTLS(httpsAddr string) error {
 			//}
 
 			// Disable handlers and P2P network. Can be used to more quickly debug website compatibility problems.
-			if strings.Contains(ctx.host, "echo.websocket.org")  {
-				fmt.Println("[DEBUG] echo.websocket.org https request trapped")
-				//ctx.SkipRequestHandler = true
-				ctx.SkipResponseHandler = true
-				ctx.PrivateNetwork = false
-			}
+			//if strings.Contains(ctx.host, "echo.websocket.org")  {
+			//	fmt.Println("[DEBUG] echo.websocket.org https request trapped")
+			//	//ctx.SkipRequestHandler = true
+			//	ctx.SkipResponseHandler = true
+			//	ctx.PrivateNetwork = false
+			//}
 
 			proxy.dispatchConnectHandlers(ctx)
 
