@@ -29,6 +29,7 @@ type TraceInfo struct {
 	RoundTripError		string		// Errors recorded by roundtrip
 	CookiesSent		[]string	// Cookies sent with the request
 	CookiesReceived		[]string	// Cookies received from the server
+	StatusCode		int		// status code of the server response
 }
 
 type RequestTracer struct {
@@ -154,6 +155,8 @@ func writeTrace(ctx *ProxyCtx) {
 
 	fmt.Println()
 	fmt.Println("Response:")
+	fmt.Println("Status:", ctx.TraceInfo.StatusCode)
+	fmt.Println()
 	for _, h := range ctx.TraceInfo.ResponseHeaders {
 		fmt.Printf("%+v\n", h)
 	}

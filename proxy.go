@@ -124,6 +124,7 @@ type ProxyHttpServer struct {
 
 	UpdateAllowedCounter func(string, string, int)
 	UpdateBlockedCounter func(string, string, int)
+	UpdateWhitelistedCounter func(string, string, int)
 }
 
 // New proxy server, logs to StdErr by default
@@ -188,8 +189,6 @@ func (proxy *ProxyHttpServer) SetShadowNetwork(sn *shadownetwork.ShadowNetwork) 
 func (proxy *ProxyHttpServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	//r.Header["X-Forwarded-For"] = w.RemoteAddr()	
 
-	//fmt.Println("ServeHTTP()")
-
 	ctx := &ProxyCtx{
 		Method:         r.Method,
 		SourceIP:       r.RemoteAddr, // pick it from somewhere else ? have a plugin to override this ?
@@ -208,14 +207,6 @@ func (proxy *ProxyHttpServer) ServeHTTP(w http.ResponseWriter, r *http.Request) 
 	}
 
 
-	ctx.host = r.URL.Host
-	if strings.IndexRune(ctx.host, ':') == -1 {
-		if r.URL.Scheme == "http" {
-			ctx.host += ":80"
-		} else if r.URL.Scheme == "https" {
-			ctx.host += ":443"
-		}
-	}
 
 	// Set up request trace
 	if proxy.Trace != nil {
@@ -225,23 +216,32 @@ func (proxy *ProxyHttpServer) ServeHTTP(w http.ResponseWriter, r *http.Request) 
 		}
 	}
 
+	// Convert relative URL to absolute
+	if !r.URL.IsAbs() {
+		r.URL.Scheme = "http"
+		r.URL.Host = r.Host //net.JoinHostPort(r.Host, "80")
+	}
+
+	// Set up host and port
+	ctx.host = r.URL.Host
+
+	if strings.IndexRune(ctx.host, ':') == -1 {
+		if r.URL.Scheme == "http" {
+			ctx.host += ":80"
+		} else if r.URL.Scheme == "https" {
+			ctx.host += ":443"
+		}
+	}
+
 	if r.Method == "CONNECT" {
 		proxy.dispatchConnectHandlers(ctx)
 	} else {
-		if !r.URL.IsAbs() {
-			r.URL.Scheme = "http"
-			r.URL.Host = r.Host //net.JoinHostPort(r.Host, "80")
-
-			// Give listener a chance to service the request
-			if proxy.HandleHTTP != nil {
-				if proxy.HandleHTTP(ctx) {
-					return
-				}
+		// Give listener a chance to service the request
+		if proxy.HandleHTTP != nil {
+			if proxy.HandleHTTP(ctx) {
+				return
 			}
-
-
 		}
-
 		proxy.DispatchRequestHandlers(ctx)
 	}
 
@@ -456,16 +456,18 @@ func (proxy *ProxyHttpServer) ListenAndServeTLS(httpsAddr string) error {
 			}
 
 
+			// Print out TLS CLIENTHELLO message. Useful for inspecting cipher suites.
 			//if ctx.Trace {
 			//	fmt.Printf("[TRACE] CLIENTHELLO [%s] [Vers=%v] =\n%+v\n\n", ctx.CipherSignature, (*tlsConn.ClientHelloMsg).Vers, *tlsConn.ClientHelloMsg)
 			//}
 
-			// Force cloaking but skip filtering. Used for debugging purposes.
-			//if strings.Contains(ctx.host, "nyt") || strings.Contains(ctx.host, "aha.io") {
-			//	ctx.SkipRequestHandler = true
-			//	ctx.SkipResponseHandler = true
-			//	ctx.PrivateNetwork = true
-			//}
+			// Disable handlers and P2P network. Can be used to more quickly debug website compatibility problems.
+			if strings.Contains(ctx.host, "echo.websocket.org")  {
+				fmt.Println("[DEBUG] echo.websocket.org https request trapped")
+				//ctx.SkipRequestHandler = true
+				ctx.SkipResponseHandler = true
+				ctx.PrivateNetwork = false
+			}
 
 			proxy.dispatchConnectHandlers(ctx)
 

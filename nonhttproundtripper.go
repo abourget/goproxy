@@ -69,7 +69,9 @@ func (tr *NonHTTPRoundTripper) RoundTrip(req *http.Request) (*http.Response, err
 	if or == nil {
 		return nil, fmt.Errorf("No request provided for non-http protocol request")
 	}
+
 	originalrequest := or.(*[]byte)
+	fmt.Printf("[DEBUG] RoundTrip() - original request: %s\n\n", string(*originalrequest))
 
 	for {
 		treq := &transportRequest{Request: req}
@@ -81,12 +83,14 @@ func (tr *NonHTTPRoundTripper) RoundTrip(req *http.Request) (*http.Response, err
 		}
 		pconn, err := tr.getConn(treq, cm, originalrequest)
 		if err != nil {
+			//fmt.Printf("[DEBUG] NonHTTPRoundTripper() 3 err\n")
 			tr.setReqCanceler(req, nil)
 			return nil, err
 		}
 		fmt.Println("[DEBUG] pconn", pconn, "err", err)
 
 		var resp *http.Response
+		fmt.Println("[DEBUG] Custom RoundTripper() 3")
 		resp, err = pconn.roundTrip(treq)
 		fmt.Println("[DEBUG] Custom RoundTripper() 4")
 		if err == nil {
@@ -109,7 +113,7 @@ func (tr *NonHTTPRoundTripper) RoundTrip(req *http.Request) (*http.Response, err
 func writerequest(r *http.Request, w io.Writer, originalrequest *[]byte) (err error) {
 
 	// TODO: Just write the request to the writer!
-	fmt.Println("[DEBUG] writerequest()")
+	fmt.Printf("[DEBUG] writerequest(): \n%s\n", string(*originalrequest))
 
 
 	// Wrap the writer in a bufio Writer if it's not already buffered.
@@ -447,7 +451,6 @@ func (t *NonHTTPRoundTripper) getConn(treq *transportRequest, cm connectMethod, 
 		pc, err := t.dialConn(ctx, cm, originalrequest)
 		dialc <- dialRes{pc, err}
 	}()
-
 	idleConnCh := t.getIdleConnCh(cm)
 	select {
 	case v := <-dialc:
@@ -516,6 +519,7 @@ func (t *NonHTTPRoundTripper) dialConn(ctx context.Context, cm connectMethod, or
 		writeErrCh:    make(chan error, 1),
 		writeLoopDone: make(chan struct{}),
 	}
+
 	//tlsDial := t.DialTLS != nil && cm.targetScheme == "nonhttps" && cm.proxyURL == nil
 	/*if tlsDial {
 		var err error
@@ -602,7 +606,7 @@ func (t *NonHTTPRoundTripper) dialConn(ctx context.Context, cm connectMethod, or
 	/*if trace != nil {
 		fmt.Printf("*** KCPTransport.dialConn() - pconn seems to be ok. Starting loops. \n")
 	}*/
-
+	fmt.Printf("[DEBUG] dialConn() 4 - original request: %s\n\n", string(*originalrequest))
 	go pconn.readLoop()
 	go pconn.writeLoop(originalrequest)
 	return pconn, nil
@@ -1221,6 +1225,7 @@ func (pc *persistConn) writeLoop(originalrequest *[]byte) {
 		select {
 		case wr := <-pc.writech:
 			startBytesWritten := pc.nwrite
+		fmt.Printf("[DEBUG] writeLoop - originalrequest: %s\n\n", string(*originalrequest))
 			err := writerequest(wr.req.Request, pc.bw, originalrequest)
 			if bre, ok := err.(requestBodyReadError); ok {
 				err = bre.error
@@ -1353,6 +1358,7 @@ var (
 )
 
 func (pc *persistConn) roundTrip(req *transportRequest) (resp *http.Response, err error) {
+	fmt.Printf("[DEBUG] pconn.roundTrip() - 1\n")
 	if !pc.t.replaceReqCanceler(req.Request, pc.cancelRequest) {
 		pc.t.putOrCloseIdleConn(pc)
 		return nil, errRequestCanceled
@@ -1400,6 +1406,7 @@ func (pc *persistConn) roundTrip(req *transportRequest) (resp *http.Response, er
 	//	req.extraHeaders().Set("Connection", "close")
 	//}
 
+	fmt.Printf("[DEBUG] pconn.roundTrip() - 2\n")
 	gone := make(chan struct{})
 	defer close(gone)
 
@@ -1409,15 +1416,16 @@ func (pc *persistConn) roundTrip(req *transportRequest) (resp *http.Response, er
 		}
 	}()
 
-	const debugRoundTrip = false
+	const debugRoundTrip = true
 
 	// Write the request concurrently with waiting for a response,
 	// in case the server decides to reply before reading our full
 	// request body.
 	startBytesWritten := pc.nwrite
 	writeErrCh := make(chan error, 1)
+	fmt.Printf("[DEBUG] pconn.roundTrip() - 3\n")
 	pc.writech <- writeRequest{req, writeErrCh, continueCh}
-
+	fmt.Printf("[DEBUG] pconn.roundTrip() - 4\n")
 	resc := make(chan responseAndError)
 	pc.reqch <- requestAndChan{
 		req:        req.Request,
@@ -1535,6 +1543,8 @@ func (pc *persistConn) closeLocked(err error) {
 }
 
 var portMap = map[string]string{
+	"nonhttp":   "80",
+	"nonhttps":  "443",
 	"http":   "80",
 	"https":  "443",
 	"socks5": "1080",

@@ -994,9 +994,11 @@ func (ctx *ProxyCtx) HijackConnect() net.Conn {
 // In the original goproxy implementation, this was used only for CONNECT requests. However, we also
 // use it to pipe non-HTTP protocols through.
 func (ctx *ProxyCtx) ForwardConnect() error {
-	if ctx.Method != "CONNECT" {
-		return fmt.Errorf("Method is not CONNECT")
-	}
+	//fmt.Printf("[DEBUG] ForwardConnect() [%s]\n", ctx.host)
+	// Allow ForwardConnect for websockets and other non-http protocols
+	//if ctx.Method != "CONNECT" {
+	//	return fmt.Errorf("Method is not CONNECT")
+	//}
 
 	var dnsbypassctx context.Context
 
@@ -1014,7 +1016,7 @@ func (ctx *ProxyCtx) ForwardConnect() error {
 		return err
 	}
 
-	if !ctx.sniffedTLS {
+	if !ctx.sniffedTLS && ctx.IsSecure {
 		fmt.Println("[TODO] Check HTTP 1/0 response to sender here (5).")
 		ctx.Conn.Write([]byte("HTTP/1.0 200 OK\r\n\r\n"))
 	}
@@ -1026,11 +1028,14 @@ func (ctx *ProxyCtx) ForwardConnect() error {
 
 
 	toClose := make(chan net.Conn)
+
 	go ctx.copyAndClose(targetSiteConn, ctx.Conn, toClose)
 	go ctx.copyAndClose(ctx.Conn, targetSiteConn, toClose)
 
 	// Block here so callers don't proceed until the request has completed.
 	ctx.closeTogether(toClose)
+
+	//fmt.Printf("[DEBUG] ForwardConnect() - Closing connection")
 
 	return nil
 }
@@ -1111,6 +1116,8 @@ func (ctx *ProxyCtx) ForwardRequest(host string) error {
 		// Roundtrip a non-HTTP request. This lets the transport know that it should bypass the
 		// usual http RoundTripper and use our custom non-HTTP protocol RoundTripper
 
+		fmt.Printf("[DEBUG] ForwardRequest() - non-http protocol [%s] [%s]\n", ctx.Req.URL.Scheme, ctx.host)
+
 		// Add the original request to the context object
 		dnsbypassctx = context.WithValue(dnsbypassctx, NonHTTPRequest, &ctx.NonHTTPRequest)
 		// Set the scheme to nonhttp/s.
@@ -1121,12 +1128,18 @@ func (ctx *ProxyCtx) ForwardRequest(host string) error {
 		}
 	}
 
+	if ctx.IsNonHttpProtocol {
+		fmt.Printf("[DEBUG] ForwardRequest() - About to roundTrip [%s]\n", ctx.host)
+	}
+
 	resp, err := ctx.RoundTrip(ctx.Req.WithContext(dnsbypassctx))
-	//if err != nil {
-	//	fmt.Printf("[DEBUG] ForwardRequest() - RoundTrip err=%+v\n", err)
-	//} else {
-	//	fmt.Printf("[DEBUG] ForwardRequest() - was ok (no err)\n")
-	//}
+	if ctx.IsNonHttpProtocol {
+		if err != nil {
+			fmt.Printf("[DEBUG] ForwardRequest() - RoundTrip err=%+v\n", err)
+		} else {
+			fmt.Printf("[DEBUG] ForwardRequest() - was ok (no err)\n")
+		}
+	}
 
 	// Log RoundTrip error if one was received
 	if ctx.Trace && err != nil {
@@ -1344,11 +1357,12 @@ func (ctx *ProxyCtx) DispatchDoneHandlers() error {
 
 func (ctx *ProxyCtx) ForwardResponse(resp *http.Response) error {
 
-	//fmt.Printf("[DEBUG] ForwardResponse()")
 
 	if ctx.IsThroughMITM && ctx.IsSecure {
 		return ctx.forwardMITMResponse(ctx.Resp)
 	}
+
+	fmt.Printf("[DEBUG] ForwardResponse [%s]\n", ctx.host)
 
 	w := ctx.ResponseWriter
 

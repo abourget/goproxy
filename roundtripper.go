@@ -141,6 +141,10 @@ func (ctx *ProxyCtx) wrapTransport(tr *http.RoundTripper) RoundTripper {
 		//fmt.Println("[DEBUG] GoProxy.RoundTripper() Start")
 		resp, err := (*tr).RoundTrip(req)
 
+		// Record the original status code
+		if ctx.Trace {
+			ctx.TraceInfo.StatusCode = resp.StatusCode
+		}
 		//if err != nil {
 		//	fmt.Printf("[DEBUG] wrapTransport reported err: %+v\n ", err)
 		//} else {
