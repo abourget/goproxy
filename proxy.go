@@ -225,6 +225,7 @@ func (proxy *ProxyHttpServer) ServeHTTP(w http.ResponseWriter, r *http.Request) 
 	// Set up host and port
 	ctx.host = r.URL.Host
 
+	//fmt.Println("ServeHTTP() - ctx.host", ctx.host)
 	if strings.IndexRune(ctx.host, ':') == -1 {
 		if r.URL.Scheme == "http" {
 			ctx.host += ":80"
@@ -234,13 +235,13 @@ func (proxy *ProxyHttpServer) ServeHTTP(w http.ResponseWriter, r *http.Request) 
 	}
 
 	// Check for websockets request. These need to be tunneled like a CONNECT request.
+	//fmt.Println("[TEST] ServeHTTP() called", ctx.host, "scheme", ctx.Req.URL.Scheme)
 	nonhttpprotocol := false
 	if ctx.Req.Header.Get("Upgrade") != "" {
 		nonhttpprotocol = true
 		ctx.IsNonHttpProtocol = true
-		//ctx.Req.URL.Scheme = "wss"
+		//ctx.Req.URL.Scheme = "ws"
 	}
-
 
 	if r.Method == "CONNECT" || nonhttpprotocol {
 		proxy.dispatchConnectHandlers(ctx)
@@ -328,7 +329,7 @@ func (proxy *ProxyHttpServer) ListenAndServeTLS(httpsAddr string) error {
 			continue
 		}
 		go func(c net.Conn) {
-			//log.Printf(" *** INCOMING TLS CONNECTION - source: %s / destination: %s", c.RemoteAddr().String(), c.LocalAddr().String())
+			log.Printf(" *** INCOMING TLS CONNECTION - source: %s / destination: %s", c.RemoteAddr().String(), c.LocalAddr().String())
 			tlsConn, err := vhost.TLS(c)
 
 			if err != nil {
@@ -379,8 +380,11 @@ func (proxy *ProxyHttpServer) ListenAndServeTLS(httpsAddr string) error {
 			}
 
 			var Host = tlsConn.Host()
+
+			fmt.Println("ListenAndServeTLS() - Host", Host)
 			if Host == "" {
 				Host = nonSNIHost.String()
+				fmt.Println("ListenAndServeTLS() - non SNI Host", Host)
 				//log.Printf("[DEBUG]  Non-SNI request detected - destination: [%s]\n", Host)
 			}
 

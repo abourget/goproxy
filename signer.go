@@ -28,6 +28,7 @@ import (
 	"encoding/gob"
 	"io/ioutil"
 	"os"
+	//"runtime/debug"
 )
 
 // OrganizationName is the name your CA cert will be signed with. It
@@ -208,7 +209,6 @@ func (c *GoproxyConfig) FlushCert(hostname string) {
 // TODO: commonName may no longer be needed. Refactor to remove it.
 // TODO: Should we remember bad requests so we don't keep making them? Routine is subject to an internal flood attack.
 func (c *GoproxyConfig) certWithCommonName(hostname string, commonName string) error {
-	originalhostname := hostname
 
 	//experiment := false
 	//if strings.Contains(originalhostname, "xaxis") {
@@ -216,10 +216,17 @@ func (c *GoproxyConfig) certWithCommonName(hostname string, commonName string) e
 	//	experiment = true
 	//}
 	// Remove the port if it exists.
+	// host must contain a domain/IP address only at this point.
 	host, port, err := net.SplitHostPort(hostname)
 	if err == nil {
 		hostname = host
+	} else {
+		host = hostname
 	}
+
+
+
+	//originalhostname := hostname
 
 	//fmt.Printf("[DEBUG] certWithCommonName(%s)\n", hostname)
 
@@ -232,7 +239,7 @@ func (c *GoproxyConfig) certWithCommonName(hostname string, commonName string) e
 
 	// Get the certificate from the local cache
 	certmu.RLock()
-	tlsc, ok := c.NameToCertificate[hostname]
+	tlsc, ok := c.NameToCertificate[host]
 	certmu.RUnlock()
 
 	if ok {
@@ -246,18 +253,21 @@ func (c *GoproxyConfig) certWithCommonName(hostname string, commonName string) e
 		var err error
 		if isIP {
 			// Don't verify hostname if we have an ip address
-
-			_, err = tlsc.Leaf.Verify(x509.VerifyOptions{
-				//DNSName: hostname,
-				Roots:   c.RootCAs,
-			})
+			// Special case: if localhost, don't bother verifying. This makes unit testing much easier.
+			if !strings.HasPrefix(host, "127.0.0.") {
+				_, err = tlsc.Leaf.Verify(x509.VerifyOptions{
+					//DNSName: hostname,
+					Roots:   c.RootCAs,
+				})
+			}
 		} else {
 			_, err = tlsc.Leaf.Verify(x509.VerifyOptions{
-				DNSName: hostname,
+				DNSName: host,
 				Roots:   c.RootCAs,
 			})
 		}
 		if err == nil {
+
 			//if experiment {
 			//	fmt.Printf("[DEBUG] certWithCommonName() - Certificate passes expiration and hostname check. Using it.\n")
 			//}
@@ -280,7 +290,9 @@ func (c *GoproxyConfig) certWithCommonName(hostname string, commonName string) e
 
 	var conn *tls.Conn
 	// TODO: This breaks the original goproxy unit tests.
-	conn, err = tls.DialWithDialer(c.bypassDnsDialer, "tcp", originalhostname + ":" + port, &tls.Config{InsecureSkipVerify: true})
+	//fmt.Println("[TEST} Signer.go() originalhostname", originalhostname, "port", port)
+	//debug.PrintStack()
+	conn, err = tls.DialWithDialer(c.bypassDnsDialer, "tcp", host + ":" + port, &tls.Config{InsecureSkipVerify: true})
 
 	if err != nil {
 		fmt.Printf("[DEBUG] Signer.go - Error while dialing: %v\n", err)
@@ -291,7 +303,6 @@ func (c *GoproxyConfig) certWithCommonName(hostname string, commonName string) e
 		if len(conn.ConnectionState().PeerCertificates) >= 1 {
 			origcert = conn.ConnectionState().PeerCertificates[0]
 
-			// TODO: Verify the original certificate
 			// TODO: Throttle this so we don't make a ton of requests all at once
 
 			//var rawCerts [][]byte
@@ -310,12 +321,8 @@ func (c *GoproxyConfig) certWithCommonName(hostname string, commonName string) e
 
 			// TODO: Check upstream server's certificate and deny if it is encoded in SHA-1
 			// https://ssldecoder.org/?host=sha1-intermediate.badssl.com&port=&csr=&s=
-
 		}
 	}
-
-
-
 
 	// Create a new certificate
 	certmu.Lock()
@@ -326,7 +333,7 @@ func (c *GoproxyConfig) certWithCommonName(hostname string, commonName string) e
 		return err
 	}
 
-	certificateCommonName := hostname
+	certificateCommonName := host
 	if len(commonName) > 0 {
 		certificateCommonName = commonName
 		//fmt.Printf("  *** Overrode common name with %s \n", commonName)
@@ -349,11 +356,11 @@ func (c *GoproxyConfig) certWithCommonName(hostname string, commonName string) e
 	if isIP {
 		tmpl.IPAddresses = []net.IP{ip}
 	} else {
-		tmpl.DNSNames = []string{hostname}
+		tmpl.DNSNames = []string{host}
 	}
 
 	// If we have a non-Winston certificate for an external site, then copy values from the original certificate to our new one
-	if origcert != nil && !strings.HasPrefix(originalhostname, "winston.conf") {
+	if origcert != nil && !strings.HasPrefix(host, "winston.conf") {
 
 		tmpl.Subject = origcert.Subject
 		tmpl.NotBefore = origcert.NotBefore
@@ -370,7 +377,7 @@ func (c *GoproxyConfig) certWithCommonName(hostname string, commonName string) e
 			tmpl.DNSNames = origcert.DNSNames
 		} else {
 			//fmt.Printf("  *** Blocked domain.: host=%s  DNSNames[0]=%s\n", originalhostname, hostname )
-			tmpl.DNSNames = []string{hostname}
+			tmpl.DNSNames = []string{host}
 		}
 
 
@@ -400,9 +407,123 @@ func (c *GoproxyConfig) certWithCommonName(hostname string, commonName string) e
 	// Todo: Should this be moved higher so we don't repeatedly request the same certificate from downstream server?
 	// The risk is that a hung connection could block all HTTPS traffic to the proxy. Leaving it for now. RLS 3/16/2018
 
-	c.NameToCertificate[hostname] = tlsc
+	c.NameToCertificate[host] = tlsc
 	c.Certificates = append(c.Certificates, *tlsc)
 
+
+	return nil
+}
+
+// Used for unit testing. Gets a certificate from a server and port and creates a local version suitable for MITM.
+func (c *GoproxyConfig) GetTestCertificate(host string, port string) error {
+
+
+	// Is this an IP address?
+	isIP := false
+	ip := net.ParseIP(host);
+	if ip != nil {
+		isIP = true
+	}
+
+	// Test: Get the origin certificate and copy fields to it.
+	var origcert *x509.Certificate
+	//if experiment {
+
+	// Have to add the port number to connect. Assume 443.
+	if port == "" {
+		port = "443"
+	}
+
+	var conn *tls.Conn
+	var err error
+
+	conn, err = tls.Dial("tcp", host + ":" + port, &tls.Config{InsecureSkipVerify: true})
+
+	if err != nil {
+		fmt.Printf("[DEBUG] GetTestCertificate - Error while dialing: %v\n", err)
+		return err
+	} else {
+		// Only close the connection if we couldn't connect.
+		defer conn.Close()
+	}
+
+	// Create a new certificate
+	certmu.Lock()
+	defer certmu.Unlock()
+
+	serial, err := rand.Int(rand.Reader, MaxSerialNumber)
+	if err != nil {
+		return err
+	}
+
+	certificateCommonName := host
+	tmpl := &x509.Certificate{
+		SerialNumber: serial,
+		Subject: pkix.Name{
+			CommonName:   certificateCommonName,
+			Organization: []string{OrganizationName},
+		},
+		SubjectKeyId:          c.keyID,
+		KeyUsage:              x509.KeyUsageKeyEncipherment | x509.KeyUsageDigitalSignature,
+		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+		BasicConstraintsValid: true,
+		NotBefore:             time.Now().Add(-c.validity),
+		NotAfter:              time.Now().Add(c.validity),
+	}
+
+	if isIP {
+		tmpl.IPAddresses = []net.IP{ip}
+	} else {
+		tmpl.DNSNames = []string{host}
+	}
+
+	// If we have a non-Winston certificate for an external site, then copy values from the original certificate to our new one
+	if origcert != nil && !strings.HasPrefix(host, "winston.conf") {
+
+		tmpl.Subject = origcert.Subject
+		tmpl.NotBefore = origcert.NotBefore
+		tmpl.NotAfter = origcert.NotAfter
+		tmpl.KeyUsage = origcert.KeyUsage
+
+		// TODO: Are we copying the original Authority Key Id
+		tmpl.AuthorityKeyId = origcert.AuthorityKeyId
+		tmpl.IPAddresses = origcert.IPAddresses
+
+		// If the DNS name points to winston.conf, then use the original hostname.
+		if len(origcert.DNSNames) > 0 && origcert.DNSNames[0] != "winston.conf" {
+			//fmt.Printf("  *** overwriting cert with original values: host=%s  DNSNames[0]=%s\n", originalhostname, origcert.DNSNames[0] )
+			tmpl.DNSNames = origcert.DNSNames
+		} else {
+			//fmt.Printf("  *** Blocked domain.: host=%s  DNSNames[0]=%s\n", originalhostname, hostname )
+			tmpl.DNSNames = []string{host}
+		}
+
+
+	}
+
+
+	raw, err := x509.CreateCertificate(rand.Reader, tmpl, c.Root, c.priv.Public(), c.capriv)
+	if err != nil {
+		return err
+	}
+
+	// Parse certificate bytes so that we have a leaf certificate.
+
+	x509c, err := x509.ParseCertificate(raw)
+	if err != nil {
+		return err
+	}
+
+	tlsc, _ := c.NameToCertificate[host]
+
+	tlsc = &tls.Certificate{
+		Certificate: [][]byte{raw, c.Root.Raw},
+		PrivateKey:  c.priv,
+		Leaf:        x509c,
+	}
+
+	c.NameToCertificate[host] = tlsc
+	c.Certificates = append(c.Certificates, *tlsc)
 
 	return nil
 }

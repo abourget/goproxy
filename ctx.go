@@ -242,12 +242,19 @@ func (ctx *ProxyCtx) FakeDestinationDNS(host string) {
 	ctx.fakeDestinationDNS = inheritPort(host, ctx.Host())
 }
 
+// RLS - in order to support unit testing, we have to support port #s other than port 80 and 443. To do this,
+// we'll fall back on the actual request URL scheme.
 func (ctx *ProxyCtx) getConnectScheme() string {
+	//fmt.Println("[TEST] getConnectScheme()", ctx.connectScheme, ctx.host, ctx.Req.URL.Scheme)
 	if ctx.connectScheme == "" {
 		if strings.HasSuffix(ctx.host, ":80") {
 			return "http"
-		} else {
+		} else if strings.HasSuffix(ctx.host, ":443") {
 			return "https"
+		} else if ctx.Req.URL.Scheme == "https" {
+			return "https"
+		} else {
+			return "http"
 		}
 	}
 	return ctx.connectScheme
@@ -269,17 +276,11 @@ func (ctx *ProxyCtx) SetConnectScheme(scheme string) {
 
 // CONNECT handling methods
 
-// ManInTheMiddle triggers either a full-fledged MITM when done through HTTPS, otherwise, simply tunnels future HTTP requests through the CONNECT stream, dispatching calls to the Request Handlers
+// ManInTheMiddle triggers either a full-fledged MITM when done through HTTPS, otherwise, simply tunnels future
+// HTTP requests through the CONNECT stream, dispatching calls to the Request Handlers
 func (ctx *ProxyCtx) ManInTheMiddle() error {
-	//if ctx.Method != "CONNECT" {
-	//	panic("method is not CONNECT")
-	//}
-
 	if ctx.getConnectScheme() == "http" {
-		// There's no need for TunnelHTTP()... it doesn't do anything.
-		//return ctx.TunnelHTTP()
-
-		//fmt.Println("[INFO] ManInTheMiddle() - bypassing TunnelHTTP(). This should only happen for websockets requests.")
+		fmt.Println("[DEBUG] ManInTheMiddle() - bypassing TunnelHTTP(). This should only happen for websockets requests.")
 		ctx.Proxy.DispatchRequestHandlers(ctx)
 	} else {
 		return ctx.ManInTheMiddleHTTPS()
@@ -393,8 +394,8 @@ func (ctx *ProxyCtx) ManInTheMiddleHTTPS() error {
 			ctx.Logf(1, "[PANIC] Fatal error while processing MITM request. Recovering gracefully.", r)
 		}
 	}()
-
 	if ctx.Method != "CONNECT" {
+		fmt.Println("[ERROR] Attempting to MITM a non-CONNECT request")
 		panic("method is not CONNECT")
 	}
 
@@ -402,13 +403,12 @@ func (ctx *ProxyCtx) ManInTheMiddleHTTPS() error {
 	isIpAddress := validIP4(ctx.host)
 
 	// If we haven't already sniffed, send a 200 OK back to the client
-	if !ctx.sniffedTLS {
+	if ctx.IsSecure && !ctx.sniffedTLS {
 		fmt.Println("[TODO] Check HTTP 1/0 response to sender here (3).")
 		ctx.Conn.Write([]byte("HTTP/1.0 200 OK\r\n\r\n"))
 	}
 
 	signHost := ctx.sniHost
-
 	if signHost == "" {
 		signHost = ctx.host
 		if !ctx.sniffedTLS {
@@ -480,7 +480,6 @@ func (ctx *ProxyCtx) ManInTheMiddleHTTPS() error {
 		//	fmt.Printf("[DEBUG] About to handshake: %s\n", ctx.host)
 		//}
 		if err := rawClientTls.Handshake(); err != nil {
-
 			// A handshake error typically only occurs on the client side
 			// when pinned Certificates are being used, ie: a mobile
 			// application refuses to trust our local CA.
@@ -494,7 +493,6 @@ func (ctx *ProxyCtx) ManInTheMiddleHTTPS() error {
 
 			return
 		}
-
 		ctx.Conn = rawClientTls
 		ctx.IsSecure = true
 
@@ -512,7 +510,6 @@ func (ctx *ProxyCtx) ManInTheMiddleHTTPS() error {
 
 		var subReq *http.Request
 		subReq, err = http.ReadRequest(clientTlsReader)
-
 		if err != nil && err == io.EOF {
 			// The client dropped the connection. This indicates a problem communicating through the client TLS tunnel
 			// most likely due certificate pinning or the client does not have the Winston certificate installed.
@@ -578,12 +575,7 @@ func (ctx *ProxyCtx) ManInTheMiddleHTTPS() error {
 
 		}
 
-		// This is required for DO, POST methods used in the Golang stack to read the remaining
-		// request body. They are responsible for closing it.
-		//if strings.Contains(ctx.host, "reddit") {
-		//	fmt.Println("[DEBUG] reddit TLS EOF? %t\n", rawClientTls.EOF)
-		//	//ctx.SetRequestBody(subReq, rawClientTls)
-		//}
+
 
 		if err != nil {
 			if ctx.Trace {
@@ -597,14 +589,21 @@ func (ctx *ProxyCtx) ManInTheMiddleHTTPS() error {
 			return
 		}
 		subReq.URL.Scheme = "https"
+
+		// Unit testing: We only intercept requests which were destined for port 443, but we can invoke a proxy
+		// and point it at other ports when unit testing. To accomodate this scenario, check for the presence of
+		// a host header and if it exists, update ctx.host. WINSTON-2-8
+		_, port, err := net.SplitHostPort(subReq.Host)
+		if err == nil && port != "443" {
+			fmt.Printf("[WARN] ManInTheMiddleHTTPS() - modified ctx.host from %s to %s. This should only happen in unit testing\n", ctx.host, subReq.Host)
+			ctx.host = subReq.Host
+		}
+
 		subReq.URL.Host = ctx.host
 		subReq.RemoteAddr = r.RemoteAddr // since we're converting the request, need to carry over the original connecting IP as well
 
 		ctx.Req = subReq
 		ctx.IsThroughMITM = true
-		if ctx.IsNonHttpProtocol {
-			fmt.Printf("[DEBUG] ManInTheMiddleHTTPS() - About to call DispatchRequestHandlers")
-		}
 		ctx.Proxy.DispatchRequestHandlers(ctx)
 
 		// Auto-whitelist failed TLS connections and IP addresses. These tend to be streaming requests.
@@ -613,8 +612,6 @@ func (ctx *ProxyCtx) ManInTheMiddleHTTPS() error {
 		// not work.
 		// TODO: Diagnose the root of Google Android certificate errors
 		if !readRequest || isIpAddress {
-			//fmt.Printf("[DEBUG] Ctx/ManInTheMiddleHTTPS - Was IP address or client dropped connection [%s] [%s]\n", ctx.host, ctx.CipherSignature)
-
 			// Note: Some websites (google in particular) send HTTPS requests as keep alives
 			// and don't close them. They end up timing out. We don't want to whitelist these.
 			// In contrast, smart clients and devices close the connection immediately when they
@@ -1124,7 +1121,10 @@ func (ctx *ProxyCtx) ForwardNonHTTPRequest(host string) error {
 	dnsbypassctx = context.WithValue(dnsbypassctx, shadownetwork.ShadowTransportFailed, &shadownetwork.ShadowNetworkFailure{})
 
 	if !ctx.IsSecure {
-		targetSiteConn, err = ctx.Proxy.Transport.DialContext(dnsbypassctx, "tcp", ctx.host)
+		//fmt.Println("[DEBUG] ForwardNonHTTPRequest 2", ctx.host, ctx.Proxy.Transport.DialContext)
+		d := HijackedDNSDialer()
+		targetSiteConn, err = d.DialContext(dnsbypassctx, "tcp", ctx.host)
+		//fmt.Println("[DEBUG] ForwardNonHTTPRequest 3")
 		if err != nil {
 			fmt.Printf("[DEBUG] ForwardNonHTTPRequest: Couldn't dial tcp connection - error - %+v\n", err)
 			ctx.httpError(err)
@@ -1132,7 +1132,13 @@ func (ctx *ProxyCtx) ForwardNonHTTPRequest(host string) error {
 		}
 	} else {
 		// Set up a TLS connection to the downstream site
-		targetSiteConn, err = tls.DialWithDialer(HijackedDNSDialer(), "tcp", ctx.host, &tls.Config{InsecureSkipVerify: false})
+
+		// unit testing: Ignore verification with self-signed certificates coming from localhost
+		skipverification := false
+		if strings.HasPrefix(ctx.host, "127.0.0.") {
+			skipverification = true
+		}
+		targetSiteConn, err = tls.DialWithDialer(HijackedDNSDialer(), "tcp", ctx.host, &tls.Config{InsecureSkipVerify: skipverification})
 		if err != nil {
 			fmt.Printf("[DEBUG] ForwardNonHTTPRequest: Couldn't dial TLS connection - error - %+v\n", err)
 			ctx.httpError(err)
@@ -1672,7 +1678,6 @@ func (ctx *ProxyCtx) NewEmptyPng() {
 
 func (ctx *ProxyCtx) tlsConfig(host string) (*tls.Config, error) {
 	ca := ctx.Proxy.MITMCertConfig
-
 	if ctx.MITMCertConfig != nil {
 		ca = ctx.MITMCertConfig
 	}
