@@ -329,7 +329,7 @@ func (proxy *ProxyHttpServer) ListenAndServeTLS(httpsAddr string) error {
 			continue
 		}
 		go func(c net.Conn) {
-			log.Printf(" *** INCOMING TLS CONNECTION - source: %s / destination: %s", c.RemoteAddr().String(), c.LocalAddr().String())
+			//log.Printf(" *** INCOMING TLS CONNECTION - source: %s / destination: %s", c.RemoteAddr().String(), c.LocalAddr().String())
 			tlsConn, err := vhost.TLS(c)
 
 			if err != nil {
@@ -381,10 +381,8 @@ func (proxy *ProxyHttpServer) ListenAndServeTLS(httpsAddr string) error {
 
 			var Host = tlsConn.Host()
 
-			fmt.Println("ListenAndServeTLS() - Host", Host)
 			if Host == "" {
 				Host = nonSNIHost.String()
-				fmt.Println("ListenAndServeTLS() - non SNI Host", Host)
 				//log.Printf("[DEBUG]  Non-SNI request detected - destination: [%s]\n", Host)
 			}
 

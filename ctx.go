@@ -591,8 +591,9 @@ func (ctx *ProxyCtx) ManInTheMiddleHTTPS() error {
 		subReq.URL.Scheme = "https"
 
 		// Unit testing: We only intercept requests which were destined for port 443, but we can invoke a proxy
-		// and point it at other ports when unit testing. To accomodate this scenario, check for the presence of
+		// and point it at other ports when unit testing. To accommodate this scenario, check for the presence of
 		// a host header and if it exists, update ctx.host. WINSTON-2-8
+		//fmt.Println("[DEBUG] ", subReq.Host)
 		_, port, err := net.SplitHostPort(subReq.Host)
 		if err == nil && port != "443" {
 			fmt.Printf("[WARN] ManInTheMiddleHTTPS() - modified ctx.host from %s to %s. This should only happen in unit testing\n", ctx.host, subReq.Host)
