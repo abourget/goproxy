@@ -1140,8 +1140,12 @@ func (ctx *ProxyCtx) ForwardNonHTTPRequest(host string) error {
 		}
 	}
 
+	// Enforce an idle timeout (60 seconds)
+	clientConnIdle := &IdleTimeoutConn{Conn: ctx.Conn}
+	targetSiteConnIdle := &IdleTimeoutConn{Conn: targetSiteConn}
+
 	// Write request to server
-	err = ctx.Req.Write(targetSiteConn)
+	err = ctx.Req.Write(targetSiteConnIdle)
 	if err != nil {
 		fmt.Printf("[DEBUG] ForwardNonHTTPRequest(): couldn't write request - error - %+v\n", err)
 		return err
@@ -1149,13 +1153,13 @@ func (ctx *ProxyCtx) ForwardNonHTTPRequest(host string) error {
 
 	toClose := make(chan net.Conn)
 
-	go ctx.copyAndClose(targetSiteConn, ctx.Conn, toClose)
-	go ctx.copyAndClose(ctx.Conn, targetSiteConn, toClose)
+	go ctx.copyAndClose(targetSiteConnIdle, clientConnIdle, toClose)
+	go ctx.copyAndClose(clientConnIdle, targetSiteConnIdle, toClose)
 
 	// Block here so callers don't proceed until the request has completed.
 	ctx.closeTogether(toClose)
 
-	fmt.Printf("[DEBUG] ForwardNonHTTPRequest() - Closing websockets connection\n")
+	fmt.Printf("[DEBUG] ForwardNonHTTPRequest() - Closing websockets connection [%s]\n", ctx.host)
 
 	// Check to see if the request failed over to the local network and let the caller know.
 	//errmsg := dnsbypassctx.Value(shadownetwork.ShadowTransportFailed)
