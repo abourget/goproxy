@@ -235,7 +235,7 @@ func (proxy *ProxyHttpServer) ServeHTTP(w http.ResponseWriter, r *http.Request) 
 	}
 
 	// Check for websockets request. These need to be tunneled like a CONNECT request.
-	//fmt.Println("[TEST] ServeHTTP() called", ctx.host, "scheme", ctx.Req.URL.Scheme)
+	//fmt.Println("[DEBUG] ServeHTTP() called", ctx.host, "scheme", ctx.Req.URL.Scheme)
 	nonhttpprotocol := false
 	if ctx.Req.Header.Get("Upgrade") != "" {
 		nonhttpprotocol = true
@@ -244,6 +244,7 @@ func (proxy *ProxyHttpServer) ServeHTTP(w http.ResponseWriter, r *http.Request) 
 	}
 
 	if r.Method == "CONNECT" || nonhttpprotocol {
+		//fmt.Println("[DEBUG] ServeHTTP() -> dispatchConnectHandlers")
 		proxy.dispatchConnectHandlers(ctx)
 	} else {
 		// Give listener a chance to service the request
@@ -252,6 +253,7 @@ func (proxy *ProxyHttpServer) ServeHTTP(w http.ResponseWriter, r *http.Request) 
 				return
 			}
 		}
+		//fmt.Println("[DEBUG] ServeHTTP() -> dispatchRequestHandlers")
 		proxy.DispatchRequestHandlers(ctx)
 	}
 

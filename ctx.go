@@ -1166,7 +1166,7 @@ func (ctx *ProxyCtx) ForwardNonHTTPRequest(host string) error {
 	// Block here so callers don't proceed until the request has completed.
 	ctx.closeTogether(toClose)
 
-	fmt.Printf("[DEBUG] ForwardNonHTTPRequest() - Closing websockets connection [%s]\n", ctx.host)
+	//fmt.Printf("[DEBUG] ForwardNonHTTPRequest() - Closing websockets connection [%s]\n", ctx.host)
 
 	// Check to see if the request failed over to the local network and let the caller know.
 	//errmsg := dnsbypassctx.Value(shadownetwork.ShadowTransportFailed)
