@@ -295,7 +295,7 @@ func (c *GoproxyConfig) certWithCommonName(hostname string, commonName string) e
 	conn, err = tls.DialWithDialer(c.bypassDnsDialer, "tcp", host + ":" + port, &tls.Config{InsecureSkipVerify: true})
 
 	if err != nil {
-		fmt.Printf("[DEBUG] Signer.go - Error while dialing: %v\n", err)
+		//fmt.Printf("[DEBUG] Signer.go - Error while dialing: %v\n", err)
 		return err
 	} else {
 		// Only close the connection if we couldn't connect.

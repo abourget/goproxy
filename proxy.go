@@ -122,9 +122,9 @@ type ProxyHttpServer struct {
 	// RoundTripper which supports non-http protocols
 	NonHTTPRoundTripper *NonHTTPRoundTripper
 
-	UpdateAllowedCounter func(string, string, int)
-	UpdateBlockedCounter func(string, string, int)
-	UpdateWhitelistedCounter func(string, string, int)
+	UpdateAllowedCounter func(string, string, string, int, int, int)
+	UpdateBlockedCounter func(string, string, string, int, bool)
+	UpdateWhitelistedCounter func(string, string, string, int)
 }
 
 // New proxy server, logs to StdErr by default

@@ -115,29 +115,32 @@ type ProxyCtx struct {
 	NewBodyLength           int
 	VerbosityLevel          uint16
 
-					  // 11/2/2017 - Used for replacement macros (user agents)
+					  	// 11/2/2017 - Used for replacement macros (user agents)
 	DeviceType int
-	Whitelisted     	bool      // If true, response filtering will be completely disabled and local DNS will be bypassed.
+	Whitelisted     	bool      	// If true, response filtering will be completely disabled and local DNS will be bypassed.
 
-					  // Keeps a list of any messages we want to pass back to the client
+					  	// Keeps a list of any messages we want to pass back to the client
 	StatusMessage   	[]string
 
-					  // Request handler sets this to true if it thinks it is a first party request
+					  	// Request handler sets this to true if it thinks it is a first party request
 	FirstParty      	bool
 
-					  // Set to true to use private network
+					  	// Set to true to use private network
 	PrivateNetwork  	bool
 
-					  // If a shadow transport is being used, this points to it.
+					  	// If a shadow transport is being used, this points to it.
 	ShadowTransport *shadownetwork.ShadowTransport
 
-					  // If true, then Winston diagnostic information will be recorded about the current request
+					  	// If true, then Winston diagnostic information will be recorded about the current request
 	Trace           bool
 
-	TraceInfo       *TraceInfo        // Information about the original request/response
-	SkipRequestHandler bool	  // If set to true, then response handler will be skipped
-	SkipResponseHandler bool	  // If set to true, then response handler will be skipped
+	TraceInfo       *TraceInfo        	// Information about the original request/response
+	SkipRequestHandler bool	  		// If set to true, then response handler will be skipped
+	SkipResponseHandler bool	  	// If set to true, then response handler will be skipped
 	RequestTime		time.Time	// Time the request was started. Useful for debugging.
+	Referrer		string		// Referrer taken from HTTP request. Used for logging.
+	CookiesModified		int		// # of cookies blocked or modified for the current request. Used for logging.
+	ElementsModified	int		// # of page elements removed or modified for the current request. Used for logging.
 
 }
 
