@@ -206,8 +206,6 @@ func (proxy *ProxyHttpServer) ServeHTTP(w http.ResponseWriter, r *http.Request) 
 		RequestTime:	time.Now(),
 	}
 
-
-
 	// Set up request trace
 	if proxy.Trace != nil {
 		shouldTrace := proxy.Trace(ctx)
@@ -242,6 +240,7 @@ func (proxy *ProxyHttpServer) ServeHTTP(w http.ResponseWriter, r *http.Request) 
 		ctx.IsNonHttpProtocol = true
 		//ctx.Req.URL.Scheme = "ws"
 	}
+
 
 	if r.Method == "CONNECT" || nonhttpprotocol {
 		//fmt.Println("[DEBUG] ServeHTTP() -> dispatchConnectHandlers")
@@ -475,12 +474,11 @@ func (proxy *ProxyHttpServer) ListenAndServeTLS(httpsAddr string) error {
 			//}
 
 			// Disable handlers and P2P network. Can be used to more quickly debug website compatibility problems.
-			//if strings.Contains(ctx.host, "echo.websocket.org")  {
-			//	fmt.Println("[DEBUG] echo.websocket.org https request trapped")
-			//	//ctx.SkipRequestHandler = true
+			if strings.Contains(ctx.host, "winston.conf")  {
+				//ctx.SkipRequestHandler = true
 			//	ctx.SkipResponseHandler = true
 			//	ctx.PrivateNetwork = false
-			//}
+			}
 
 			proxy.dispatchConnectHandlers(ctx)
 

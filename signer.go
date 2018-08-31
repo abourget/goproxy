@@ -211,7 +211,7 @@ func (c *GoproxyConfig) FlushCert(hostname string) {
 func (c *GoproxyConfig) certWithCommonName(hostname string, commonName string) error {
 
 	//experiment := false
-	//if strings.Contains(originalhostname, "xaxis") {
+	//if strings.Contains(hostname, "winston.conf") {
 	//	//fmt.Printf("  *** Starting badssl experiment: %s\n", originalhostname)
 	//	experiment = true
 	//}
@@ -279,6 +279,10 @@ func (c *GoproxyConfig) certWithCommonName(hostname string, commonName string) e
 		//}
 	}
 
+	//if experiment {
+	//	fmt.Println("[DEBUG] Signer.go - about to generate new certificate.")
+	//}
+
 	// Test: Get the origin certificate and copy fields to it.
 	var origcert *x509.Certificate
 	//if experiment {
@@ -288,39 +292,53 @@ func (c *GoproxyConfig) certWithCommonName(hostname string, commonName string) e
 		port = "443"
 	}
 
-	var conn *tls.Conn
-	// TODO: This breaks the original goproxy unit tests.
-	//fmt.Println("[TEST} Signer.go() originalhostname", originalhostname, "port", port)
-	//debug.PrintStack()
-	conn, err = tls.DialWithDialer(c.bypassDnsDialer, "tcp", host + ":" + port, &tls.Config{InsecureSkipVerify: true})
+	// Skip upstream lookup for local Winston... it doesn't exist in public DNS.
+	if !strings.Contains(hostname, "winston.conf") {
 
-	if err != nil {
-		//fmt.Printf("[DEBUG] Signer.go - Error while dialing: %v\n", err)
-		return err
-	} else {
-		// Only close the connection if we couldn't connect.
-		defer conn.Close()
-		if len(conn.ConnectionState().PeerCertificates) >= 1 {
-			origcert = conn.ConnectionState().PeerCertificates[0]
+		//if experiment {
+		//	fmt.Println("[DEBUG] Signer.go - about to dial")
+		//}
 
-			// TODO: Throttle this so we don't make a ton of requests all at once
+		var conn *tls.Conn
+		// TODO: This breaks the original goproxy unit tests.
 
-			//var rawCerts [][]byte
-			rawCerts := make([][]byte, len(conn.ConnectionState().PeerCertificates))
-			for i, cert := range conn.ConnectionState().PeerCertificates {
-				rawCerts[i] = cert.Raw
+
+		//fmt.Println("[TEST} Signer.go() originalhostname", originalhostname, "port", port)
+		//debug.PrintStack()
+		conn, err = tls.DialWithDialer(c.bypassDnsDialer, "tcp", host + ":" + port, &tls.Config{InsecureSkipVerify: true})
+
+		//if experiment {
+		//	fmt.Println("[DEBUG] Signer.go - dialed - err:", err)
+		//}
+
+		if err != nil {
+			//fmt.Printf("[DEBUG] Signer.go - Error while dialing: %v\n", err)
+			return err
+		} else {
+			// Only close the connection if we couldn't connect.
+			defer conn.Close()
+			if len(conn.ConnectionState().PeerCertificates) >= 1 {
+				origcert = conn.ConnectionState().PeerCertificates[0]
+
+				// TODO: Throttle this so we don't make a ton of requests all at once
+
+				//var rawCerts [][]byte
+				rawCerts := make([][]byte, len(conn.ConnectionState().PeerCertificates))
+				for i, cert := range conn.ConnectionState().PeerCertificates {
+					rawCerts[i] = cert.Raw
+				}
+
+				err = certtransport.VerifyPeerCertificate(rawCerts, nil)
+				if err != nil {
+					//fmt.Printf("[DEBUG] certWithCommonName() - Couldn't verify certificate chain.\n")
+					return nil
+				}
+
+				//fmt.Printf("[DEBUG] certWithCommonName() - successfully verified certificate chain.\n")
+
+				// TODO: Check upstream server's certificate and deny if it is encoded in SHA-1
+				// https://ssldecoder.org/?host=sha1-intermediate.badssl.com&port=&csr=&s=
 			}
-
-			err = certtransport.VerifyPeerCertificate(rawCerts, nil)
-			if err != nil {
-				//fmt.Printf("[DEBUG] certWithCommonName() - Couldn't verify certificate chain.\n")
-				return nil
-			}
-
-			//fmt.Printf("[DEBUG] certWithCommonName() - successfully verified certificate chain.\n")
-
-			// TODO: Check upstream server's certificate and deny if it is encoded in SHA-1
-			// https://ssldecoder.org/?host=sha1-intermediate.badssl.com&port=&csr=&s=
 		}
 	}
 
@@ -379,8 +397,6 @@ func (c *GoproxyConfig) certWithCommonName(hostname string, commonName string) e
 			//fmt.Printf("  *** Blocked domain.: host=%s  DNSNames[0]=%s\n", originalhostname, hostname )
 			tmpl.DNSNames = []string{host}
 		}
-
-
 	}
 
 

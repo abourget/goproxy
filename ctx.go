@@ -50,16 +50,16 @@ type ProxyCtx struct {
 
 	connectScheme     string
 
-					  // OriginalRequest holds a copy of the request before doing some HTTP tunnelling
-					  // through CONNECT, or doing a man-in-the-middle attack.
+	  // OriginalRequest holds a copy of the request before doing some HTTP tunnelling
+	  // through CONNECT, or doing a man-in-the-middle attack.
 	OriginalRequest   *http.Request
 
-					  // Contains the request and response streams from the proxy to the
-					  // downstream server in the case of a MITM connection
+	  // Contains the request and response streams from the proxy to the
+	  // downstream server in the case of a MITM connection
 	Req            *http.Request
 	ResponseWriter http.ResponseWriter
 
-					  // Connections, up (the requester) and downstream (the server we forward to)
+  	// Connections, up (the requester) and downstream (the server we forward to)
 	Conn           net.Conn
 	targetSiteConn net.Conn           // used internally when we established a CONNECT session,
 					  // to pass through new requests
@@ -410,7 +410,6 @@ func (ctx *ProxyCtx) ManInTheMiddleHTTPS() error {
 		fmt.Println("[TODO] Check HTTP 1/0 response to sender here (3).")
 		ctx.Conn.Write([]byte("HTTP/1.0 200 OK\r\n\r\n"))
 	}
-
 	signHost := ctx.sniHost
 	if signHost == "" {
 		signHost = ctx.host
@@ -421,7 +420,6 @@ func (ctx *ProxyCtx) ManInTheMiddleHTTPS() error {
 			//panic("stopping execution")
 		}
 	}
-
 	// DEBUG - uncomment to ignore all other MITM requests
 	//if !strings.Contains(ctx.host, "reddit") {
 	//	return nil
@@ -429,7 +427,6 @@ func (ctx *ProxyCtx) ManInTheMiddleHTTPS() error {
 
 	// This is our TLS server to handle client requests. See signer.go and certs.go.
 	tlsConfig, err := ctx.tlsConfig(signHost)
-
 	// We should always be able to get a certificate when a signhost has been provided
 	if !isIpAddress && err != nil {
 		ctx.Logf(1, "ManInTheMiddleHTTPS - Couldn't configure MITM TLS tunnel: %s", err)
@@ -482,6 +479,7 @@ func (ctx *ProxyCtx) ManInTheMiddleHTTPS() error {
 		//if ctx.Trace {
 		//	fmt.Printf("[DEBUG] About to handshake: %s\n", ctx.host)
 		//}
+
 		if err := rawClientTls.Handshake(); err != nil {
 			// A handshake error typically only occurs on the client side
 			// when pinned Certificates are being used, ie: a mobile
@@ -599,7 +597,7 @@ func (ctx *ProxyCtx) ManInTheMiddleHTTPS() error {
 		//fmt.Println("[DEBUG] ", subReq.Host)
 		_, port, err := net.SplitHostPort(subReq.Host)
 		if err == nil && port != "443" {
-			fmt.Printf("[WARN] ManInTheMiddleHTTPS() - modified ctx.host from %s to %s. This should only happen in unit testing\n", ctx.host, subReq.Host)
+			//fmt.Printf("[WARN] ManInTheMiddleHTTPS() - modified ctx.host from %s to %s. This should only happen in unit testing or TLS Winston client API calls\n", ctx.host, subReq.Host)
 			ctx.host = subReq.Host
 		}
 
@@ -608,6 +606,36 @@ func (ctx *ProxyCtx) ManInTheMiddleHTTPS() error {
 
 		ctx.Req = subReq
 		ctx.IsThroughMITM = true
+
+		// Give custom listener a chance to service the request
+		//if strings.Contains(ctx.host, "winston.conf") {
+		//	fmt.Println("[DEBUG] ManInTheMiddleHTTPS() 6", ctx.host)
+		//}
+
+		if ctx.Proxy.HandleHTTP != nil {
+			// TODO: If we ever want to serve anything other than our JSON API, we should add header support.
+			// The HandleHTTP() function is responsible for completing the request and piping the
+			// response body back to the original client. For this to work, we need to update
+			// ctx.ResponseWriter so that it points to the newly established TLS connection.
+			// Note that the goproxy dumbreponsewriter cannot write headers, so we wrote a slightly
+			// less dumb one.
+
+			// TIP: For debugging http responses, use curl:
+			//  curl -gkv https://winston.conf:82/api/total_bandwidth
+
+			// TODO: Wrap it in a real responsewriter
+			ctx.ResponseWriter = notsodumbResponseWriter{
+				ctx.Conn,
+				&http.Header{}}
+
+			ctx.Conn.Write([]byte("HTTP/1.0 200 OK\r\n"))
+			ctx.Proxy.HandleHTTP(ctx)
+
+			ctx.Conn.Write([]byte("\r\n"))
+			ctx.Conn.Close()
+			return
+		}
+
 		ctx.Proxy.DispatchRequestHandlers(ctx)
 
 		// Auto-whitelist failed TLS connections and IP addresses. These tend to be streaming requests.
