@@ -60,6 +60,12 @@ var certtransport	*intransport.InTransport
 // Global lock on the certificate store. Locks cannot be copied so they were removed from GoproxyConfig.
 var certmu          	sync.RWMutex
 
+// Stores metadata about a particular host. Used to improve performance.
+type HostInfo struct {
+	LastVerify 	time.Time
+	mu 		sync.Mutex
+}
+
 // Config is a set of configuration values that are used to build TLS configs
 // capable of MITM.
 type GoproxyConfig struct {
@@ -70,6 +76,7 @@ type GoproxyConfig struct {
 	validity        time.Duration
 	*tls.Config
 	bypassDnsDialer *net.Dialer // Custom DNS resolver
+	Host		map[string]*HostInfo
 }
 
 // NewConfig creates a MITM config using the CA certificate and
@@ -155,6 +162,8 @@ func NewConfig(filename string, ca *x509.Certificate, privateKey interface{}) (*
 
 	//tlsConfig.Config.VerifyPeerCertificate = tlsConfig.VerifyPeerCertificate
 
+	tlsConfig.Host = make(map[string]*HostInfo)
+
 	return tlsConfig, nil
 }
 
@@ -224,12 +233,6 @@ func (c *GoproxyConfig) certWithCommonName(hostname string, commonName string) e
 		host = hostname
 	}
 
-
-
-	//originalhostname := hostname
-
-	//fmt.Printf("[DEBUG] certWithCommonName(%s)\n", hostname)
-
 	// Is this an IP address?
 	isIP := false
 	ip := net.ParseIP(host);
@@ -237,10 +240,26 @@ func (c *GoproxyConfig) certWithCommonName(hostname string, commonName string) e
 		isIP = true
 	}
 
+	// Here we employ a lock to protect the certificate store and metadata map and then another lock to
+	// protect individual hosts. This is intended to prevent simultaneous requests from retrieving downstream
+	// certificates at the same time but reduce contention for the certificate store when different domains are
+	// requested.
+	certmu.Lock()
+
 	// Get the certificate from the local cache
-	certmu.RLock()
+	hostmetadata, found := c.Host[host]
+	if !found {
+		// Create a HostInfo struct because we'll need the lock.
+		hostmetadata = &HostInfo{}
+		c.Host[host] = hostmetadata
+	}
+	(*hostmetadata).mu.Lock()
+	defer (*hostmetadata).mu.Unlock()
+
 	tlsc, ok := c.NameToCertificate[host]
-	certmu.RUnlock()
+	certmu.Unlock()
+
+	// A write lock on the host record is held at this point
 
 	if ok {
 		//if experiment {
@@ -250,33 +269,34 @@ func (c *GoproxyConfig) certWithCommonName(hostname string, commonName string) e
 
 		// Check validity of the certificate for hostname match, expiry, etc. In
 		// particular, if the cached certificate has expired, create a new one.
-		var err error
-		if isIP {
-			// Don't verify hostname if we have an ip address
-			// Special case: if localhost, don't bother verifying. This makes unit testing much easier.
-			if !strings.HasPrefix(host, "127.0.0.") {
+		// Don't check more than once an hour.
+		if hostmetadata.LastVerify.Before(time.Now().Add(-60 * time.Minute)) {
+			fmt.Printf("[DEBUG] Verifying certificate [%s]\n", host)
+			var err error
+			if isIP {
+				// Don't verify hostname if we have an ip address
+				// Special case: if localhost, don't bother verifying. This makes unit testing much easier.
+				if !strings.HasPrefix(host, "127.0.0.") {
+					_, err = tlsc.Leaf.Verify(x509.VerifyOptions{
+						//DNSName: hostname,
+						Roots:   c.RootCAs,
+					})
+				}
+			} else {
 				_, err = tlsc.Leaf.Verify(x509.VerifyOptions{
-					//DNSName: hostname,
+					DNSName: host,
 					Roots:   c.RootCAs,
 				})
 			}
+			if err == nil {
+				// Update the last verification time
+				(*hostmetadata).LastVerify = time.Now()
+				return nil
+			}
 		} else {
-			_, err = tlsc.Leaf.Verify(x509.VerifyOptions{
-				DNSName: host,
-				Roots:   c.RootCAs,
-			})
-		}
-		if err == nil {
-
-			//if experiment {
-			//	fmt.Printf("[DEBUG] certWithCommonName() - Certificate passes expiration and hostname check. Using it.\n")
-			//}
+			//fmt.Printf("[DEBUG] Skipping certificate verify [%s]\n", host)
 			return nil
 		}
-
-		//if experiment {
-		//	fmt.Printf("[DEBUG] certWithCommonName() - Certificate did not verify. Getting a new one.\n")
-		//}
 	}
 
 	//if experiment {
@@ -285,7 +305,6 @@ func (c *GoproxyConfig) certWithCommonName(hostname string, commonName string) e
 
 	// Test: Get the origin certificate and copy fields to it.
 	var origcert *x509.Certificate
-	//if experiment {
 
 	// Have to add the port number to connect. Assume 443.
 	if port == "" {
@@ -303,8 +322,7 @@ func (c *GoproxyConfig) certWithCommonName(hostname string, commonName string) e
 		// TODO: This breaks the original goproxy unit tests.
 
 
-		//fmt.Println("[TEST} Signer.go() originalhostname", originalhostname, "port", port)
-		//debug.PrintStack()
+		fmt.Println("[DEBUG] Signer.go() Downloading remote certificate", host)
 		conn, err = tls.DialWithDialer(c.bypassDnsDialer, "tcp", host + ":" + port, &tls.Config{InsecureSkipVerify: true})
 
 		//if experiment {
@@ -342,9 +360,9 @@ func (c *GoproxyConfig) certWithCommonName(hostname string, commonName string) e
 		}
 	}
 
-	// Create a new certificate
-	certmu.Lock()
-	defer certmu.Unlock()
+	// Create a new certificate.
+	//certmu.Lock()
+	//defer certmu.Unlock()
 
 	serial, err := rand.Int(rand.Reader, MaxSerialNumber)
 	if err != nil {
@@ -420,11 +438,14 @@ func (c *GoproxyConfig) certWithCommonName(hostname string, commonName string) e
 	//if experiment {
 	//	fmt.Printf("[DEBUG] certWithCommonName - New cert created. Subject: %+v\n  Issuer: %+v\n  AuthorityKeyId=%v\n", tlsc.Leaf.Subject.CommonName, tlsc.Leaf.Issuer.CommonName, tlsc.Leaf.AuthorityKeyId)
 	//}
-	// Todo: Should this be moved higher so we don't repeatedly request the same certificate from downstream server?
-	// The risk is that a hung connection could block all HTTPS traffic to the proxy. Leaving it for now. RLS 3/16/2018
 
+	// We don't need to lock the certificate store because we already have a lock on this hostname.
 	c.NameToCertificate[host] = tlsc
 	c.Certificates = append(c.Certificates, *tlsc)
+
+	// Update the last verification time.
+	(*hostmetadata).LastVerify = time.Now()
+	c.Host[host] = hostmetadata
 
 
 	return nil
