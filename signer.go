@@ -63,6 +63,7 @@ var certmu          	sync.RWMutex
 // Stores metadata about a particular host. Used to improve performance.
 type HostInfo struct {
 	LastVerify 	time.Time
+	NextAttempt	time.Time	// Set to future time for invalid certs to avoid frequent reloading
 	mu 		sync.Mutex
 }
 
@@ -312,7 +313,8 @@ func (c *GoproxyConfig) certWithCommonName(hostname string, commonName string) e
 	}
 
 	// Skip upstream lookup for local Winston... it doesn't exist in public DNS.
-	if !strings.Contains(hostname, "winston.conf") {
+	// Also skip upstream checks if a previous attempt failed to validate.
+	if !strings.Contains(hostname, "winston.conf") && (*hostmetadata).NextAttempt.Before(time.Now()) {
 
 		//if experiment {
 		//	fmt.Println("[DEBUG] Signer.go - about to dial")
@@ -322,7 +324,7 @@ func (c *GoproxyConfig) certWithCommonName(hostname string, commonName string) e
 		// TODO: This breaks the original goproxy unit tests.
 
 
-		fmt.Println("[DEBUG] Signer.go() Downloading remote certificate", host)
+		//fmt.Println("[DEBUG] Signer.go() Downloading remote certificate", host)
 		conn, err = tls.DialWithDialer(c.bypassDnsDialer, "tcp", host + ":" + port, &tls.Config{InsecureSkipVerify: true})
 
 		//if experiment {
@@ -330,7 +332,7 @@ func (c *GoproxyConfig) certWithCommonName(hostname string, commonName string) e
 		//}
 
 		if err != nil {
-			//fmt.Printf("[DEBUG] Signer.go - Error while dialing: %v\n", err)
+			//fmt.Printf("[DEBUG] Signer.go - Error while dialing %s: %v\n", host, err)
 			return err
 		} else {
 			// Only close the connection if we couldn't connect.
@@ -349,6 +351,8 @@ func (c *GoproxyConfig) certWithCommonName(hostname string, commonName string) e
 				err = certtransport.VerifyPeerCertificate(rawCerts, nil)
 				if err != nil {
 					//fmt.Printf("[DEBUG] certWithCommonName() - Couldn't verify certificate chain.\n")
+					(*hostmetadata).NextAttempt = time.Now().Add(24 * time.Hour)
+					c.Host[host] = hostmetadata
 					return nil
 				}
 

@@ -1784,20 +1784,23 @@ func (ctx *ProxyCtx) httpError(parentErr error) {
 
 // RLS 9/13/2017 - Alternate method to prevent memory leaks when connections are unexpectedly closed.
 func (ctx *ProxyCtx) copyAndClose(w, r net.Conn, toClose chan net.Conn) {
-	// TODO: Memory leak here - sometimes io.Copy never releases
-
 	// This timeout is a sanity check simply designed to close connections after 5 minutes.
 	timeoutDuration := 300 * time.Second
 	r.SetReadDeadline(time.Now().Add(timeoutDuration))
 	w.SetWriteDeadline(time.Now().Add(timeoutDuration))
 
+	// Idle timeout - designed to close connections after 60 seconds of no activity
+	ridle := &IdleTimeoutConn{Conn: r}
+	widle := &IdleTimeoutConn{Conn: w}
+
 	//start := time.Now()
-	bytes, err := io.Copy(w, r)
+	bytes, err := io.Copy(widle, ridle)
 	//fmt.Printf("[DEBUG] CopyAndClose - wrote %d bytes err=%+v\n", bytes,err)
 	if err != nil && bytes <= 0 {
 		ctx.Warnf("Error copying to client [%s]", ctx.Host(), err)
 	}
-	toClose <- r
+	toClose <- ridle
+	//toClose <- widle
 }
 
 // Copies the contexts of a buffered Reader to the target connection. Used when we have already opened a
