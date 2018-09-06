@@ -221,7 +221,7 @@ func (c *GoproxyConfig) FlushCert(hostname string) {
 func (c *GoproxyConfig) certWithCommonName(hostname string, commonName string) error {
 
 	//experiment := false
-	//if strings.Contains(hostname, ".badssl.com") || strings.Contains(hostname, "support.sonos.com") {
+	//if strings.Contains(hostname, ".badssl.com") {
 	//	fmt.Printf("[DEBUG] Starting badssl experiment: %s\n", hostname)
 	//	experiment = true
 	//}
@@ -352,7 +352,9 @@ func (c *GoproxyConfig) certWithCommonName(hostname string, commonName string) e
 					//	fmt.Println("[DEBUG] Signer.go - certificate verification failed - err:", err)
 					//}
 					(*hostmetadata).NextAttempt = time.Now().Add(24 * time.Hour)
+					certmu.Lock()
 					c.Host[host] = hostmetadata
+					certmu.Unlock()
 
 					// TEST: add bad certs anyway
 					badcert = true
@@ -400,7 +402,7 @@ func (c *GoproxyConfig) certWithCommonName(hostname string, commonName string) e
 	}
 
 	//if experiment {
-	//	fmt.Printf("[DEBUG] Certificate NotBefore: %v  NotAfter: %v", notbefore, notafter)
+	//	fmt.Printf("[DEBUG] Certificate [%s] NotBefore: %v  NotAfter: %v\n", hostname, notbefore, notafter)
 	//}
 
 
@@ -464,13 +466,20 @@ func (c *GoproxyConfig) certWithCommonName(hostname string, commonName string) e
 	}
 
 	//if experiment {
-	//	fmt.Printf("[DEBUG] certWithCommonName - New cert created. Subject: %+v\n  Issuer: %+v\n  AuthorityKeyId=%v\n", tlsc.Leaf.Subject.CommonName, tlsc.Leaf.Issuer.CommonName, tlsc.Leaf.AuthorityKeyId)
+	//	fmt.Printf("[DEBUG] certWithCommonName - New cert created. Subject: %+v\n  Issuer: %+v\n  NotAfter=%v\n", tlsc.Leaf.Subject.CommonName, tlsc.Leaf.Issuer.CommonName, tmpl.NotAfter)
 	//}
 
+	// It's possible we have a race condition here with multiple goroutines having fetched the downstream certificate simultaneously.
+	// The certificate verification logic avoids stampede conditions and will bypass validation logic if it detects multiple requests.
+	// Therefore, we should check if a certificate already exists and only overwrite it if we determined it's invalid.
 	certmu.Lock()
 	defer certmu.Unlock()
-	c.NameToCertificate[host] = tlsc
-	c.Certificates = append(c.Certificates, *tlsc)
+	_, ok = c.NameToCertificate[host]
+	if !ok || badcert {
+		// Only add it if we didn't find it or ours is invalid
+		c.NameToCertificate[host] = tlsc
+		c.Certificates = append(c.Certificates, *tlsc)
+	}
 
 	// Update the last verification time.
 	(*hostmetadata).LastVerify = time.Now()
