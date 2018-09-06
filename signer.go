@@ -444,6 +444,22 @@ func (c *GoproxyConfig) certWithCommonName(hostname string, commonName string) e
 	//}
 
 	// We don't need to lock the certificate store because we already have a lock on this hostname.
+	// TODO: Panic
+	/*
+	[DEBUG] server.Listener &{0x1401a3a0 70 30 0x12689b80 0x11fd6518 map[] 0x110b0240 0x1204ab80 28 0x1204abc0 {{} <nil>} {{} <nil>} false}
+fatal error: bad map state
+
+goroutine 10637 [running]:
+runtime.throw(0x6ed6fe, 0xd)
+        /usr/local/go/src/runtime/panic.go:605 +0x70 fp=0x14f0152c sp=0x14f01520 pc=0x3e97c
+runtime.evacuate(0x6469f0, 0x111431c0, 0xc)
+        /usr/local/go/src/runtime/hashmap.go:1080 +0x908 fp=0x14f015b0 sp=0x14f0152c pc=0x1c830
+runtime.growWork(0x6469f0, 0x111431c0, 0xa)
+        /usr/local/go/src/runtime/hashmap.go:1035 +0x80 fp=0x14f015c0 sp=0x14f015b0 pc=0x1bf10
+runtime.mapassign_faststr(0x6469f0, 0x111431c0, 0x120e8b20, 0x13, 0x0)
+        /usr/local/go/src/runtime/hashmap_fast.go:798 +0x444 fp=0x14f01608 sp=0x14f015c0 pc=0x1ec84
+github.com/abourget/goproxy.(*GoproxyConfig).certWithCommonName(0x110c7170, 0x120e8b20, 0x13, 0x0, 0x0, 0x0, 0x0)
+	 */
 	c.NameToCertificate[host] = tlsc
 	c.Certificates = append(c.Certificates, *tlsc)
 

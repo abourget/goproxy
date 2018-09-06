@@ -1032,20 +1032,12 @@ func (ctx *ProxyCtx) HijackConnect() net.Conn {
 // In the original goproxy implementation, this was used only for CONNECT requests. However, we also
 // use it to pipe non-HTTP protocols through.
 func (ctx *ProxyCtx) ForwardConnect() error {
-	//fmt.Printf("[DEBUG] ForwardConnect() [%s]\n", ctx.host)
-	// Allow ForwardConnect for websockets and other non-http protocols
-	//if ctx.Method != "CONNECT" {
-	//	return fmt.Errorf("Method is not CONNECT")
-	//}
-
 	var dnsbypassctx context.Context
 
 	if ctx.Whitelisted {
 		//ctx.Logf(1, "  *** ForwardConnect() - Bypassing DNS for whitelisted host [%s]", ctx.host)
 		dnsbypassctx = context.WithValue(ctx.Req.Context(), dns.UpstreamKey, 0)
 	}
-
-	//fmt.Printf("[DEBUG] ForwardConnect: dial - %s\n", ctx.host)
 
 	targetSiteConn, err := ctx.Proxy.connectDialContext(dnsbypassctx, "tcp", ctx.host)
 	if err != nil {
@@ -1059,21 +1051,18 @@ func (ctx *ProxyCtx) ForwardConnect() error {
 		ctx.Conn.Write([]byte("HTTP/1.0 200 OK\r\n\r\n"))
 	}
 
+	fuse(ctx.Conn, targetSiteConn, ctx.Host())
+
+
 	// RLS 9/13/2017 - These are closed together because they run in different goroutines.
 	// This ensures that closing one doesn't cause the other https connection to abort.
 	// See: https://github.com/elazarl/goproxy/pull/161
 	// Still slowly leaking memory with Abourget's code.
+	//toClose := make(chan net.Conn)
+	//go ctx.copyAndClose(targetSiteConn, ctx.Conn, toClose)
+	//go ctx.copyAndClose(ctx.Conn, targetSiteConn, toClose)
+	//ctx.closeTogether(toClose)
 
-
-	toClose := make(chan net.Conn)
-
-	go ctx.copyAndClose(targetSiteConn, ctx.Conn, toClose)
-	go ctx.copyAndClose(ctx.Conn, targetSiteConn, toClose)
-
-	// Block here so callers don't proceed until the request has completed.
-	ctx.closeTogether(toClose)
-
-	//fmt.Printf("[DEBUG] ForwardConnect() - Closing connection")
 
 	return nil
 }
@@ -1153,10 +1142,8 @@ func (ctx *ProxyCtx) ForwardNonHTTPRequest(host string) error {
 	dnsbypassctx = context.WithValue(dnsbypassctx, shadownetwork.ShadowTransportFailed, &shadownetwork.ShadowNetworkFailure{})
 
 	if !ctx.IsSecure {
-		//fmt.Println("[DEBUG] ForwardNonHTTPRequest 2", ctx.host, ctx.Proxy.Transport.DialContext)
 		d := HijackedDNSDialer()
 		targetSiteConn, err = d.DialContext(dnsbypassctx, "tcp", ctx.host)
-		//fmt.Println("[DEBUG] ForwardNonHTTPRequest 3")
 		if err != nil {
 			fmt.Printf("[DEBUG] ForwardNonHTTPRequest: Couldn't dial tcp connection - error - %+v\n", err)
 			ctx.httpError(err)
@@ -1179,25 +1166,23 @@ func (ctx *ProxyCtx) ForwardNonHTTPRequest(host string) error {
 	}
 
 	// Enforce an idle timeout (60 seconds)
-	clientConnIdle := &IdleTimeoutConn{Conn: ctx.Conn}
-	targetSiteConnIdle := &IdleTimeoutConn{Conn: targetSiteConn}
+	//clientConnIdle := &IdleTimeoutConn{Conn: ctx.Conn}
+	//targetSiteConnIdle := &IdleTimeoutConn{Conn: targetSiteConn}
 
 	// Write request to server
-	err = ctx.Req.Write(targetSiteConnIdle)
+	err = ctx.Req.Write(targetSiteConn)
 	if err != nil {
 		fmt.Printf("[DEBUG] ForwardNonHTTPRequest(): couldn't write request - error - %+v\n", err)
 		return err
 	}
 
-	toClose := make(chan net.Conn)
+	// Tunnel the connections together and block until they close.
+	fuse(ctx.Conn, targetSiteConn, ctx.Host())
 
-	go ctx.copyAndClose(targetSiteConnIdle, clientConnIdle, toClose)
-	go ctx.copyAndClose(clientConnIdle, targetSiteConnIdle, toClose)
-
-	// Block here so callers don't proceed until the request has completed.
-	ctx.closeTogether(toClose)
-
-	//fmt.Printf("[DEBUG] ForwardNonHTTPRequest() - Closing websockets connection [%s]\n", ctx.host)
+	//toClose := make(chan net.Conn)
+	//go ctx.copyAndClose(targetSiteConnIdle, clientConnIdle, toClose)
+	//go ctx.copyAndClose(clientConnIdle, targetSiteConnIdle, toClose)
+	//ctx.closeTogether(toClose)
 
 	// Check to see if the request failed over to the local network and let the caller know.
 	//errmsg := dnsbypassctx.Value(shadownetwork.ShadowTransportFailed)
@@ -1546,7 +1531,7 @@ func (ctx *ProxyCtx) forwardMITMResponse(resp *http.Response) error {
 	}
 	// always use 1.1 to support chunked encoding
 	if _, err := io.WriteString(ctx.Conn, "HTTP/1.1"+" "+statusCode+text+"\r\n"); err != nil {
-		fmt.Printf("[ERROR] Cannot write TLS response HTTP status from mitm'd client: %v\n", err)
+		fmt.Printf("[ERROR] Cannot write TLS response HTTP status from mitm'd client [%s]: %v\n", ctx.Host(), err)
 		return err
 	}
 
@@ -1784,14 +1769,14 @@ func (ctx *ProxyCtx) httpError(parentErr error) {
 
 // RLS 9/13/2017 - Alternate method to prevent memory leaks when connections are unexpectedly closed.
 func (ctx *ProxyCtx) copyAndClose(w, r net.Conn, toClose chan net.Conn) {
-	// This timeout is a sanity check simply designed to close connections after 5 minutes.
-	timeoutDuration := 300 * time.Second
-	r.SetReadDeadline(time.Now().Add(timeoutDuration))
-	w.SetWriteDeadline(time.Now().Add(timeoutDuration))
-
 	// Idle timeout - designed to close connections after 60 seconds of no activity
 	ridle := &IdleTimeoutConn{Conn: r}
 	widle := &IdleTimeoutConn{Conn: w}
+
+	// This timeout is a sanity check simply designed to close connections after 5 minutes.
+	timeoutDuration := 300 * time.Second
+	ridle.SetReadDeadline(time.Now().Add(timeoutDuration))
+	widle.SetWriteDeadline(time.Now().Add(timeoutDuration))
 
 	//start := time.Now()
 	bytes, err := io.Copy(widle, ridle)
@@ -1802,40 +1787,6 @@ func (ctx *ProxyCtx) copyAndClose(w, r net.Conn, toClose chan net.Conn) {
 	toClose <- ridle
 	//toClose <- widle
 }
-
-// Copies the contexts of a buffered Reader to the target connection. Used when we have already opened a
-// reader on a MITM connection. If reader is nil, will use the underlying net.Conn.
-/*func (ctx *ProxyCtx) copyAndCloseReader(w net.Conn, reader *bufio.Reader, r net.Conn, toClose chan net.Conn) {
-	// This timeout is a sanity check simply designed to close connections after 5 minutes.
-	timeoutDuration := 300 * time.Second
-	w.SetWriteDeadline(time.Now().Add(timeoutDuration))
-
-	//start := time.Now()
-	var bytes int64
-	var err error
-	fmt.Printf("[DEBUG] CopyAndCloseReader 1\n")
-	if reader == nil {
-		bytes, err = io.Copy(w, r)
-	} else {
-		fmt.Printf("[DEBUG] CopyAndCloseReader 2\n")
-		// See if there's anything there.
-		firstline, err := reader.ReadString('\n')
-		fmt.Printf("[DEBUG] Read line=[%s] err=%+v\n", firstline, err)
-
-		// Manually write a string to the destination
-		w.Write([]byte("GET / HTTP/1.1\r\n\r\n"))
-
-		fmt.Printf("[DEBUG] CopyAndCloseReader 3 - wrote a GET request\n")
-		//bytes, err = io.Copy(w, reader)
-		//bytes, err = reader.WriteTo(w)
-		//fmt.Printf("[DEBUG] CopyAndCloseReader 3 - wrote %d bytes - err=%+v\n", bytes,err)
-	}
-
-	if err != nil && bytes <= 0 {
-		fmt.Printf("[DEBUG] CopyAndCloseReader - Error copying to client [%s]", ctx.Host(), err)
-	}
-	toClose <- r
-}*/
 
 func (ctx *ProxyCtx) closeTogether(toClose chan net.Conn) {
 	c1 := <-toClose
@@ -1848,14 +1799,79 @@ func (ctx *ProxyCtx) closeTogether(toClose chan net.Conn) {
 	}
 }
 
+const serverReadTimeout = 300	// response timeout in seconds
+const clientReadTimeout = 10	// Client request timeout in seconds
+
+// RLS 9/6/2018 - Cleaner method to pipe two conns together.
+// Fuse connections together. Have to take precautions to close connections down in various cases.
+func fuse(client, backend net.Conn, debug string) {
+	// Copy from client -> backend, and from backend -> client
+	//defer p.logConnectionMessage("closed", client, backend)
+	//p.logConnectionMessage("opening", client, backend)
+
+	defer client.Close()
+	defer backend.Close()
+
+	// Pipes data from the remote server to our client
+	backenddie := make(chan struct{})
+	go func() {
+		// Worst-case scenario - the connection will close after 5 minutes, no matter what.
+		backend.SetReadDeadline(time.Now().Add(serverReadTimeout * time.Second))
+
+		// Wrap the backend connection so that we can enforce an idle timeout.
+		idleconn := &IdleTimeoutConn{Conn: backend}
+
+		n, err := copyData(client, idleconn)
+		if err != nil && !strings.Contains(err.Error(), "closed network connection") {
+			fmt.Printf("[ERROR] ctx.go/fuse() error backend->client: %d bytes transferred. [%s] Err=%s\n", n, debug, err)
+		}
+
+		close(backenddie)
+	}()
+
+	// Pipes data from our client to the remote server
+	clientdie := make(chan struct{})
+	go func() {
+		// Set read timeout - we should receive the full request in 10 seconds or less
+		client.SetReadDeadline(time.Now().Add(clientReadTimeout * time.Second))
+		// n, err :=
+		copyData(backend, client)
+
+		// Timeouts and connection reset errors are very common, especially with Netflix.
+		// Uncomment to see these... not particularly helpful in most cases though.
+		//if err != nil && !strings.Contains(err.Error(), "timeout") {
+		//	fmt.Printf("[ERROR] ctx.go/fuse() error client->backend: %d bytes transferred. [%s] Err=%s\n", n, debug, err)
+		//}
+
+		close(clientdie)
+	}()
+
+	// Wait for both connections to close before shutting the tunnel down. Otherwise we can end up
+	// in a race condition where the client request ends and shuts the tunnel down.
+	<-backenddie
+	<-clientdie
+
+}
+
+
+// Copy data between two connections
+func copyData(dst net.Conn, src net.Conn) (int64, error) {
+	defer dst.Close()
+	defer src.Close()
+
+	n, err := io.Copy(dst, src)
+
+	//if err != nil {
+	//	fmt.Printf("fuse error: %d bytes copied.\n", n)
+	//}
+
+	return n, err
+
+}
+
 // Logf prints a message to the proxy's log. Should be used in a ProxyHttpServer's filter
 // This message will be printed only if the Verbose field of the ProxyHttpServer is set to true
-//
-//	proxy.OnRequest().DoFunc(func(r *http.Request,ctx *goproxy.ProxyCtx) (*http.Request, *http.Response){
-//		nr := atomic.AddInt32(&counter,1)
-//		ctx.Printf("So far %d requests",nr)
-//		return r, nil
-//	})
+
 func (ctx *ProxyCtx) Logf(level uint16, msg string, argv ...interface{}) {
 	// RLS 2/10/2018 - Changed to bitmask so that we can toggle the different log levels.
 	bitflag := uint16(1 << uint16((level - 1)))
@@ -1866,15 +1882,6 @@ func (ctx *ProxyCtx) Logf(level uint16, msg string, argv ...interface{}) {
 
 // Warnf prints a message to the proxy's log. Should be used in a ProxyHttpServer's filter
 // This message will always be printed.
-//
-//	proxy.OnRequest().DoFunc(func(r *http.Request,ctx *goproxy.ProxyCtx) (*http.Request, *http.Response){
-//		f,err := os.OpenFile(cachedContent)
-//		if err != nil {
-//			ctx.Warnf("error open file %v: %v",cachedContent,err)
-//			return r, nil
-//		}
-//		return r, nil
-//	})
 func (ctx *ProxyCtx) Warnf(msg string, argv ...interface{}) {
 	ctx.Logf(6, "WARN: "+msg, argv...)
 }
