@@ -221,10 +221,11 @@ func (c *GoproxyConfig) FlushCert(hostname string) {
 func (c *GoproxyConfig) certWithCommonName(hostname string, commonName string) error {
 
 	//experiment := false
-	//if strings.Contains(hostname, "winston.conf") {
-	//	//fmt.Printf("  *** Starting badssl experiment: %s\n", originalhostname)
+	//if strings.Contains(hostname, ".badssl.com") || strings.Contains(hostname, "support.sonos.com") {
+	//	fmt.Printf("[DEBUG] Starting badssl experiment: %s\n", hostname)
 	//	experiment = true
 	//}
+
 	// Remove the port if it exists.
 	// host must contain a domain/IP address only at this point.
 	host, port, err := net.SplitHostPort(hostname)
@@ -241,26 +242,25 @@ func (c *GoproxyConfig) certWithCommonName(hostname string, commonName string) e
 		isIP = true
 	}
 
-	// Here we employ a lock to protect the certificate store and metadata map and then another lock to
-	// protect individual hosts. This is intended to prevent simultaneous requests from retrieving downstream
-	// certificates at the same time but reduce contention for the certificate store when different domains are
-	// requested.
-	certmu.Lock()
-
-	// Get the certificate from the local cache
+	// Need a lock to protect the certificate store. Can't block here because we may already be writing a certificate.
+	certmu.RLock()
+	tlsc, ok := c.NameToCertificate[host]
 	hostmetadata, found := c.Host[host]
+	certmu.RUnlock()
+
+	// In a race condition, it is possible that multiple threads could attempt to create a metadata entry. That's ok
+	// because in the worst cast, we'll fetch the downstream certificate multiple times on the initial call.
 	if !found {
-		// Create a HostInfo struct because we'll need the lock.
 		hostmetadata = &HostInfo{}
+		certmu.Lock()
 		c.Host[host] = hostmetadata
+		certmu.Unlock()
 	}
+
 	(*hostmetadata).mu.Lock()
 	defer (*hostmetadata).mu.Unlock()
 
-	tlsc, ok := c.NameToCertificate[host]
-	certmu.Unlock()
-
-	// A write lock on the host record is held at this point
+	// A write lock on the HostInfo struct is held at this point. We can write to it freely.
 
 	if ok {
 		//if experiment {
@@ -314,22 +314,18 @@ func (c *GoproxyConfig) certWithCommonName(hostname string, commonName string) e
 
 	// Skip upstream lookup for local Winston... it doesn't exist in public DNS.
 	// Also skip upstream checks if a previous attempt failed to validate.
+	badcert := false
 	if !strings.Contains(hostname, "winston.conf") && (*hostmetadata).NextAttempt.Before(time.Now()) {
 
 		//if experiment {
-		//	fmt.Println("[DEBUG] Signer.go - about to dial")
+		//	fmt.Println("[DEBUG] Signer.go() Downloading remote certificate", host)
 		//}
 
 		var conn *tls.Conn
 		// TODO: This breaks the original goproxy unit tests.
 
 
-		//fmt.Println("[DEBUG] Signer.go() Downloading remote certificate", host)
 		conn, err = tls.DialWithDialer(c.bypassDnsDialer, "tcp", host + ":" + port, &tls.Config{InsecureSkipVerify: true})
-
-		//if experiment {
-		//	fmt.Println("[DEBUG] Signer.go - dialed - err:", err)
-		//}
 
 		if err != nil {
 			//fmt.Printf("[DEBUG] Signer.go - Error while dialing %s: %v\n", host, err)
@@ -338,25 +334,35 @@ func (c *GoproxyConfig) certWithCommonName(hostname string, commonName string) e
 			// Only close the connection if we couldn't connect.
 			defer conn.Close()
 			if len(conn.ConnectionState().PeerCertificates) >= 1 {
+				//if experiment {
+				//	fmt.Println("[DEBUG] Signer.go - verifying certificate...")
+				//}
 				origcert = conn.ConnectionState().PeerCertificates[0]
 
-				// TODO: Throttle this so we don't make a ton of requests all at once
-
-				//var rawCerts [][]byte
 				rawCerts := make([][]byte, len(conn.ConnectionState().PeerCertificates))
 				for i, cert := range conn.ConnectionState().PeerCertificates {
 					rawCerts[i] = cert.Raw
 				}
 
+				// We only verify here to check the intermediate certificate chain. We don't want errors
+				// to prevent us from copying the remote certificate to the store.
 				err = certtransport.VerifyPeerCertificate(rawCerts, nil)
 				if err != nil {
-					//fmt.Printf("[DEBUG] certWithCommonName() - Couldn't verify certificate chain.\n")
+					//if experiment {
+					//	fmt.Println("[DEBUG] Signer.go - certificate verification failed - err:", err)
+					//}
 					(*hostmetadata).NextAttempt = time.Now().Add(24 * time.Hour)
 					c.Host[host] = hostmetadata
-					return nil
+
+					// TEST: add bad certs anyway
+					badcert = true
+					//return nil
 				}
 
-				//fmt.Printf("[DEBUG] certWithCommonName() - successfully verified certificate chain.\n")
+
+				//if experiment {
+				//	fmt.Printf("[DEBUG] certWithCommonName() - successfully retrieved remote certificate.\n")
+				//}
 
 				// TODO: Check upstream server's certificate and deny if it is encoded in SHA-1
 				// https://ssldecoder.org/?host=sha1-intermediate.badssl.com&port=&csr=&s=
@@ -365,9 +371,6 @@ func (c *GoproxyConfig) certWithCommonName(hostname string, commonName string) e
 	}
 
 	// Create a new certificate.
-	//certmu.Lock()
-	//defer certmu.Unlock()
-
 	serial, err := rand.Int(rand.Reader, MaxSerialNumber)
 	if err != nil {
 		return err
@@ -379,6 +382,28 @@ func (c *GoproxyConfig) certWithCommonName(hostname string, commonName string) e
 		//fmt.Printf("  *** Overrode common name with %s \n", commonName)
 	}
 
+	// Determine the validity period. This has to be set when the certificate is created.
+	// If the intermediate certificate chain check failed, we need to invalidate the certificate and add it to the
+	// store. This prevents us from retrieving it over and over again. If we just add the original certificate,
+	// Golang is not smart enough to check the intermediate chains (and this would introduce an unacceptable performance
+	// penalty if we did check it on every call anyway).
+	var notbefore, notafter time.Time
+	if badcert {
+		notafter = time.Now().Add(-365 * 24 * time.Hour)
+		notbefore = time.Now().Add(-365 * 24 * time.Hour)
+	} else if origcert != nil && !strings.HasPrefix(host, "winston.conf") {
+		notafter = origcert.NotAfter
+		notbefore = origcert.NotBefore
+	} else {
+		notafter = time.Now().Add(c.validity)
+		notbefore = time.Now().Add(-c.validity)
+	}
+
+	//if experiment {
+	//	fmt.Printf("[DEBUG] Certificate NotBefore: %v  NotAfter: %v", notbefore, notafter)
+	//}
+
+
 	tmpl := &x509.Certificate{
 		SerialNumber: serial,
 		Subject: pkix.Name{
@@ -389,8 +414,8 @@ func (c *GoproxyConfig) certWithCommonName(hostname string, commonName string) e
 		KeyUsage:              x509.KeyUsageKeyEncipherment | x509.KeyUsageDigitalSignature,
 		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
 		BasicConstraintsValid: true,
-		NotBefore:             time.Now().Add(-c.validity),
-		NotAfter:              time.Now().Add(c.validity),
+		NotBefore:             notbefore,
+		NotAfter:              notafter,
 	}
 
 	if isIP {
@@ -403,11 +428,9 @@ func (c *GoproxyConfig) certWithCommonName(hostname string, commonName string) e
 	if origcert != nil && !strings.HasPrefix(host, "winston.conf") {
 
 		tmpl.Subject = origcert.Subject
-		tmpl.NotBefore = origcert.NotBefore
-		tmpl.NotAfter = origcert.NotAfter
+		//tmpl.NotBefore = origcert.NotBefore
+		//tmpl.NotAfter = origcert.NotAfter
 		tmpl.KeyUsage = origcert.KeyUsage
-
-		// TODO: Are we copying the original Authority Key Id
 		tmpl.AuthorityKeyId = origcert.AuthorityKeyId
 		tmpl.IPAddresses = origcert.IPAddresses
 
@@ -420,6 +443,7 @@ func (c *GoproxyConfig) certWithCommonName(hostname string, commonName string) e
 			tmpl.DNSNames = []string{host}
 		}
 	}
+
 
 
 	raw, err := x509.CreateCertificate(rand.Reader, tmpl, c.Root, c.priv.Public(), c.capriv)
@@ -443,23 +467,8 @@ func (c *GoproxyConfig) certWithCommonName(hostname string, commonName string) e
 	//	fmt.Printf("[DEBUG] certWithCommonName - New cert created. Subject: %+v\n  Issuer: %+v\n  AuthorityKeyId=%v\n", tlsc.Leaf.Subject.CommonName, tlsc.Leaf.Issuer.CommonName, tlsc.Leaf.AuthorityKeyId)
 	//}
 
-	// We don't need to lock the certificate store because we already have a lock on this hostname.
-	// TODO: Panic
-	/*
-	[DEBUG] server.Listener &{0x1401a3a0 70 30 0x12689b80 0x11fd6518 map[] 0x110b0240 0x1204ab80 28 0x1204abc0 {{} <nil>} {{} <nil>} false}
-fatal error: bad map state
-
-goroutine 10637 [running]:
-runtime.throw(0x6ed6fe, 0xd)
-        /usr/local/go/src/runtime/panic.go:605 +0x70 fp=0x14f0152c sp=0x14f01520 pc=0x3e97c
-runtime.evacuate(0x6469f0, 0x111431c0, 0xc)
-        /usr/local/go/src/runtime/hashmap.go:1080 +0x908 fp=0x14f015b0 sp=0x14f0152c pc=0x1c830
-runtime.growWork(0x6469f0, 0x111431c0, 0xa)
-        /usr/local/go/src/runtime/hashmap.go:1035 +0x80 fp=0x14f015c0 sp=0x14f015b0 pc=0x1bf10
-runtime.mapassign_faststr(0x6469f0, 0x111431c0, 0x120e8b20, 0x13, 0x0)
-        /usr/local/go/src/runtime/hashmap_fast.go:798 +0x444 fp=0x14f01608 sp=0x14f015c0 pc=0x1ec84
-github.com/abourget/goproxy.(*GoproxyConfig).certWithCommonName(0x110c7170, 0x120e8b20, 0x13, 0x0, 0x0, 0x0, 0x0)
-	 */
+	certmu.Lock()
+	defer certmu.Unlock()
 	c.NameToCertificate[host] = tlsc
 	c.Certificates = append(c.Certificates, *tlsc)
 
