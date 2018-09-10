@@ -272,7 +272,7 @@ func (c *GoproxyConfig) certWithCommonName(hostname string, commonName string) e
 		// particular, if the cached certificate has expired, create a new one.
 		// Don't check more than once an hour.
 		if hostmetadata.LastVerify.Before(time.Now().Add(-60 * time.Minute)) {
-			fmt.Printf("[DEBUG] Verifying certificate [%s]\n", host)
+			//fmt.Printf("[DEBUG] Verifying certificate [%s]\n", host)
 			var err error
 			if isIP {
 				// Don't verify hostname if we have an ip address

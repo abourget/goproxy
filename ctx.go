@@ -118,6 +118,7 @@ type ProxyCtx struct {
 					  	// 11/2/2017 - Used for replacement macros (user agents)
 	DeviceType int
 	Whitelisted     	bool      	// If true, response filtering will be completely disabled and local DNS will be bypassed.
+	TimeRemaining		int		// Time remaining in sec for temporary whitelisting or uncloaking
 
 					  	// Keeps a list of any messages we want to pass back to the client
 	StatusMessage   	[]string
@@ -1821,10 +1822,12 @@ func fuse(client, backend net.Conn, debug string) {
 		// Wrap the backend connection so that we can enforce an idle timeout.
 		idleconn := &IdleTimeoutConn{Conn: backend}
 
-		n, err := copyData(client, idleconn)
-		if err != nil && !strings.Contains(err.Error(), "closed network connection") {
-			fmt.Printf("[ERROR] ctx.go/fuse() error backend->client: %d bytes transferred. [%s] Err=%s\n", n, debug, err)
-		}
+		//n, err :=
+		copyData(client, idleconn)
+		// These errors are common with streaming sites. Uncomment to see.
+		//if err != nil && !strings.Contains(err.Error(), "closed network connection") {
+		//	fmt.Printf("[ERROR] ctx.go/fuse() error backend->client: %d bytes transferred. [%s] Err=%s\n", n, debug, err)
+		//}
 
 		close(backenddie)
 	}()
