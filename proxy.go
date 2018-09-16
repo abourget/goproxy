@@ -187,7 +187,7 @@ func (proxy *ProxyHttpServer) SetShadowNetwork(sn *shadownetwork.ShadowNetwork) 
 
 // Standard net/http function. Shouldn't be used directly, http.Serve will use it.
 func (proxy *ProxyHttpServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	//r.Header["X-Forwarded-For"] = w.RemoteAddr()	
+	//r.Header["X-Forwarded-For"] = w.RemoteAddr()
 
 	ctx := &ProxyCtx{
 		Method:         r.Method,
@@ -474,10 +474,11 @@ func (proxy *ProxyHttpServer) ListenAndServeTLS(httpsAddr string) error {
 			//}
 
 			// Disable handlers and P2P network. Can be used to more quickly debug website compatibility problems.
-			if strings.Contains(ctx.host, "winston.conf")  {
-				//ctx.SkipRequestHandler = true
-			//	ctx.SkipResponseHandler = true
-			//	ctx.PrivateNetwork = false
+			if strings.Contains(ctx.host, "embed.cbssports.com")  {
+				fmt.Println("[DEBUG] HTTPS request to CBSSports (Akamai?) detected")
+				ctx.SkipRequestHandler = true
+				ctx.SkipResponseHandler = true
+				ctx.PrivateNetwork = false
 			}
 
 			proxy.dispatchConnectHandlers(ctx)

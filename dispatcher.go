@@ -227,6 +227,11 @@ func (proxy *ProxyHttpServer) DispatchRequestHandlers(ctx *ProxyCtx) {
 				}
 			}
 		}
-		ctx.DispatchResponseHandlers()
+		if strings.Contains(ctx.host, "embed.cbssports.com")  {
+
+			fmt.Printf("[DEBUG] CBSSports - ignoring response handlers")
+		} else {
+			ctx.DispatchResponseHandlers()
+		}
 	}
 }

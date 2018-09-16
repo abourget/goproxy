@@ -422,7 +422,7 @@ func (ctx *ProxyCtx) ManInTheMiddleHTTPS() error {
 		}
 	}
 	// DEBUG - uncomment to ignore all other MITM requests
-	//if !strings.Contains(ctx.host, "reddit") {
+	//if !strings.Contains(ctx.host, "cbssports.com") {
 	//	return nil
 	//}
 
@@ -1126,7 +1126,7 @@ func (ctx *ProxyCtx) ReturnSignature() {
 // Used for protocols that are "http-like" (ie: websockets).
 // Opens a connection, serializes the original request to it and sets up a tunnel, allowing further
 // communication to take place (if none, it will close).
-// TODO: Should we add websockets support so we can inspect packets?
+// TODO: Should we add websockets protocol support so we can inspect packets?
 // TODO: Add P2P support
 // TODO: Add Timeouts
 func (ctx *ProxyCtx) ForwardNonHTTPRequest(host string) error {
@@ -1179,7 +1179,7 @@ func (ctx *ProxyCtx) ForwardNonHTTPRequest(host string) error {
 
 	// Tunnel the connections together and block until they close.
 	fuse(ctx.Conn, targetSiteConn, ctx.Host())
-
+	//fmt.Printf("[DEBUG] WSS request to: %s\n", ctx.Host())
 	//toClose := make(chan net.Conn)
 	//go ctx.copyAndClose(targetSiteConnIdle, clientConnIdle, toClose)
 	//go ctx.copyAndClose(clientConnIdle, targetSiteConnIdle, toClose)
@@ -1240,9 +1240,16 @@ func (ctx *ProxyCtx) ForwardRequest(host string) error {
 
 	ctx.removeProxyHeaders()
 
-
-
 	resp, err := ctx.RoundTrip(ctx.Req.WithContext(dnsbypassctx))
+	// DEBUG - Redirect to Akamai Technologies?
+	//redirecturl := resp.Request.URL.String()
+	//if strings.Contains(ctx.host, "embed.cbssports.com")  {
+	//	fmt.Println("[DEBUG] ForwardRequest", ctx.Req.URL.String(), "Redirected to", redirecturl)
+	//	ioutil.ReadAll(resp.Body)
+	//	resp.Body.Close()
+	//	ctx.Conn.Close()
+	//	return nil
+	//}
 
 	// Log RoundTrip error if one was received
 	if ctx.Trace && err != nil {
@@ -1800,8 +1807,10 @@ func (ctx *ProxyCtx) closeTogether(toClose chan net.Conn) {
 	}
 }
 
-const serverReadTimeout = 300	// response timeout in seconds
-const clientReadTimeout = 10	// Client request timeout in seconds
+// These timeouts represent the maximum time a connection can be open. They are in addition to the
+// standard 60 second idle timeout.
+const serverReadTimeout = 15 * 60	// response timeout in seconds
+const clientReadTimeout = 15 * 60	// Client request timeout in seconds
 
 // RLS 9/6/2018 - Cleaner method to pipe two conns together.
 // Fuse connections together. Have to take precautions to close connections down in various cases.
@@ -1816,7 +1825,6 @@ func fuse(client, backend net.Conn, debug string) {
 	// Pipes data from the remote server to our client
 	backenddie := make(chan struct{})
 	go func() {
-		// Worst-case scenario - the connection will close after 5 minutes, no matter what.
 		backend.SetReadDeadline(time.Now().Add(serverReadTimeout * time.Second))
 
 		// Wrap the backend connection so that we can enforce an idle timeout.
@@ -1835,10 +1843,16 @@ func fuse(client, backend net.Conn, debug string) {
 	// Pipes data from our client to the remote server
 	clientdie := make(chan struct{})
 	go func() {
-		// Set read timeout - we should receive the full request in 10 seconds or less
+		// Set read timeout
+		// With HTTP/S requests, we expect these to complete quickly. However, websockets and other protocols
+		// may need to keep the connection open more or less indefinitely.
 		client.SetReadDeadline(time.Now().Add(clientReadTimeout * time.Second))
+
+		// Wrap the backend connection so that we can enforce an idle timeout.
+		idleconn := &IdleTimeoutConn{Conn: client}
+
 		// n, err :=
-		copyData(backend, client)
+		copyData(backend, idleconn)
 
 		// Timeouts and connection reset errors are very common, especially with Netflix.
 		// Uncomment to see these... not particularly helpful in most cases though.
@@ -2010,7 +2024,7 @@ function buildURL() {
 <body>
 <div class="wrap">
         <div class="image">
-			<img src="http://winston.conf/images/logo_dark.png">
+			<img src="//winston.conf/images/logo.svg">
             <div>%BLOCKED%</div>
         </div>
 		<div class="reason">
