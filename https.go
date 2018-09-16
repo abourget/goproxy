@@ -28,7 +28,7 @@ func stripPort(s string) string {
 // RLS 2/15/2018 - New DialContext routines. Preferred because these allow the transport
 // to cancel dials as soon as they are no longer needed.
 func (proxy *ProxyHttpServer) dialContext(ctx context.Context, network, addr string) (c net.Conn, err error) {
-
+	//fmt.Printf("[DEBUG] dialContext %s\n", addr)
 	// ctx must be non-nil. Ensure we always have one.
 	if ctx == nil {
 		ctx = context.Background()

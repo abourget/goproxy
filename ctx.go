@@ -1240,16 +1240,11 @@ func (ctx *ProxyCtx) ForwardRequest(host string) error {
 
 	ctx.removeProxyHeaders()
 
+	// Requests which are proxied by AkamaiTechnologies never timeout using the usual methods. This is a fail safe.
+	cancel := make(chan struct{})
+	ctx.Req.Cancel = cancel
+
 	resp, err := ctx.RoundTrip(ctx.Req.WithContext(dnsbypassctx))
-	// DEBUG - Redirect to Akamai Technologies?
-	//redirecturl := resp.Request.URL.String()
-	//if strings.Contains(ctx.host, "embed.cbssports.com")  {
-	//	fmt.Println("[DEBUG] ForwardRequest", ctx.Req.URL.String(), "Redirected to", redirecturl)
-	//	ioutil.ReadAll(resp.Body)
-	//	resp.Body.Close()
-	//	ctx.Conn.Close()
-	//	return nil
-	//}
 
 	// Log RoundTrip error if one was received
 	if ctx.Trace && err != nil {
@@ -1814,6 +1809,9 @@ const clientReadTimeout = 15 * 60	// Client request timeout in seconds
 
 // RLS 9/6/2018 - Cleaner method to pipe two conns together.
 // Fuse connections together. Have to take precautions to close connections down in various cases.
+// 9/16/2018 - Requests which are proxied by static.deploy.akamaitechnologies.com and a few other sites hang here forever.
+// It's unclear why this is happening but we've been able to reproduce the fact that the timeouts are not honored in these
+// cases. To ensure these connections close down, callers should set and close the Request.Cancel channel after some time limit.
 func fuse(client, backend net.Conn, debug string) {
 	// Copy from client -> backend, and from backend -> client
 	//defer p.logConnectionMessage("closed", client, backend)

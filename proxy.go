@@ -137,11 +137,22 @@ func NewProxyHttpServer() *ProxyHttpServer {
 		NonProxyHandler: http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 			http.Error(w, "This is a proxy server. Does not respond to non-proxy requests.", 500)
 		}),
+
 		// This transport is responsible for the outgoing connections to downstream websites.
+		// FIX WINSTON 3-14 - Running out of open file descriptors. To avoid, set IdleConnTimeout.
 		Transport: &http.Transport{
-			TLSClientConfig: tlsClientSkipVerify,	// Ignore this poorly chosen name. This is a TLS config (see certs.go)
+			TLSClientConfig: tlsClientSkipVerify,
 			Proxy:           http.ProxyFromEnvironment,
-			TLSHandshakeTimeout: time.Second * time.Duration(10),	// TLS handshake timeout
+			TLSHandshakeTimeout: 10 * time.Second,
+			ResponseHeaderTimeout: 30 * time.Second,
+			ExpectContinueTimeout: 30 * time.Second,
+			MaxIdleConns:          20,
+			IdleConnTimeout:       60 * time.Second,
+			//DialContext: (&net.Dialer{
+			//	Timeout:   30 * time.Second,
+			//	KeepAlive: 30 * time.Second,
+			//	DualStack: true,
+			//}).DialContext,
 		},
 		MITMCertConfig:  GoproxyCaConfig,
 		harLog:          har.New(),
@@ -474,12 +485,12 @@ func (proxy *ProxyHttpServer) ListenAndServeTLS(httpsAddr string) error {
 			//}
 
 			// Disable handlers and P2P network. Can be used to more quickly debug website compatibility problems.
-			if strings.Contains(ctx.host, "embed.cbssports.com")  {
-				fmt.Println("[DEBUG] HTTPS request to CBSSports (Akamai?) detected")
-				ctx.SkipRequestHandler = true
-				ctx.SkipResponseHandler = true
-				ctx.PrivateNetwork = false
-			}
+			//if strings.Contains(ctx.host, "embed.cbssports.com")  {
+			//	fmt.Println("[DEBUG] HTTPS request to CBSSports (Akamai?) detected")
+			//	ctx.SkipRequestHandler = true
+			//	ctx.SkipResponseHandler = true
+			//	ctx.PrivateNetwork = false
+			//}
 
 			proxy.dispatchConnectHandlers(ctx)
 
