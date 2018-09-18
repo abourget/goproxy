@@ -1087,20 +1087,6 @@ func (ctx *ProxyCtx) RejectConnect() {
 	ctx.Conn.Close()
 }
 
-func (ctx *ProxyCtx) ReturnSignature() {
-	//ctx.Logf(1, "  *** ReturnSignature()")
-	if ctx.IsSecure {
-		ctx.Resp = NewResponse(ctx.Req, http.StatusOK, "text/html; charset=utf-8", ctx.CipherSignature)
-		ctx.Resp.Header.Set("Access-Control-Allow-Origin", "*")
-		ctx.Proxy.LastSignature = ctx.CipherSignature
-	} else {
-		ctx.Resp = NewResponse(ctx.Req, http.StatusOK, "text/html; charset=utf-8", ctx.Proxy.LastSignature)
-		ctx.Resp.Header.Set("Access-Control-Allow-Origin", "*")
-	}
-
-}
-
-
 // Note: if you get certificate errors for certain sites, you can debug them on the device using:
 // openssl s_client -connect xxxxx.com:443 |tee logfile
 //

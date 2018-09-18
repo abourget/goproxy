@@ -168,11 +168,6 @@ func (proxy *ProxyHttpServer) DispatchRequestHandlers(ctx *ProxyCtx) {
 			break
 		case MITM:
 			panic("MITM doesn't make sense when we are already parsing the request")
-		case SIGNATURE:
-			//ctx.Logf(1, "  *** dispatchRequestHandlers:SIGNATURE")
-			ctx.ReturnSignature()
-			ctx.ForwardResponse(ctx.Resp)
-			return
 		case REJECT:
 			ext := filepath.Ext(ctx.Req.URL.Path)
 			//fmt.Printf("[DEBUG] DispatchRequestHandlers() - REJECT. [%s]\n", ctx.host)

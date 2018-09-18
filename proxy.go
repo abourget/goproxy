@@ -115,10 +115,6 @@ type ProxyHttpServer struct {
 	// If set to true, then the next HTTP request will flush all idle connections. Will be reset to false afterwards.
 	FlushIdleConnections bool
 
-	// Calls to the signature reporting service (https://winstonprivacysignature.conf) will save the signature
-	// here so it can be retrieved by a follow up http request if necessary.
-	LastSignature string
-
 	// RoundTripper which supports non-http protocols
 	NonHTTPRoundTripper *NonHTTPRoundTripper
 
@@ -195,6 +191,15 @@ func (proxy *ProxyHttpServer) SetShadowNetwork(sn *shadownetwork.ShadowNetwork) 
 	proxy.PrivateNetwork = sn
 }
 
+// Calls to the signature reporting service (https://winstonprivacysignature.conf) will save the signature
+// here so it can be retrieved by a follow up http request if necessary. This is shared across all proxies.
+var lastSignature = ""
+func (proxy *ProxyHttpServer) LastSignature() (string) {
+	return lastSignature
+}
+func (proxy *ProxyHttpServer) SetSignature(signature string) {
+	lastSignature = signature
+}
 
 // Standard net/http function. Shouldn't be used directly, http.Serve will use it.
 func (proxy *ProxyHttpServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {

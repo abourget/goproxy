@@ -220,10 +220,10 @@ func (c *GoproxyConfig) FlushCert(hostname string) {
 // TODO: Should we remember bad requests so we don't keep making them? Routine is subject to an internal flood attack.
 func (c *GoproxyConfig) certWithCommonName(hostname string, commonName string) error {
 
-	//experiment := false
+	//trace := false
 	//if strings.Contains(hostname, ".badssl.com") {
-	//	fmt.Printf("[DEBUG] Starting badssl experiment: %s\n", hostname)
-	//	experiment = true
+	//	fmt.Printf("[DEBUG] Starting trace: %s\n", hostname)
+	//	trace = true
 	//}
 
 	// Remove the port if it exists.
@@ -317,14 +317,13 @@ func (c *GoproxyConfig) certWithCommonName(hostname string, commonName string) e
 	badcert := false
 	if !strings.Contains(hostname, "winston.conf") && (*hostmetadata).NextAttempt.Before(time.Now()) {
 
-		//if experiment {
+		//if trace {
 		//	fmt.Println("[DEBUG] Signer.go() Downloading remote certificate", host)
 		//}
 
 		var conn *tls.Conn
+
 		// TODO: This breaks the original goproxy unit tests.
-
-
 		conn, err = tls.DialWithDialer(c.bypassDnsDialer, "tcp", host + ":" + port, &tls.Config{InsecureSkipVerify: true})
 
 		if err != nil {
@@ -334,7 +333,7 @@ func (c *GoproxyConfig) certWithCommonName(hostname string, commonName string) e
 			// Only close the connection if we couldn't connect.
 			defer conn.Close()
 			if len(conn.ConnectionState().PeerCertificates) >= 1 {
-				//if experiment {
+				//if trace {
 				//	fmt.Println("[DEBUG] Signer.go - verifying certificate...")
 				//}
 				origcert = conn.ConnectionState().PeerCertificates[0]
@@ -348,7 +347,7 @@ func (c *GoproxyConfig) certWithCommonName(hostname string, commonName string) e
 				// to prevent us from copying the remote certificate to the store.
 				err = certtransport.VerifyPeerCertificate(rawCerts, nil)
 				if err != nil {
-					//if experiment {
+					//if trace {
 					//	fmt.Println("[DEBUG] Signer.go - certificate verification failed - err:", err)
 					//}
 					(*hostmetadata).NextAttempt = time.Now().Add(24 * time.Hour)
@@ -362,7 +361,7 @@ func (c *GoproxyConfig) certWithCommonName(hostname string, commonName string) e
 				}
 
 
-				//if experiment {
+				//if trace {
 				//	fmt.Printf("[DEBUG] certWithCommonName() - successfully retrieved remote certificate.\n")
 				//}
 
@@ -401,7 +400,7 @@ func (c *GoproxyConfig) certWithCommonName(hostname string, commonName string) e
 		notbefore = time.Now().Add(-c.validity)
 	}
 
-	//if experiment {
+	//if trace {
 	//	fmt.Printf("[DEBUG] Certificate [%s] NotBefore: %v  NotAfter: %v\n", hostname, notbefore, notafter)
 	//}
 
@@ -465,7 +464,7 @@ func (c *GoproxyConfig) certWithCommonName(hostname string, commonName string) e
 		Leaf:        x509c,
 	}
 
-	//if experiment {
+	//if trace {
 	//	fmt.Printf("[DEBUG] certWithCommonName - New cert created. Subject: %+v\n  Issuer: %+v\n  NotAfter=%v\n", tlsc.Leaf.Subject.CommonName, tlsc.Leaf.Issuer.CommonName, tmpl.NotAfter)
 	//}
 
@@ -502,7 +501,6 @@ func (c *GoproxyConfig) GetTestCertificate(host string, port string) error {
 
 	// Test: Get the origin certificate and copy fields to it.
 	var origcert *x509.Certificate
-	//if experiment {
 
 	// Have to add the port number to connect. Assume 443.
 	if port == "" {
