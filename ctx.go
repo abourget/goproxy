@@ -1982,6 +1982,23 @@ var blockedhtml = `
 	}
     </style>
  <script>
+   function post(url, params, callback) {
+      var httpRequest = new XMLHttpRequest();
+      httpRequest.onreadystatechange = function () {
+        if (this.readyState != 4) return;
+
+        if (this.status == 200) {
+          if (callback) {
+            callback(this.responseText);
+          }
+        }
+      };
+      httpRequest.open('POST', url);
+      httpRequest.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded');
+
+      httpRequest.send(JSON.stringify(params));
+  }
+
 function buildURL() {
     var hostname;
     //find & remove protocol (http, ftp, etc.) and get hostname
@@ -1994,14 +2011,19 @@ function buildURL() {
         hostname = url.split('/')[0];
     }
 
-    //find & remove port number
     hostname = hostname.split(':')[0];
-    //find & remove "?"
     hostname = hostname.split('?')[0];
 
-    newurl = "http://winston.conf/shared/ApplyChanges.php?minutes=10&domain=" + hostname + "&localrules=" + hostname + ":AllowDomainTemp&redirect="  + encodeURIComponent(window.location.href);
-    console.log(newurl);
-    window.location=newurl;
+	var scheme = "http://winston.conf:81";
+	if (location.protocol == "https:")
+	    scheme = "https://winston.conf:82";
+
+	var url = scheme + '/api/add_allowed_site';
+	var reqdata = {Host: hostname, Minutes: 10};
+	post(url, reqdata, function (data) {
+		location.reload(true);
+	});
+
 }
  </script>
 </head>
