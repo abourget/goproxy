@@ -585,7 +585,7 @@ func (ctx *ProxyCtx) ManInTheMiddleHTTPS() error {
 			}
 			//	fmt.Printf("[DEBUG] Client hung up on TLS connection after handshake (2). Calling NoCertificate(). [%s] [%s] elapsed time: %s\n", ctx.host, ctx.CipherSignature, time.Since(ctx.RequestTime))
 			if ctx.Tlsfailure != nil {
-				fmt.Println("[DEBUG] malformed HTTP request - calling whitelisting logic")
+				//fmt.Println("[DEBUG] malformed HTTP request - calling whitelisting logic")
 				ctx.Tlsfailure(ctx, true)
 			}
 			return
