@@ -1071,12 +1071,10 @@ func (ctx *ProxyCtx) ForwardConnect() error {
 //var hasPort = regexp.MustCompile(`:\d+$`)
 
 func (ctx *ProxyCtx) RejectConnect() {
-	fmt.Println("[DEBUG] RejectConnect 1")
 	if ctx.Method != "CONNECT" {
 		panic("cannot RejectConnect() when Method is not CONNECT")
 	}
 
-	fmt.Println("[DEBUG] RejectConnect 2")
 	// we had support here for flushing the Response when ctx.Resp was != nil.
 	// this belongs to an upper layer, not down here.  Have your code do it instead.
 	if !ctx.sniffedTLS {
