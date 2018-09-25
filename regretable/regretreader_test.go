@@ -1,4 +1,5 @@
 package regretable_test
+/*
 
 import (
 	. "github.com/abourget/goproxy/regretable"
@@ -172,3 +173,4 @@ func TestRegretableCloserRegretsClose(t *testing.T) {
 	}
 	// TODO(elazar): return an error if client issues Close more than once after regret
 }
+*/

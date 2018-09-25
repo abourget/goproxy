@@ -1,4 +1,5 @@
 package goproxy_html_test
+/*
 
 import (
 	"github.com/abourget/goproxy"
@@ -58,3 +59,4 @@ func TestCharset(t *testing.T) {
 		t.Error("HandleString did not convert DALET & PEH SOFIT (דף) from ISO-8859-8 to utf-8, got", []byte(inHandleString))
 	}
 }
+*/

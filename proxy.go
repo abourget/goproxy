@@ -121,6 +121,8 @@ type ProxyHttpServer struct {
 	UpdateAllowedCounter func(string, string, string, int, int, int)
 	UpdateBlockedCounter func(string, string, string, int, bool)
 	UpdateWhitelistedCounter func(string, string, string, int)
+
+
 }
 
 // New proxy server, logs to StdErr by default
@@ -673,24 +675,6 @@ func GenerateSignature(h *vhost.ClientHelloMsg, debug bool) (string) {
 	//}
 
 	return encodedsignature
-}
-
-// RLS 8/16/2017
-// Logging now supports multiple levels of verbosity
-func (proxy *ProxyHttpServer) Logf(level uint16, msg string, v ...interface{}) {
-	// Todo: Find source of panics
-	/*defer func() {
-		if r := recover(); r != nil {
-			fmt.Printf("Error: Logging error (?). Proxy.Logger was nil?.", r)
-			//panic("Aborting for analysis.")
-		}
-	}()*/
-	if proxy.Logger != nil {
-		if proxy.Verbose {}
-			if level == 0 || proxy.VerbosityLevel&level != 0 {
-				proxy.Logger.Printf(msg+"\n", v...)
-			}
-	}
 }
 
 

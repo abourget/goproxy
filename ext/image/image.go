@@ -1,4 +1,5 @@
 package goproxy_image
+/*
 
 import (
 	"bytes"
@@ -94,3 +95,4 @@ func HandleImage(f func(img image.Image, ctx *ProxyCtx) image.Image) Handler {
 		return NEXT
 	})
 }
+*/
