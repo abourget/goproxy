@@ -99,7 +99,7 @@ func NewConfig(filename string, ca *x509.Certificate, privateKey interface{}) (*
 				err = dec.Decode(&config)
 				if err == nil {
 					// Found an existing certificate
-					fmt.Println("[INFO] Using cached private key")
+					//fmt.Println("[INFO] Using cached private key")
 					priv = &config
 					needcert = false
 				}
