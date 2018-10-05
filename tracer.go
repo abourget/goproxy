@@ -14,6 +14,9 @@ import (
 	"bytes"
 	"fmt"
 	"strings"
+	//"net"
+	//"io"
+	//"os"
 )
 
 // Used to store information about a roundtrip.
@@ -30,6 +33,8 @@ type TraceInfo struct {
 	CookiesSent		[]string	// Cookies sent with the request
 	CookiesReceived		[]string	// Cookies received from the server
 	StatusCode		int		// status code of the server response
+	ReqBody			*[]byte		// This is a copy of the original request body (used in POSTs) if needed to replay.
+	Method			*string		// The original request method.
 }
 
 type RequestTracer struct {
@@ -100,12 +105,16 @@ func (tr *RequestTracer) Trace(ctx *ProxyCtx) (bool) {
 func setupTrace(ctx *ProxyCtx, tracename string) {
 
 	ctx.Trace = true
+	var buf []byte
+
 	ctx.TraceInfo = &TraceInfo{
 		RequestTime: time.Now().Local(),
 		Name: tracename,
 		originalheaders: make(map[string]string),
+		ReqBody: &buf,
 	}
 }
+
 
 func writeTrace(ctx *ProxyCtx) {
 	fmt.Println()
@@ -153,6 +162,11 @@ func writeTrace(ctx *ProxyCtx) {
 		fmt.Printf("%+v\n", h)
 	}
 
+	if ctx.TraceInfo.ReqBody != nil && len(*ctx.TraceInfo.ReqBody) > 0 {
+		fmt.Println()
+		fmt.Printf("Request Body: \n%s\n", string(*ctx.TraceInfo.ReqBody))
+	}
+
 	fmt.Println()
 	fmt.Println("Response:")
 	fmt.Println("Status:", ctx.TraceInfo.StatusCode)
@@ -160,10 +174,12 @@ func writeTrace(ctx *ProxyCtx) {
 	for _, h := range ctx.TraceInfo.ResponseHeaders {
 		fmt.Printf("%+v\n", h)
 	}
-	fmt.Println()
-	fmt.Println("Cookies received from server:")
-	for _, h := range ctx.TraceInfo.CookiesReceived {
-		fmt.Printf("%+v\n", h)
+	if len(ctx.TraceInfo.CookiesReceived) > 0 {
+		fmt.Println()
+		fmt.Println("Cookies received from server:")
+		for _, h := range ctx.TraceInfo.CookiesReceived {
+			fmt.Printf("%+v\n", h)
+		}
 	}
 
 	if ctx.TraceInfo.RoundTripError != "" {
@@ -171,7 +187,35 @@ func writeTrace(ctx *ProxyCtx) {
 		fmt.Printf("Server reported error: %s\n", ctx.TraceInfo.RoundTripError)
 	}
 
+	fmt.Println()
+
+	fmt.Println()
+	fmt.Printf("[INFO] End Trace [%s]:\n", ctx.TraceInfo.Name)
 	fmt.Println("===========================")
 	fmt.Println()
 
 }
+
+//
+//// Used to wrap net.Conn
+//type SpyConnection struct {
+//	net.Conn
+//	ReqBuffer bytes.Buffer
+//}
+//
+//// Read writes all data read from the underlying connection to stderr
+//func (sc *SpyConnection) Read(b []byte) (int, error) {
+//
+//	// TODO: Pass in the TeeReader
+//	tr := io.TeeReader(sc.Conn, &sc.ReqBuffer)
+//	br, err := tr.Read(b)
+//	return br, err
+//}
+//
+//// Write writes all data written to the underlying connection to stderr
+//func (sc *SpyConnection) Write(b []byte) (int, error) {
+//	//mw := io.MultiWriter(sc.Conn, os.Stderr)
+//	//bw, err := mw.Write(b)
+//	//return bw, err
+//	return sc.Conn.Write(b)
+//}

@@ -590,6 +590,40 @@ func (ctx *ProxyCtx) ManInTheMiddleHTTPS() error {
 			}
 			return
 		}
+
+		// Copy the request
+		if ctx.Trace {
+			// Copy the original method.
+			if ctx.TraceInfo.Method == nil {
+				origmethod := subReq.Method
+				ctx.TraceInfo.Method = &origmethod
+			} else {
+				subReq.Method = *ctx.TraceInfo.Method
+			}
+			// If we don't have a request body, then copy it
+			if ctx.TraceInfo.ReqBody == nil || len(*ctx.TraceInfo.ReqBody) == 0 {
+				buf, _ := ioutil.ReadAll(subReq.Body)
+				//buf = append(buf, byte('\n'))
+				ctx.TraceInfo.ReqBody = &buf
+				//rdr1 := ioutil.NopCloser(bytes.NewBuffer(buf))
+				rdr2 := ioutil.NopCloser(bytes.NewBuffer(*ctx.TraceInfo.ReqBody))
+
+				// Close original body so we don't leak the connection
+				subReq.Body.Close()
+				subReq.Body = rdr2
+
+				//fmt.Printf("[DEBUG] Copying original http.Request [%p] (%d)\n%s\n", ctx.TraceInfo.ReqBody, len(*ctx.TraceInfo.ReqBody), string(*ctx.TraceInfo.ReqBody))
+			} else {
+				// Otherwise, we have an existing request body so send it as part of this request.
+				rdr2 := ioutil.NopCloser(bytes.NewBuffer(*ctx.TraceInfo.ReqBody))
+				subReq.Body.Close()
+				subReq.Body = rdr2
+				// Setting ContentLength doesn't work for some reason.
+				//subReq.ContentLength = int64(len(*ctx.TraceInfo.ReqBody))
+				subReq.Header.Set("content-length", strconv.Itoa(len(*ctx.TraceInfo.ReqBody)))
+			}
+		}
+
 		subReq.URL.Scheme = "https"
 
 		// Unit testing: We only intercept requests which were destined for port 443, but we can invoke a proxy
@@ -643,7 +677,7 @@ func (ctx *ProxyCtx) ManInTheMiddleHTTPS() error {
 		// Some clients (Google Mobile in particular) will handshake but then drop the connection after they process
 		// the certificate. We have to whitelist these or Google Play, Google Photos and other Google clients will
 		// not work.
-		// TODO: Diagnose the root of Google Android certificate errors
+		// TODO: Diagnose the root of Google Android certificate errors. Possibly mismatched ciphers with BoringSSL?
 		if !readRequest || isIpAddress {
 			// Note: Some websites (google in particular) send HTTPS requests as keep alives
 			// and don't close them. They end up timing out. We don't want to whitelist these.

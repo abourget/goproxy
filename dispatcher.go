@@ -5,6 +5,9 @@ import (
 	"net/http"
 	"path/filepath"
 	"strings"
+	//"io"
+	//"bufio"
+	//"bytes"
 )
 
 // HandleConnectFunc and HandleConnect mimic the `net/http` handlers,
@@ -210,10 +213,7 @@ func (proxy *ProxyHttpServer) DispatchRequestHandlers(ctx *ProxyCtx) {
 		// We don't process the response in any way (yet).
 		ctx.ForwardNonHTTPRequest(ctx.host)
 	} else {
-		ctx.ForwardRequest(ctx.host)
-
 		// If we're tracing, we need to copy the original headers so that we can duplicate the request
-		// TODO: Duplicate the request body
 		if ctx.Trace {
 			ctx.TraceInfo.originalheaders = make(map[string]string)
 			for name, headers := range ctx.Req.Header {
@@ -222,11 +222,10 @@ func (proxy *ProxyHttpServer) DispatchRequestHandlers(ctx *ProxyCtx) {
 				}
 			}
 		}
-		//if strings.Contains(ctx.host, "embed.cbssports.com")  {
-		//
-		//	fmt.Printf("[DEBUG] CBSSports - ignoring response handlers")
-		//} else {
-			ctx.DispatchResponseHandlers()
-		//}
+
+		ctx.ForwardRequest(ctx.host)
+
+
+		ctx.DispatchResponseHandlers()
 	}
 }

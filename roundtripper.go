@@ -143,7 +143,11 @@ func (ctx *ProxyCtx) wrapTransport(tr *http.RoundTripper) RoundTripper {
 
 		// Record the original status code
 		if ctx.Trace {
-			ctx.TraceInfo.StatusCode = resp.StatusCode
+			if resp != nil {
+				ctx.TraceInfo.StatusCode = resp.StatusCode
+			} else {
+				fmt.Printf("[DEBUG] Modified response was nil.")
+			}
 		}
 		//if err != nil {
 		//	fmt.Printf("[DEBUG] wrapTransport reported err: %+v\n ", err)

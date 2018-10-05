@@ -228,7 +228,14 @@ func (proxy *ProxyHttpServer) ServeHTTP(w http.ResponseWriter, r *http.Request) 
 	if proxy.Trace != nil {
 		shouldTrace := proxy.Trace(ctx)
 		if shouldTrace {
-			setupTrace(ctx, "Unmodified request")
+			setupTrace(ctx, "Modified request")
+
+			// Copy the request body
+			buf, _ := ioutil.ReadAll(r.Body)
+			ctx.TraceInfo.ReqBody = &buf
+			rdr2 := ioutil.NopCloser(bytes.NewBuffer(*ctx.TraceInfo.ReqBody))
+			r.Body.Close()
+			r.Body = rdr2
 		}
 	}
 
@@ -277,7 +284,6 @@ func (proxy *ProxyHttpServer) ServeHTTP(w http.ResponseWriter, r *http.Request) 
 	// Complete request trace
 	if ctx.Trace {
 		writeTrace(ctx)
-
 	}
 
 	// Duplicate the request but skip the request and response handling
@@ -310,6 +316,17 @@ func (proxy *ProxyHttpServer) ServeHTTP(w http.ResponseWriter, r *http.Request) 
 		r.URL.Host = r.Host //net.JoinHostPort(r.Host, "80")
 
 		setupTrace(ctxOrig, "Unmodified Request")
+
+		// Copy the original request body
+		// TODO: Close the original request body so we don't leak a connection
+		// 			ctx.TraceInfo.ReqBody = []byte("custname=Winston123&custtel=3122820162&custemail=richardlstokes2%40gmail.com&delivery=&comments=")
+
+		//fmt.Printf("[DEBUG] Unmodified request - copying original request body (%d): \n%s\n", len(ctx.TraceInfo.ReqBody), string(ctx.TraceInfo.ReqBody))
+		rdr2 := ioutil.NopCloser(bytes.NewBuffer(*ctx.TraceInfo.ReqBody))
+		r.Body.Close()
+		r.Body = rdr2
+		r.ContentLength = int64(len(*ctx.TraceInfo.ReqBody))
+
 		proxy.DispatchRequestHandlers(ctxOrig)
 
 		writeTrace(ctxOrig)
@@ -475,6 +492,10 @@ func (proxy *ProxyHttpServer) ListenAndServeTLS(httpsAddr string) error {
 				ctx.CipherSignature = ""
 			}
 
+			// TEST
+			// Set up a shar
+			// ed buffer so the second request can see the original request body
+			//var buf []byte
 			if proxy.Trace != nil {
 				shouldTrace := proxy.Trace(ctx)
 				if shouldTrace {
@@ -482,6 +503,8 @@ func (proxy *ProxyHttpServer) ListenAndServeTLS(httpsAddr string) error {
 					//fmt.Printf("ClientHELLO: \n %+v\n", tlsConn.ClientHelloMsg)
 
 					setupTrace(ctx, "Modified Request")
+					//fmt.Printf("[DEBUG] Original request location: [%p]\n", ctx.TraceInfo.ReqBody)
+					//ctx.TraceInfo.ReqBody = &buf
 				}
 			}
 
@@ -505,11 +528,14 @@ func (proxy *ProxyHttpServer) ListenAndServeTLS(httpsAddr string) error {
 			if ctx.Trace {
 
 				// Wait a little while for the original request to complete
-				// TODO: Use a channel for this
+				// TODO: Use a channel for this. Also send back original request body???
 				time.Sleep(10 * time.Second)
 
+				//fmt.Printf("[DEBUG] original http.Request 1 - [%p] (%d)\n%s\n", ctx.TraceInfo.ReqBody, len(*ctx.TraceInfo.ReqBody), string(*ctx.TraceInfo.ReqBody))
+
 				//fmt.Printf("[TRACE] Running parallel https request to %s\n", ctx.Req.URL)
-				// Create a bidirectional, in-memory connection with fake client
+				// Create a bidirectional, in-memory connection with fake client. This enables us to spoof
+				// the original client and utilize the same logic that the first request did.
 				var pipe *fasthttputil.PipeConns
 				pipe = fasthttputil.NewPipeConns()
 
@@ -528,7 +554,9 @@ func (proxy *ProxyHttpServer) ListenAndServeTLS(httpsAddr string) error {
 				// Make the request
 				Url := ctx.Req.URL.String()
 				go func() {
-					request, err := http.NewRequest("GET", Url, nil)
+					request, err := http.NewRequest(connectReq.Method, Url, nil)
+
+					//fmt.Printf("[DEBUG] proxy.go request: %+v\n\n", request)
 
 					for k, v := range ctx.TraceInfo.originalheaders {
 						//fmt.Printf("Copy header: %s : %s\n", k, v)
@@ -548,8 +576,10 @@ func (proxy *ProxyHttpServer) ListenAndServeTLS(httpsAddr string) error {
 						fmt.Printf("[TRACE] Error while reading body. %+v\n", err)
 						return
 					}
-					// Process the response and close
-					fmt.Printf("[TRACE] resp.Body [%d bytes]: %+v\n", len(body), string(body))
+					// Process the response and close. We wait one second so the response body
+					// occurs after the headers.
+					time.Sleep(time.Second)
+					fmt.Printf("[TRACE] Unmodified Response Body [%d bytes]: %+v\n", len(body), string(body))
 
 
 				}()
@@ -592,7 +622,14 @@ func (proxy *ProxyHttpServer) ListenAndServeTLS(httpsAddr string) error {
 					}
 
 					setupTrace(ctxOrig, "Unmodified Request")
-					fmt.Printf("[TRACE] Dispatching connect handlers to %+v\n", ctxOrig.Req.URL)
+
+					// Copy the body and method from the original request to the one
+					ctxOrig.TraceInfo.ReqBody = ctx.TraceInfo.ReqBody
+					ctxOrig.TraceInfo.Method = ctx.TraceInfo.Method
+
+					//fmt.Printf("[DEBUG] request body after tracesetup: [%p] %s\n", ctxOrig.TraceInfo.ReqBody, string(*ctxOrig.TraceInfo.ReqBody))
+
+					//fmt.Printf("[TRACE] Dispatching connect handlers to %+v\n", ctxOrig.Req.URL)
 					proxy.dispatchConnectHandlers(ctxOrig)
 
 
