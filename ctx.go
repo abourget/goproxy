@@ -27,6 +27,7 @@ import (
 	"github.com/winston/shadownetwork"
 	"net/url"
 	"crypto/rand"
+	//"runtime/debug"
 )
 
 var NonHTTPRequest = "nonhttprequest"
@@ -442,6 +443,8 @@ func (ctx *ProxyCtx) ManInTheMiddleHTTPS() error {
 	// still handling the request even after hijacking the connection. Those HTTP CONNECT
 	// request can take forever, and the server will be stuck when "closed".
 	// TODO: Allow Server.Close() mechanism to shut down this connection as nicely as possible
+	//fmt.Println()
+	//fmt.Printf("[DEBUG] ctx.go - MITM: %s\n", ctx.Host())
 	go func(ctx *ProxyCtx) {
 		// Found a rare but irreproducible race condition when calling isEof() with many
 		// active connections at the same time. This ensures that only the active connection

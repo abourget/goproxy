@@ -258,7 +258,7 @@ func (proxy *ProxyHttpServer) ServeHTTP(w http.ResponseWriter, r *http.Request) 
 	}
 
 	// Check for websockets request. These need to be tunneled like a CONNECT request.
-	//fmt.Println("[DEBUG] ServeHTTP() called", ctx.host, "scheme", ctx.Req.URL.Scheme)
+	//fmt.Printf("[DEBUG] ServeHTTP() called [%s] %+v\n", ctx.host, r)
 	nonhttpprotocol := false
 	if ctx.Req.Header.Get("Upgrade") != "" {
 		nonhttpprotocol = true
@@ -339,7 +339,6 @@ func (proxy *ProxyHttpServer) ServeHTTP(w http.ResponseWriter, r *http.Request) 
 // ListenAndServe launches all the servers required and listens. Use this method
 // if you want to start listeners for transparent proxying.
 func (proxy *ProxyHttpServer) ListenAndServe(addr string) error {
-	//fmt.Printf("*** ListenAndServe() called\n")
 	return http.ListenAndServe(addr, proxy)
 }
 
@@ -348,7 +347,6 @@ func (proxy *ProxyHttpServer) ListenAndServe(addr string) error {
 
 func (proxy *ProxyHttpServer) ListenAndServeTLS(httpsAddr string) error {
 	ln, err := net.Listen("tcp", httpsAddr)
-	//log.Printf("*** ListenAndServeTLS called... %s\n", httpsAddr)
 
 	// Alternate socket based listener which can receive requests from packets marked with
 	// IP addresses not belonging to this server. Slow but may be useful.
@@ -427,6 +425,9 @@ func (proxy *ProxyHttpServer) ListenAndServeTLS(httpsAddr string) error {
 				//log.Printf("  *** non-SNI attempt at local host. Dropping request: [%s]\n", Host)
 				return
 			}
+
+			//log.Printf("[DEBUG] ListenAndServeTLS called... %s\n", Host)
+
 
 			connectReq := &http.Request{
 				Method: "CONNECT",
