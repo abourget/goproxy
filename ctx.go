@@ -119,7 +119,7 @@ type ProxyCtx struct {
 					  	// 11/2/2017 - Used for replacement macros (user agents)
 	DeviceType int
 	Whitelisted     	bool      	// If true, response filtering will be completely disabled and local DNS will be bypassed.
-	TimeRemaining		int		// Time remaining in sec for temporary whitelisting or uncloaking
+	TimeRemaining		int		// Time remaining in sec for temporary whitelisting
 
 					  	// Keeps a list of any messages we want to pass back to the client
 	StatusMessage   	[]string
@@ -129,6 +129,7 @@ type ProxyCtx struct {
 
 					  	// Set to true to use private network
 	PrivateNetwork  	bool
+	RevealTimeRemaining	int		// Time remaining in sec for temporary uncloaking
 
 					  	// If a shadow transport is being used, this points to it.
 	ShadowTransport *shadownetwork.ShadowTransport

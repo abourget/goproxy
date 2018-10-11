@@ -516,8 +516,8 @@ func (proxy *ProxyHttpServer) ListenAndServeTLS(httpsAddr string) error {
 			//}
 
 			// Disable handlers and P2P network. Can be used to more quickly debug website compatibility problems.
-			//if strings.Contains(ctx.host, "embed.cbssports.com")  {
-			//	fmt.Println("[DEBUG] HTTPS request to CBSSports (Akamai?) detected")
+			//if strings.Contains(ctx.host, "clients6.google")  {
+			//	fmt.Println("[DEBUG] Target HTTPS request - skipping response handlers.")
 			//	ctx.SkipRequestHandler = true
 			//	ctx.SkipResponseHandler = true
 			//	ctx.PrivateNetwork = false
