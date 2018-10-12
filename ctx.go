@@ -1076,6 +1076,9 @@ func (ctx *ProxyCtx) ForwardConnect() error {
 	if ctx.Whitelisted {
 		//ctx.Logf(1, "  *** ForwardConnect() - Bypassing DNS for whitelisted host [%s]", ctx.host)
 		dnsbypassctx = context.WithValue(ctx.Req.Context(), dns.UpstreamKey, 0)
+	} else if ctx.PrivateNetwork {
+		//ctx.Logf(1, "  *** ForwardConnect() - Bypassing DNS for whitelisted host [%s]", ctx.host)
+		dnsbypassctx = context.WithValue(ctx.Req.Context(), shadownetwork.PrivateNetworkKey, true)
 	}
 
 	targetSiteConn, err := ctx.Proxy.connectDialContext(dnsbypassctx, "tcp", ctx.host)
