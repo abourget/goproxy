@@ -11,7 +11,7 @@ import (
 	"net/url"
 	"os"
 	"strings"
-	"fmt"
+	//"fmt"
 	"context"
 	"github.com/winston/shadownetwork"
 )
@@ -37,7 +37,7 @@ func (proxy *ProxyHttpServer) dialContext(ctx context.Context, network, addr str
 
 	privatenetwork, ok := ctx.Value(shadownetwork.PrivateNetworkKey).(bool)
 	if ok && privatenetwork && proxy.PrivateNetwork != nil {
-		fmt.Printf("[DEBUG] dialContext -> forwarding through private network [%s]. PrivateNetwork:\n", addr, )
+		//fmt.Printf("[DEBUG] dialContext -> forwarding through private network [%s]. PrivateNetwork:\n", addr, )
 		shadowtr := proxy.PrivateNetwork.Transport()
 		if shadowtr != nil {
 			ctx2 := context.WithValue(ctx, shadownetwork.ShadowTransportKey, shadowtr)
