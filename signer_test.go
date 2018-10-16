@@ -1,5 +1,90 @@
 package goproxy
 
+import (
+	"testing"
+	"fmt"
+	"os"
+	"time"
+	"sync"
+	"math/rand"
+)
+
+
+/* This is a sample benchmark to measure the effect of locking on the certificate store.
+
+   Usage:
+  	go test -run=nothing -bench=.
+
+   To output performance data
+  	go test -run=nothing -bench=CertificateSigner
+
+   To view performance data remotely (requires Go 1.10):
+	go tool pprof -http=: http://winston.conf/shared/profile.out
+
+   On Windows, you can also test for races. This is a good idea. If PASS, then no race conditions have been detected.
+   	go test -run=nothing -bench=. -race
+
+ */
+
+// 10/16/2018 - Original code with mutex around metadata store in signer.go
+// 	DNS Precached: 4.6, 4.8, 3.8, 4.7, 6.1 => average: 4.8 sec
+//	DNS Fresh: 7.6, 8.1, 6.5, 8.1 => average : 7.6 sec
+//		-> One run failed: 14 sec
+func BenchmarkCertificateSigner(b *testing.B) {
+	if CA_CERT == nil {
+		fmt.Printf("[ERROR] CA_CERT was nil.")
+		os.Exit(1)
+	}
+	if CA_KEY == nil {
+		fmt.Printf("[ERROR] CA_KEY was nil.")
+		os.Exit(1)
+	}
+	err := LoadDefaultConfig()
+
+	if err != nil {
+		fmt.Printf("[ERROR] Couldn't load Default Config. err=%v\n", err)
+		os.Exit(1)
+	}
+	if GoproxyCaConfig == nil {
+		fmt.Printf("[ERROR] GoproxyCaConfig was nil.\n")
+		os.Exit(1)
+	}
+
+	// TODO: mercedes.com blocks the routine from succeeding
+	var domains []string = []string{"twitter.com", "nbc.com", "mercedes-benz.com", "google.com", "facebook.com", "nytimes.com", "washingtonpost.com", "www.latimes.com", "politico.com",
+	"drudgereport.com", "microsoft.com", "windows.com", "mcdonalds.com", "winstonprivacy.com", "shopify.com",
+	"theguardian.com", "digg.com", "reddit.com", "myspace.com", "wsj.com", "twobithistory.org", "mozilla.org", "youtube.com", "cloudflare.net",
+	"sprint.com", "verizon.com"}
+	var wg sync.WaitGroup
+	b.ResetTimer()
+	starttime := time.Now()
+		// We should have a winston signed certificate with Twitter fields copied in.
+		for i := 0; i < 25; i++ {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				for n := 0; n < 100; n++ {
+					j := rand.Intn(len(domains))
+					GoproxyCaConfig.Cert(domains[j])
+					tlsc, ok := GoproxyCaConfig.NameToCertificate[domains[j]]
+					if !ok || tlsc == nil {
+						fmt.Printf("[ERROR] Certificate fetch failed: %s\n", domains[j])
+						//os.Exit(1)
+					} /*else {
+						fmt.Printf("[SUCCESS] Certificate fetch succeeded. : %s\n", domains[j])
+					}*/
+				}
+			}()
+		}
+
+	// Wait for all threads to complete
+	wg.Wait()
+
+	elapsedtime := time.Since(starttime)
+	fmt.Printf("[INFO] Test time was %v\n", elapsedtime)
+}
+
+
 /*
 
 
