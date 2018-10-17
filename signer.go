@@ -306,7 +306,7 @@ func (c *GoproxyConfig) certWithCommonName(hostname string, commonName string) e
 	}
 
 	//if experiment {
-		fmt.Println("[DEBUG] Signer.go - about to generate new certificate.")
+	//	fmt.Println("[DEBUG] Signer.go - about to generate new certificate.")
 	//}
 
 	// Begin downstream certificate retrieval and copy logic
@@ -323,7 +323,7 @@ func (c *GoproxyConfig) certWithCommonName(hostname string, commonName string) e
 	if !strings.Contains(hostname, "winston.conf") && (*hostmetadata).NextAttempt.Before(time.Now()) {
 
 		//if trace {
-			fmt.Println("[DEBUG] Signer.go() DialWithDialer()", host)
+		//	fmt.Println("[DEBUG] Signer.go() DialWithDialer()", host)
 		//}
 
 		var conn *tls.Conn
@@ -335,7 +335,7 @@ func (c *GoproxyConfig) certWithCommonName(hostname string, commonName string) e
 			fmt.Printf("[DEBUG] Signer.go - Error while dialing %s: %v\n", host, err)
 			return err
 		} else {
-			fmt.Println("[DEBUG] Signer.go() DialWithDialer() completed", host)
+			//fmt.Println("[DEBUG] Signer.go() DialWithDialer() completed", host)
 			// Only close the connection if we couldn't connect.
 			defer conn.Close()
 			if len(conn.ConnectionState().PeerCertificates) >= 1 {
