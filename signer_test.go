@@ -13,10 +13,11 @@ import (
 /* This is a sample benchmark to measure the effect of locking on the certificate store.
 
    Usage:
-  	go test -run=nothing -bench=.
+  	go test -run=nothing -bench=CertificateSigner
+  	go test -run=nothing -bench=DomainRedirect
 
    To output performance data
-  	go test -run=nothing -bench=CertificateSigner
+  	go test -run=nothing -bench=CertificateSigner -cpuprofile /var/www/html/shared/profile.out
 
    To view performance data remotely (requires Go 1.10):
 	go tool pprof -http=: http://winston.conf/shared/profile.out
@@ -30,6 +31,7 @@ import (
 // 	DNS Precached: 4.6, 4.8, 3.8, 4.7, 6.1 => average: 4.8 sec
 //	DNS Fresh: 7.6, 8.1, 6.5, 8.1 => average : 7.6 sec
 //		-> One run failed: 14 sec
+//      Optimized Chain Lookup: 3.9, 3.9, 3.2, 3.3, 3.5 => average 3.5 sec
 func BenchmarkCertificateSigner(b *testing.B) {
 	if CA_CERT == nil {
 		fmt.Printf("[ERROR] CA_CERT was nil.")
@@ -65,8 +67,12 @@ func BenchmarkCertificateSigner(b *testing.B) {
 				defer wg.Done()
 				for n := 0; n < 100; n++ {
 					j := rand.Intn(len(domains))
+
 					GoproxyCaConfig.Cert(domains[j])
+
+					certmu.RLock()
 					tlsc, ok := GoproxyCaConfig.NameToCertificate[domains[j]]
+					certmu.RUnlock()
 					if !ok || tlsc == nil {
 						fmt.Printf("[ERROR] Certificate fetch failed: %s\n", domains[j])
 						//os.Exit(1)
@@ -84,7 +90,67 @@ func BenchmarkCertificateSigner(b *testing.B) {
 	fmt.Printf("[INFO] Test time was %v\n", elapsedtime)
 }
 
+func BenchmarkDomainRedirectSigner(b *testing.B) {
+	if CA_CERT == nil {
+		fmt.Printf("[ERROR] CA_CERT was nil.")
+		os.Exit(1)
+	}
+	if CA_KEY == nil {
+		fmt.Printf("[ERROR] CA_KEY was nil.")
+		os.Exit(1)
+	}
+	err := LoadDefaultConfig()
 
+	if err != nil {
+		fmt.Printf("[ERROR] Couldn't load Default Config. err=%v\n", err)
+		os.Exit(1)
+	}
+	if GoproxyCaConfig == nil {
+		fmt.Printf("[ERROR] GoproxyCaConfig was nil.\n")
+		os.Exit(1)
+	}
+
+	// Mercedes.com and latimes.com redirect to different sites. These appear to be holding up certificate requests.
+	var domains []string = []string{"mercedes.com", "latimes.com"}
+	var wg sync.WaitGroup
+	b.ResetTimer()
+	starttime := time.Now()
+
+	for i := 0; i < 1; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for n := 0; n < 1; n++ {
+				j := rand.Intn(len(domains))
+				j = 0	// Just Mercedes
+
+				fmt.Printf("[TEST] Starting certificate fetch for %s\n", domains[j])
+				starttime := time.Now()
+				GoproxyCaConfig.Cert(domains[j])
+
+
+				certmu.RLock()
+
+				tlsc, ok := GoproxyCaConfig.NameToCertificate[domains[j]]
+				certmu.RUnlock()
+				if !ok || tlsc == nil {
+					fmt.Printf("[ERROR] Certificate fetch failed: %s\n", domains[j])
+					//os.Exit(1)
+				} else {
+						fmt.Printf("[SUCCESS] Certificate fetch succeeded. : %s\n", domains[j])
+				}
+				elapsedtime := time.Since(starttime)
+				fmt.Printf("[INFO] Fetch time for %s was %v\n", domains[j], elapsedtime)
+			}
+		}()
+	}
+
+	// Wait for all threads to complete
+	wg.Wait()
+
+	elapsedtime := time.Since(starttime)
+	fmt.Printf("[INFO] Test time was %v\n", elapsedtime)
+}
 /*
 
 

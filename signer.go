@@ -182,7 +182,9 @@ func WhitelistedDNSDialer() (*net.Dialer) {
 	}
 
 	// This is a http/s dialer with a custom DNS resolver.
+	// Added 5 second timeout for certificate lookups. These should be very fast.
 	dialer := &net.Dialer{
+		Timeout: time.Duration(5) * time.Second,
 		Resolver: &net.Resolver{
 			PreferGo: true,
 			Dial: dnsclient.Dial,
@@ -246,6 +248,7 @@ func (c *GoproxyConfig) certWithCommonName(hostname string, commonName string) e
 	certmu.RLock()
 	tlsc, ok := c.NameToCertificate[host]
 	hostmetadata, found := c.Host[host]
+
 	certmu.RUnlock()
 
 	// In a race condition, it is possible that multiple threads could attempt to create a metadata entry. That's ok
@@ -257,8 +260,10 @@ func (c *GoproxyConfig) certWithCommonName(hostname string, commonName string) e
 		certmu.Unlock()
 	}
 
+	// Get a lock only on this domain name
 	(*hostmetadata).mu.Lock()
 	defer (*hostmetadata).mu.Unlock()
+
 
 	// A write lock on the HostInfo struct is held at this point. We can write to it freely.
 
@@ -301,10 +306,10 @@ func (c *GoproxyConfig) certWithCommonName(hostname string, commonName string) e
 	}
 
 	//if experiment {
-	//	fmt.Println("[DEBUG] Signer.go - about to generate new certificate.")
+		fmt.Println("[DEBUG] Signer.go - about to generate new certificate.")
 	//}
 
-	// Test: Get the origin certificate and copy fields to it.
+	// Begin downstream certificate retrieval and copy logic
 	var origcert *x509.Certificate
 
 	// Have to add the port number to connect. Assume 443.
@@ -318,7 +323,7 @@ func (c *GoproxyConfig) certWithCommonName(hostname string, commonName string) e
 	if !strings.Contains(hostname, "winston.conf") && (*hostmetadata).NextAttempt.Before(time.Now()) {
 
 		//if trace {
-		//	fmt.Println("[DEBUG] Signer.go() Downloading remote certificate", host)
+			fmt.Println("[DEBUG] Signer.go() DialWithDialer()", host)
 		//}
 
 		var conn *tls.Conn
@@ -327,9 +332,10 @@ func (c *GoproxyConfig) certWithCommonName(hostname string, commonName string) e
 		conn, err = tls.DialWithDialer(c.bypassDnsDialer, "tcp", host + ":" + port, &tls.Config{InsecureSkipVerify: true})
 
 		if err != nil {
-			//fmt.Printf("[DEBUG] Signer.go - Error while dialing %s: %v\n", host, err)
+			fmt.Printf("[DEBUG] Signer.go - Error while dialing %s: %v\n", host, err)
 			return err
 		} else {
+			fmt.Println("[DEBUG] Signer.go() DialWithDialer() completed", host)
 			// Only close the connection if we couldn't connect.
 			defer conn.Close()
 			if len(conn.ConnectionState().PeerCertificates) >= 1 {
@@ -345,21 +351,25 @@ func (c *GoproxyConfig) certWithCommonName(hostname string, commonName string) e
 
 				// We only verify here to check the intermediate certificate chain. We don't want errors
 				// to prevent us from copying the remote certificate to the store.
-				err = certtransport.VerifyPeerCertificate(rawCerts, nil)
-				if err != nil {
-					//if trace {
-					//	fmt.Println("[DEBUG] Signer.go - certificate verification failed - err:", err)
-					//}
-					(*hostmetadata).NextAttempt = time.Now().Add(24 * time.Hour)
-					certmu.Lock()
-					c.Host[host] = hostmetadata
-					certmu.Unlock()
+				// TEST: We could have a stampede. If so, try to skip the expensive chain checks.
+				if hostmetadata.LastVerify.Before(time.Now().Add(-60 * time.Minute)) {
+					err = certtransport.VerifyPeerCertificate(rawCerts, nil)
+					if err != nil {
+						//if trace {
+						//	fmt.Println("[DEBUG] Signer.go - certificate verification failed - err:", err)
+						//}
+						(*hostmetadata).NextAttempt = time.Now().Add(24 * time.Hour)
 
-					// TEST: add bad certs anyway
-					badcert = true
-					//return nil
+						// Don't need lock because we have are guaranteed to have a lock on the pointer to hostInfo
+						//certmu.Lock()
+						//c.Host[host] = hostmetadata
+						//certmu.Unlock()
+
+						// TEST: add bad certs anyway
+						badcert = true
+						//return nil
+					}
 				}
-
 
 				//if trace {
 				//	fmt.Printf("[DEBUG] certWithCommonName() - successfully retrieved remote certificate.\n")
@@ -480,9 +490,9 @@ func (c *GoproxyConfig) certWithCommonName(hostname string, commonName string) e
 		c.Certificates = append(c.Certificates, *tlsc)
 	}
 
-	// Update the last verification time.
+	// Update the last verification time. Don't need lock.
 	(*hostmetadata).LastVerify = time.Now()
-	c.Host[host] = hostmetadata
+	//c.Host[host] = hostmetadata
 
 
 	return nil
