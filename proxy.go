@@ -257,6 +257,14 @@ func (proxy *ProxyHttpServer) ServeHTTP(w http.ResponseWriter, r *http.Request) 
 		}
 	}
 
+	// Disable handlers and P2P network. Can be used to more quickly debug website compatibility problems.
+	//if strings.Contains(ctx.host, "onbirkod")  {
+	//	fmt.Println("[DEBUG] Target HTTPS request - skipping  handlers.")
+		//ctx.SkipRequestHandler = true
+		//ctx.SkipResponseHandler = true
+		//ctx.PrivateNetwork = false
+	//}
+
 	// Check for websockets request. These need to be tunneled like a CONNECT request.
 	//fmt.Printf("[DEBUG] ServeHTTP() called [%s] %+v\n", ctx.host, r)
 	nonhttpprotocol := false
@@ -516,8 +524,8 @@ func (proxy *ProxyHttpServer) ListenAndServeTLS(httpsAddr string) error {
 			//}
 
 			// Disable handlers and P2P network. Can be used to more quickly debug website compatibility problems.
-			//if strings.Contains(ctx.host, "clients6.google")  {
-			//	fmt.Println("[DEBUG] Target HTTPS request - skipping response handlers.")
+			//if strings.Contains(ctx.host, "onbirkod")  {
+			//	fmt.Println("[DEBUG] Target HTTPS request - skipping  handlers.")
 			//	ctx.SkipRequestHandler = true
 			//	ctx.SkipResponseHandler = true
 			//	ctx.PrivateNetwork = false
