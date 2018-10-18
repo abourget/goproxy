@@ -26,11 +26,11 @@ import (
 	random "math/rand"
 )
 
-var GoproxyCaConfig *GoproxyConfig
+var TestCaConfig *GoproxyConfig
 
 func main() {
 	err := LoadDefaultConfig()
-	if err != nil || GoproxyCaConfig == nil {
+	if err != nil || TestCaConfig == nil {
 		fmt.Printf("[ERROR] Couldn't load Default Config. err=%v\n", err)
 		os.Exit(1)
 	}
@@ -41,10 +41,11 @@ func main() {
 		"sprint.com", "verizon.com"}
 
 	// Load up the certificates
+	fmt.Printf("[INFO] Prefetching certificates.\n")
 	for j := 0; j < len(domains); j++ {
-		GoproxyCaConfig.Cert(domains[j])
+		TestCaConfig.Cert(domains[j])
 		certmu.RLock()
-		tlsc, ok := GoproxyCaConfig.NameToCertificate[domains[j]]
+		tlsc, ok := TestCaConfig.NameToCertificate[domains[j]]
 		certmu.RUnlock()
 		if !ok || tlsc == nil {
 			fmt.Printf("[ERROR] Certificate fetch failed: %s\n", domains[j])
@@ -63,14 +64,14 @@ func main() {
 			host = domains[j]
 
 			certmu.RLock()
-			tlsc, _ := GoproxyCaConfig.NameToCertificate[host]
+			tlsc, _ := TestCaConfig.NameToCertificate[host]
 			certmu.RUnlock()
 
 			// Copy it to the certificate map
 			fakehost := "fakehost" + strconv.Itoa(i)
 			fmt.Printf("[INFO] Copying fake certificate from %s to %s\n", host, fakehost)
 			certmu.Lock()
-			GoproxyCaConfig.NameToCertificate[fakehost] = tlsc
+			TestCaConfig.NameToCertificate[fakehost] = tlsc
 			certmu.Unlock()
 			i++
 		}
@@ -159,12 +160,12 @@ func main() {
 
 func tlsConfig(host string) (*tls.Config, error) {
 	// Ensure that the certificate for the target site has been generated
-	err := GoproxyCaConfig.cert(host)
+	err := TestCaConfig.cert(host)
 	if err != nil {
 		fmt.Printf("[DEBUG] Certificate signing error [%s] %+v\n", host, err)
 		return nil, err
 	}
-	return GoproxyCaConfig.Config, nil
+	return TestCaConfig.Config, nil
 }
 
 // OrganizationName is the name your CA cert will be signed with. It
@@ -482,7 +483,7 @@ func LoadDefaultConfig() error {
 	if err != nil {
 		return fmt.Errorf("Error parsing builtin CA: %s", err.Error())
 	}
-	GoproxyCaConfig = config
+	TestCaConfig = config
 	return err
 }
 
