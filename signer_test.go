@@ -52,7 +52,6 @@ func BenchmarkCertificateSigner(b *testing.B) {
 		os.Exit(1)
 	}
 
-	// TODO: mercedes.com blocks the routine from succeeding
 	var domains []string = []string{"twitter.com", "nbc.com", "mercedes-benz.com", "google.com", "facebook.com", "nytimes.com", "washingtonpost.com", "www.latimes.com", "politico.com",
 	"drudgereport.com", "microsoft.com", "windows.com", "mcdonalds.com", "winstonprivacy.com", "shopify.com",
 	"theguardian.com", "digg.com", "reddit.com", "myspace.com", "wsj.com", "twobithistory.org", "mozilla.org", "youtube.com", "cloudflare.net",
@@ -151,6 +150,9 @@ func BenchmarkDomainRedirectSigner(b *testing.B) {
 	elapsedtime := time.Since(starttime)
 	fmt.Printf("[INFO] Test time was %v\n", elapsedtime)
 }
+
+
+
 /*
 
 

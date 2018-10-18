@@ -475,7 +475,7 @@ func (ctx *ProxyCtx) ManInTheMiddleHTTPS() error {
 		// FIX 9/13/2017: the deferred close must come before the Handshake because if it
 		// errors out, the connection is left open and we end up with thousands of orphaned objects.
 		defer func() {
-			defer ctx.Conn.Close()
+			ctx.Conn.Close()
 			rawClientTls.Close()
 		}()
 		//defer rawClientTls.Close()

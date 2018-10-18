@@ -377,6 +377,8 @@ func (c *GoproxyConfig) certWithCommonName(hostname string, commonName string) e
 
 				// TODO: Check upstream server's certificate and deny if it is encoded in SHA-1
 				// https://ssldecoder.org/?host=sha1-intermediate.badssl.com&port=&csr=&s=
+			} else {
+				fmt.Printf("[ERROR] signer.go - no peer certificates. This shouldn't happen. %s\n", host)
 			}
 		}
 	}
