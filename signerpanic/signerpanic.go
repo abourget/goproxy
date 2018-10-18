@@ -168,6 +168,17 @@ func tlsConfig(host string) (*tls.Config, error) {
 	return TestCaConfig.Config, nil
 }
 
+func tlsConfigFixed(host string) (*tls.Config, error) {
+	// Ensure that the certificate for the target site has been generated
+	err := TestCaConfig.cert(host)
+	if err != nil {
+		fmt.Printf("[DEBUG] Certificate signing error [%s] %+v\n", host, err)
+		return nil, err
+	}
+	return TestCaConfig.Config, nil
+}
+
+
 // OrganizationName is the name your CA cert will be signed with. It
 // will show in your different UIs. Change it globally here to show
 // meaningful things to your users.
@@ -178,7 +189,7 @@ var OrganizationName = "Winston Privacy"
 // bytes (2^(8*20)-1).
 var MaxSerialNumber = big.NewInt(0).SetBytes(bytes.Repeat([]byte{255}, 20))
 
-// Global lock on the certificate store. Locks cannot be copied so they were removed from GoproxyConfig.
+// Global lock on the certificate store.
 var certmu          	sync.RWMutex
 
 // Config is a set of configuration values that are used to build TLS configs
