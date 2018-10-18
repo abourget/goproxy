@@ -10,7 +10,7 @@ import (
 
 )
 
-var GoproxyCaConfig *GoproxyConfig
+var GoproxyCaConfig *GoproxyConfigServer
 
 // This sets up a TLS Config. It's called both by signer.go to set up a server to handle incoming client requests
 // as well as by proxy.go to set up the outbound transport. This means that the caller will need to set any
@@ -64,7 +64,7 @@ func LoadDefaultConfig() error {
 
 // Load a CAConfig bundle from by arrays.  You can then load them into
 // the proxy with `proxy.SetMITMCertConfig. If filename is non-nil, will attempt to load from disk.
-func LoadCAConfig(filename string, caCert, caKey []byte) (*GoproxyConfig, error) {
+func LoadCAConfig(filename string, caCert, caKey []byte) (*GoproxyConfigServer, error) {
 
 	ca, err := tls.X509KeyPair(caCert, caKey)
 
@@ -76,7 +76,7 @@ func LoadCAConfig(filename string, caCert, caKey []byte) (*GoproxyConfig, error)
 	if err != nil {
 		return nil, err
 	}
-	config, err := NewConfig(filename, ca509, priv)
+	config, err := NewConfigServer(filename, ca509, priv)
 	return config, err
 }
 

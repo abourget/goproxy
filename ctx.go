@@ -47,7 +47,7 @@ type ProxyCtx struct {
 	sniHost           string
 
 	sniffedTLS        bool
-	MITMCertConfig    *GoproxyConfig
+	MITMCertConfig    *GoproxyConfigServer
 
 	connectScheme     string
 
@@ -1727,16 +1727,15 @@ func (ctx *ProxyCtx) tlsConfig(host string) (*tls.Config, error) {
 		ca = ctx.MITMCertConfig
 	}
 
-	// Ensure that the certificate for the target site has been generated
-	err := ca.cert(host)
+	// Ensure that the tls config for the target site has been generated
+	config, err := ca.cert(host)
 	if err != nil {
 		fmt.Printf("[DEBUG] Certificate signing error [%s] %+v\n", host, err)
 		ctx.Warnf("Cannot sign host certificate with provided CA: %s", err)
 		return nil, err
 	}
-	// Hook the certificate chain verification
-	ca.Config.VerifyPeerCertificate = ca.VerifyPeerCertificate
-	return ca.Config, nil
+
+	return config, nil
 }
 
 // Test function to see if we can read the CLIENTHELLOINFO containing the client's

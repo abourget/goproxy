@@ -19,14 +19,15 @@ import (
 	"os"
 	"net/http"
 	"context"
-	"strconv"
+	//"strconv"
+	//"io/ioutil"
 	"github.com/hashicorp/go-rootcerts"
 	"github.com/valyala/fasthttp/fasthttputil"
 	"github.com/inconshreveable/go-vhost"
 	random "math/rand"
 )
 
-var TestCaConfig *GoproxyConfig
+var TestCaConfig *GoproxyConfigServer
 
 func main() {
 	err := LoadDefaultConfig()
@@ -44,36 +45,15 @@ func main() {
 	fmt.Printf("[INFO] Prefetching certificates.\n")
 	for j := 0; j < len(domains); j++ {
 		TestCaConfig.Cert(domains[j])
-		certmu.RLock()
-		tlsc, ok := TestCaConfig.NameToCertificate[domains[j]]
-		certmu.RUnlock()
-		if !ok || tlsc == nil {
-			fmt.Printf("[ERROR] Certificate fetch failed: %s\n", domains[j])
-			//os.Exit(1)
-		}
 	}
 
-	// Spin up a go routine to constantly copy the original cert (using locks)
+	// Spin up a go routine to constantly retrieve the same set of certificates.
 	go func() {
-		var i int
 		for {
-
 			// Get a random certificate
 			j := random.Intn(len(domains))
-			var host string
-			host = domains[j]
-
-			certmu.RLock()
-			tlsc, _ := TestCaConfig.NameToCertificate[host]
-			certmu.RUnlock()
-
-			// Copy it to the certificate map
-			fakehost := "fakehost" + strconv.Itoa(i)
-			fmt.Printf("[INFO] Copying fake certificate from %s to %s\n", host, fakehost)
-			certmu.Lock()
-			TestCaConfig.NameToCertificate[fakehost] = tlsc
-			certmu.Unlock()
-			i++
+			TestCaConfig.Cert(domains[j])
+			time.Sleep(10 * time.Millisecond)
 		}
 	}()
 
@@ -159,24 +139,16 @@ func main() {
 }
 
 func tlsConfig(host string) (*tls.Config, error) {
-	// Ensure that the certificate for the target site has been generated
-	err := TestCaConfig.cert(host)
+	// Ensure that the tls config for the target site has been generated
+	config, err := TestCaConfig.cert(host)
 	if err != nil {
 		fmt.Printf("[DEBUG] Certificate signing error [%s] %+v\n", host, err)
 		return nil, err
 	}
-	return TestCaConfig.Config, nil
+
+	return config, nil
 }
 
-func tlsConfigFixed(host string) (*tls.Config, error) {
-	// Ensure that the certificate for the target site has been generated
-	err := TestCaConfig.cert(host)
-	if err != nil {
-		fmt.Printf("[DEBUG] Certificate signing error [%s] %+v\n", host, err)
-		return nil, err
-	}
-	return TestCaConfig.Config, nil
-}
 
 
 // OrganizationName is the name your CA cert will be signed with. It
@@ -192,25 +164,46 @@ var MaxSerialNumber = big.NewInt(0).SetBytes(bytes.Repeat([]byte{255}, 20))
 // Global lock on the certificate store.
 var certmu          	sync.RWMutex
 
+// Stores metadata about a particular host. Used to improve performance.
+type HostInfo struct {
+	LastVerify 	time.Time
+	NextAttempt	time.Time	// Set to future time for invalid certs to avoid frequent reloading
+	mu 		sync.Mutex
+	Config		*tls.Config
+}
+
 // Config is a set of configuration values that are used to build TLS configs
 // capable of MITM.
-type GoproxyConfig struct {
+// Maintains a global list of immutable TLS Configs which can be used for TLS handshakes.
+type GoproxyConfigServer struct {
 	Root            *x509.Certificate
+	RootCAs		*x509.CertPool
 	capriv          interface{}
 	priv            *rsa.PrivateKey
 	keyID           []byte
 	validity        time.Duration
-	*tls.Config
+				    //*tls.Config
 	bypassDnsDialer *net.Dialer // Custom DNS resolver
+	Host		map[string]*HostInfo
+				    //Config		map[string]
 }
 
 // NewConfig creates a MITM config using the CA certificate and
 // private key to generate on-the-fly certificates.
-func NewConfig(filename string, ca *x509.Certificate, privateKey interface{}) (*GoproxyConfig, error) {
+func NewConfigServer(filename string, ca *x509.Certificate, privateKey interface{}) (*GoproxyConfigServer, error) {
 	var priv *rsa.PrivateKey
 	var err error
 
+	// Must set in order to self-sign x509 certificates.
+	ca.BasicConstraintsValid = true
+	ca.IsCA = true
+	//ca.KeyUsage = x509.KeyUsageCertSign
+	ca.KeyUsage = x509.KeyUsageKeyEncipherment | x509.KeyUsageDigitalSignature | x509.KeyUsageCertSign
+	ca.ExtKeyUsage = []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth}
+
 	priv, err = rsa.GenerateKey(rand.Reader, 2048)
+
+
 
 	if err != nil {
 		return nil, err
@@ -227,50 +220,60 @@ func NewConfig(filename string, ca *x509.Certificate, privateKey interface{}) (*
 	h.Write(pkixpub)
 	keyID := h.Sum(nil)
 
-	tlsConfig := &GoproxyConfig{
-		Root:     ca,
-		capriv:   privateKey,
-		priv:     priv,
-		keyID:    keyID,
-		validity: time.Hour * 24 * 3650,
-		Config:   rootCAs(nil),
+	tlsConfigServer := &GoproxyConfigServer{
+		Root:     		ca,
+		capriv:   		privateKey,
+		priv:     		priv,
+		keyID:    		keyID,
+		validity: 		time.Hour * 24 * 3650,
+		Host:     		make(map[string]*HostInfo),
+		RootCAs:		x509.NewCertPool(),
 	}
-	if tlsConfig.Config.RootCAs == nil {
-		tlsConfig.Config.RootCAs = x509.NewCertPool()
-	}
-	tlsConfig.Config.RootCAs.AddCert(ca)
-	tlsConfig.Config.Certificates = make([]tls.Certificate, 0)
-	tlsConfig.Config.NameToCertificate = make(map[string]*tls.Certificate)
 
-	return tlsConfig, nil
+
+	if tlsConfigServer.RootCAs == nil {
+		tlsConfigServer.RootCAs = x509.NewCertPool()
+	}
+
+	tlsConfigServer.RootCAs.AddCert(ca)
+
+	return tlsConfigServer, nil
 }
 
-
-func (c *GoproxyConfig) Cert(hostname string) error {
+func (c *GoproxyConfigServer) Cert(hostname string) (*tls.Config, error) {
 	return c.cert(hostname)
 }
 
-func (c *GoproxyConfig) cert(hostname string) error {
+func (c *GoproxyConfigServer) cert(hostname string) (*tls.Config, error) {
 	return c.certWithCommonName(hostname, "")
 }
 
-func (c *GoproxyConfig) certWithCommonName(host string, commonName string) error {
 
+func (c *GoproxyConfigServer) certWithCommonName(host string, commonName string) (*tls.Config, error) {
+
+	fmt.Println("[DEBUG] certWithCommonName:", host)
 	// Need a lock to protect the certificate store. Can't block here because we may already be writing a certificate.
 	certmu.RLock()
-	tlsc, ok := c.NameToCertificate[host]
+	hostmetadata, found := c.Host[host]
 	certmu.RUnlock()
 
-	if ok {
-		// Have the cert already.
-		return nil
+	// In a race condition, it is possible that multiple threads could attempt to create a metadata entry. That's ok
+	// because in the worst cast, we'll fetch the downstream certificate multiple times on the initial call.
+	if !found {
+		hostmetadata = &HostInfo{}
+	} else {
+		return (*hostmetadata).Config, nil
 	}
 
-	// Begin certificate retrieval and copy logic
-	fmt.Printf("[INFO] Fetching new certificate: %s\n", host)
+	// Get a lock only on this domain name
+	(*hostmetadata).mu.Lock()
+	defer (*hostmetadata).mu.Unlock()
+
+	// Begin downstream certificate retrieval and copy logic
 	var origcert *x509.Certificate
 
-
+	// Skip upstream lookup for local Winston... it doesn't exist in public DNS.
+	// Also skip upstream checks if a previous attempt failed to validate.
 	badcert := false
 	var conn *tls.Conn
 
@@ -278,22 +281,23 @@ func (c *GoproxyConfig) certWithCommonName(host string, commonName string) error
 
 	if err != nil {
 		fmt.Printf("[DEBUG] Signer.go - Error while dialing %s: %v\n", host, err)
-		return err
-	}
-
-	defer conn.Close()
-
-	if len(conn.ConnectionState().PeerCertificates) >= 1 {
-		origcert = conn.ConnectionState().PeerCertificates[0]
+		return nil, err
 	} else {
-		fmt.Printf("[ERROR] No PeerCertificates! %s\n", host)
-		os.Exit(1)
+		//fmt.Println("[DEBUG] Signer.go() DialWithDialer() completed", host)
+		// Only close the connection if we couldn't connect.
+		defer conn.Close()
+		if len(conn.ConnectionState().PeerCertificates) >= 1 {
+			origcert = conn.ConnectionState().PeerCertificates[0]
+		} else {
+			fmt.Printf("[ERROR] signer.go - no peer certificates. This shouldn't happen. %s\n", host)
+		}
 	}
 
-	// Create a new certificate, copying values from the old one.
+
+	// Create a new certificate.
 	serial, err := rand.Int(rand.Reader, MaxSerialNumber)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	certificateCommonName := host
@@ -308,9 +312,9 @@ func (c *GoproxyConfig) certWithCommonName(host string, commonName string) error
 	// Golang is not smart enough to check the intermediate chains (and this would introduce an unacceptable performance
 	// penalty if we did check it on every call anyway).
 	var notbefore, notafter time.Time
+
 	notafter = time.Now().Add(c.validity)
 	notbefore = time.Now().Add(-c.validity)
-
 
 	tmpl := &x509.Certificate{
 		SerialNumber: serial,
@@ -320,7 +324,7 @@ func (c *GoproxyConfig) certWithCommonName(host string, commonName string) error
 		},
 		SubjectKeyId:          c.keyID,
 		KeyUsage:              x509.KeyUsageKeyEncipherment | x509.KeyUsageDigitalSignature,
-		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth },
 		BasicConstraintsValid: true,
 		NotBefore:             notbefore,
 		NotAfter:              notafter,
@@ -328,53 +332,81 @@ func (c *GoproxyConfig) certWithCommonName(host string, commonName string) error
 
 	tmpl.DNSNames = []string{host}
 
-	// copy values from the original certificate to our new one
-	tmpl.Subject = origcert.Subject
-	//tmpl.NotBefore = origcert.NotBefore
-	//tmpl.NotAfter = origcert.NotAfter
-	tmpl.KeyUsage = origcert.KeyUsage
-	tmpl.AuthorityKeyId = origcert.AuthorityKeyId
-	tmpl.IPAddresses = origcert.IPAddresses
+	// If we have a non-Winston certificate for an external site, then copy values from the original certificate to our new one
+	if origcert != nil {
 
-	// If the DNS name points to winston.conf, then use the original hostname.
-	//if len(origcert.DNSNames) > 0 && origcert.DNSNames[0] != "winston.conf" {
-		//fmt.Printf("  *** overwriting cert with original values: host=%s  DNSNames[0]=%s\n", originalhostname, origcert.DNSNames[0] )
-		tmpl.DNSNames = origcert.DNSNames
-	//} else {
-	//	//fmt.Printf("  *** Blocked domain.: host=%s  DNSNames[0]=%s\n", originalhostname, hostname )
-	//	tmpl.DNSNames = []string{host}
-	//}
+		tmpl.Subject = origcert.Subject
+		//tmpl.NotBefore = origcert.NotBefore
+		//tmpl.NotAfter = origcert.NotAfter
+		tmpl.KeyUsage = origcert.KeyUsage
+		tmpl.AuthorityKeyId = origcert.AuthorityKeyId
+		tmpl.IPAddresses = origcert.IPAddresses
+
+		// If the DNS name points to winston.conf, then use the original hostname.
+		if len(origcert.DNSNames) > 0 && origcert.DNSNames[0] != "winston.conf" {
+			//fmt.Printf("  *** overwriting cert with original values: host=%s  DNSNames[0]=%s\n", originalhostname, origcert.DNSNames[0] )
+			tmpl.DNSNames = origcert.DNSNames
+		} else {
+			//fmt.Printf("  *** Blocked domain.: host=%s  DNSNames[0]=%s\n", originalhostname, hostname )
+			tmpl.DNSNames = []string{host}
+		}
+	}
+
+
 
 	raw, err := x509.CreateCertificate(rand.Reader, tmpl, c.Root, c.priv.Public(), c.capriv)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	// Parse certificate bytes so that we have a leaf certificate.
 	x509c, err := x509.ParseCertificate(raw)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
-	tlsc = &tls.Certificate{
+	tlsc := &tls.Certificate{
 		Certificate: [][]byte{raw, c.Root.Raw},
 		PrivateKey:  c.priv,
 		Leaf:        x509c,
 	}
 
-	// Note: stampede could occur with multiple certs being loaded for same host simultaneously so
-	// we check for an existing cert to avoid overwriting it.
+	// It's possible we have a race condition here with multiple goroutines having fetched the downstream certificate simultaneously.
+	// The certificate verification logic avoids stampede conditions and will bypass validation logic if it detects multiple requests.
+	// Therefore, we should check if a certificate already exists and only overwrite it if we determined it's invalid.
 	certmu.Lock()
 	defer certmu.Unlock()
-	_, ok = c.NameToCertificate[host]
-	if !ok || badcert {
+	(*hostmetadata).LastVerify = time.Now()
+	if !found || badcert {
 		// Only add it if we didn't find it or ours is invalid
-		c.NameToCertificate[host] = tlsc
-		c.Certificates = append(c.Certificates, *tlsc)
+
+		// Create new config
+		newtlsconfig := &tls.Config{
+			//RootCAs: x509.NewCertPool(),
+		}
+
+		newtlsconfig.RootCAs = c.RootCAs
+		newtlsconfig.Certificates = make([]tls.Certificate, 0)
+		newtlsconfig.Certificates = append(newtlsconfig.Certificates, *tlsc)
+		newtlsconfig.NameToCertificate = make(map[string]*tls.Certificate)
+		newtlsconfig.NameToCertificate[host] = tlsc
+
+		// Hook the certificate chain verification
+		//if c.VerifyPeerCertificate != nil {
+		//	newtlsconfig.VerifyPeerCertificate = c.VerifyPeerCertificate
+		//}
+
+		(*hostmetadata).Config = newtlsconfig
+
+		c.Host[host] = hostmetadata
+		return newtlsconfig, nil
 	}
 
-	return nil
+	return (*hostmetadata).Config, nil
 }
+
+
+
 
 func LoadDefaultConfig() error {
 	config, err := LoadCAConfig("", CA_CERT, CA_KEY)
@@ -388,7 +420,7 @@ func LoadDefaultConfig() error {
 
 // Load a CAConfig bundle from by arrays.  You can then load them into
 // the proxy with `proxy.SetMITMCertConfig. If filename is non-nil, will attempt to load from disk.
-func LoadCAConfig(filename string, caCert, caKey []byte) (*GoproxyConfig, error) {
+func LoadCAConfig(filename string, caCert, caKey []byte) (*GoproxyConfigServer, error) {
 
 	ca, err := tls.X509KeyPair(caCert, caKey)
 
@@ -400,7 +432,7 @@ func LoadCAConfig(filename string, caCert, caKey []byte) (*GoproxyConfig, error)
 	if err != nil {
 		return nil, err
 	}
-	config, err := NewConfig(filename, ca509, priv)
+	config, err := NewConfigServer(filename, ca509, priv)
 	return config, err
 }
 

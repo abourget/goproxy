@@ -7,6 +7,14 @@ import (
 	"time"
 	"sync"
 	"math/rand"
+	. "github.com/smartystreets/goconvey/convey"
+	"crypto/x509"
+	"net/http/httptest"
+	"crypto/tls"
+	"net/http"
+	"strings"
+	"io/ioutil"
+	//"net/url"
 )
 
 
@@ -67,12 +75,10 @@ func BenchmarkCertificateSigner(b *testing.B) {
 				for n := 0; n < 100; n++ {
 					j := rand.Intn(len(domains))
 
-					GoproxyCaConfig.Cert(domains[j])
+					tlsconfig, err := GoproxyCaConfig.Cert(domains[j])
 
-					certmu.RLock()
-					tlsc, ok := GoproxyCaConfig.NameToCertificate[domains[j]]
-					certmu.RUnlock()
-					if !ok || tlsc == nil {
+					//tlsc, ok := GoproxyCaConfig.NameToCertificate[domains[j]]
+					if err != nil || tlsconfig == nil {
 						fmt.Printf("[ERROR] Certificate fetch failed: %s\n", domains[j])
 						//os.Exit(1)
 					} /*else {
@@ -128,15 +134,16 @@ func BenchmarkDomainRedirectSigner(b *testing.B) {
 				GoproxyCaConfig.Cert(domains[j])
 
 
-				certmu.RLock()
-
-				tlsc, ok := GoproxyCaConfig.NameToCertificate[domains[j]]
-				certmu.RUnlock()
-				if !ok || tlsc == nil {
+				//certmu.RLock()
+				//
+				//tlsc, ok := GoproxyCaConfig.NameToCertificate[domains[j]]
+				//certmu.RUnlock()
+				tlsconfig, err := GoproxyCaConfig.Cert(domains[j])
+				if err != nil || tlsconfig == nil {
 					fmt.Printf("[ERROR] Certificate fetch failed: %s\n", domains[j])
 					//os.Exit(1)
 				} else {
-						fmt.Printf("[SUCCESS] Certificate fetch succeeded. : %s\n", domains[j])
+					fmt.Printf("[SUCCESS] Certificate fetch succeeded. : %s\n", domains[j])
 				}
 				elapsedtime := time.Since(starttime)
 				fmt.Printf("[INFO] Fetch time for %s was %v\n", domains[j], elapsedtime)
@@ -153,130 +160,135 @@ func BenchmarkDomainRedirectSigner(b *testing.B) {
 
 
 
-/*
-
-
-import (
-	//"crypto/tls"
-	"crypto/x509"
-	//"io/ioutil"
-	"net/http"
-	//"net/http/httptest"
-	//"os"
-	//"os/exec"
-	"strings"
-	"testing"
-	//"time"
-	. "github.com/smartystreets/goconvey/convey"
-	"fmt"
-)
-
-func orFatal(msg string, err error, t *testing.T) {
-	if err != nil {
-		t.Fatal(msg, err)
-	}
-}
-
 type ConstantHandler string
 
 func (h ConstantHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte(h))
 }
 
-func getBrowser(args []string) string {
-	for i, arg := range args {
-		if arg == "-browser" && i+1 < len(arg) {
-			return args[i+1]
-		}
-		if strings.HasPrefix(arg, "-browser=") {
-			return arg[len("-browser="):]
-		}
-	}
-	return ""
-}
-
-// TODO: Refactor
 func TestSigner(t *testing.T) {
-	fmt.Println("TestSigner Start")
 	LoadDefaultConfig()
-	fmt.Println("TestSigner - Finished loading default config")
 
-	Convey("TLS Certificate signing works", t, func() {
-		fmt.Println()
-		fmt.Println("TLS Certificate Signing Test")
-		ca := GoproxyCaConfig
-		// Generate a certificate
-		err := ca.cert("example.com")
+	Convey("Can retrieve valid certificate", t, func() {
+		So (CA_CERT, ShouldNotEqual, nil)
+		So (CA_KEY, ShouldNotEqual, nil)
+		So(GoproxyCaConfig, ShouldNotEqual, nil)
+
+		tlsconfig, err := GoproxyCaConfig.Cert("twitter.com")
 		So(err, ShouldEqual, nil)
-		cert, ok := ca.NameToCertificate["example.com"]
+		So(tlsconfig, ShouldNotEqual, nil)
+		//fmt.Printf("[TEST] tlsconfig = %+v\n", tlsconfig)
+
+		// TODO: Retrieve a page with the new certificate?
+
+		cert, ok := tlsconfig.NameToCertificate["twitter.com"]
 		So(ok, ShouldEqual, true)
 		So(cert, ShouldNotEqual, nil)
 
 		cert.Leaf, err = x509.ParseCertificate(cert.Certificate[0])
 		So(err, ShouldEqual, nil)
 
-		*/
-/*expected := "key verifies with Go"
+		// Get another certificate and ensure the first cert isn't in its dictionary.
+		tlsconfig2, err := GoproxyCaConfig.Cert("facebook.com")
+		So(err, ShouldEqual, nil)
+		So(tlsconfig2, ShouldNotEqual, nil)
+		cert2, ok := tlsconfig2.NameToCertificate["twitter.com"]
+		So(ok, ShouldEqual, false)
+		So(cert2, ShouldEqual, nil)
+
+
+	})
+
+	Convey("Can establish TLS connection using self-signed MITM certificates", t, func() {
+		So (CA_CERT, ShouldNotEqual, nil)
+		So (CA_KEY, ShouldNotEqual, nil)
+		So(GoproxyCaConfig, ShouldNotEqual, nil)
+
+
+		// Ensure we can communicate using the new certificate
+		// Server needs the cert for the requested domain as well as its own private key (root cert)
+		tlsconfig, err := GoproxyCaConfig.GetTestCertificate("localhost", "443")
+		So(err, ShouldEqual, nil)
+		So(tlsconfig, ShouldNotEqual, nil)
+
+		cert, ok := tlsconfig.NameToCertificate["localhost"]
+		So(ok, ShouldEqual, true)
+		So(cert, ShouldNotEqual, nil)
+
+		cert.Leaf, err = x509.ParseCertificate(cert.Certificate[0])
+		So(err, ShouldEqual, nil)
+
+
+		expected := "key verifies with Go"
 		server := httptest.NewUnstartedServer(ConstantHandler(expected))
 		defer server.Close()
-		//server.TLS = &tls.Config{Certificates: []tls.Certificate{*cert, *GoproxyCaConfig}}
-		server.TLS = ca.Config
+		server.TLS = &tls.Config{Certificates: []tls.Certificate{*cert}}	//, *GoproxyCaConfig
+		//server.TLS = ca.Config
 		server.TLS.BuildNameToCertificate()
 		server.StartTLS()
+
+		//proxyUrl, err := url.Parse(server.URL)
+		//So(err, ShouldEqual, nil)
+		//
+		//fmt.Printf("[TEST] proxyUrl: %v\n", proxyUrl)
+
+		// Client needs the public key of the cert
 		certpool := x509.NewCertPool()
 		certpool.AddCert(cert.Leaf)
 		tr := &http.Transport{
 			TLSClientConfig: &tls.Config{RootCAs: certpool},
+			//Proxy: http.ProxyURL(proxyUrl),
 		}
 		asLocalhost := strings.Replace(server.URL, "127.0.0.1", "localhost", -1)
+		//fmt.Printf("[TEST] asLocalhost: %s\n", asLocalhost)
 		req, err := http.NewRequest("GET", asLocalhost, nil)
 		So(err, ShouldEqual, nil)
 		resp, err := tr.RoundTrip(req)
 		So(err, ShouldEqual, nil)
 		txt, err := ioutil.ReadAll(resp.Body)
 		So(err, ShouldEqual, nil)
-		if string(txt) != expected {
-			t.Errorf("Expected '%s' got '%s'", expected, string(txt))
-		}*//*
-
-
-
-		//browser := getBrowser(os.Args)
-		//if browser != "" {
-		//	exec.Command(browser, asLocalhost).Run()
-		//	time.Sleep(10 * time.Second)
-		//}
+		So(string(txt), ShouldEqual, expected)
 	})
 
-	*/
-/*Convey("X509 certificates work", t, func() {
+	// It is critical that this test passes, otherwise cached certificates will never be used.
+	// Note that we don't fully support all verify methods and most will fail.
+	Convey("Basic x509 verification works", t, func() {
+		So (CA_CERT, ShouldNotEqual, nil)
+		So (CA_KEY, ShouldNotEqual, nil)
+		So(GoproxyCaConfig, ShouldNotEqual, nil)
+
+
 		ca := GoproxyCaConfig
 		// Generate a certificate
-		err := ca.cert("example.com")
+		tlsconfig, err := ca.cert("microsoft.com")
 		So(err, ShouldEqual, nil)
-		cert, ok := ca.NameToCertificate["example.com"]
+		So(tlsconfig, ShouldNotEqual, nil)
+
+		cert, ok := tlsconfig.NameToCertificate["microsoft.com"]
 		So(ok, ShouldEqual, true)
 		So(cert, ShouldNotEqual, nil)
-
 
 		//cert, err := signHost(GoproxyCaConfig, []string{"example.com", "1.1.1.1", "localhost"})
 		//orFatal("singHost", err, t)
 		cert.Leaf, err = x509.ParseCertificate(cert.Certificate[0])
 		So(err, ShouldEqual, nil)
-
-		certpool := x509.NewCertPool()
-		certpool.AddCert(cert.Leaf)
-		//orFatal("VerifyHostname", cert.Leaf.VerifyHostname("example.com"), t)
-		//orFatal("CheckSignatureFrom", cert.Leaf.CheckSignatureFrom(cert.Leaf), t)
-		So(cert.Leaf.VerifyHostname("example.com"), ShouldEqual, true)
-		So(cert.Leaf.CheckSignatureFrom(cert.Leaf), ShouldEqual, true)
-
+		//fmt.Printf("[TEST] cert.Leaf=%+v\n", cert.Leaf)
+		//certpool := x509.NewCertPool()
+		//certpool.AddCert(cert.Leaf)
+		//verified, err := cert.Leaf.VerifyHostname("twitter.com")
 		_, err = cert.Leaf.Verify(x509.VerifyOptions{
-			DNSName: "example.com",
-			Roots:   certpool,
+			DNSName: "microsoft.com",
+			Roots:   GoproxyCaConfig.RootCAs,
 		})
 		So(err, ShouldEqual, nil)
-	})*//*
+
+		// Original Elazarl unit tests had this. Was not working in goproxy. Haven't found a reason we
+		// need to support this call yet.
+		//fmt.Println()
+		//fmt.Println("[TEST] CheckSignatureFrom...")
+
+		//So(cert.Leaf.CheckSignatureFrom(cert.Leaf), ShouldEqual, true)
+
+	})
 
 }
-*/

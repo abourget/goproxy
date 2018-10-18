@@ -82,7 +82,7 @@ type ProxyHttpServer struct {
 	PrivateNetwork *shadownetwork.ShadowNetwork
 
 	// Setting MITMCertConfig allows you to override the default CA cert/key used to sign MITM'd requests.
-	MITMCertConfig *GoproxyConfig
+	MITMCertConfig *GoproxyConfigServer
 
 	// ConnectDial will be used to create TCP connections for CONNECT requests
 	// if nil, .Transport.Dial will be used
@@ -730,7 +730,7 @@ func GenerateSignature(h *vhost.ClientHelloMsg, debug bool) (string) {
 // certificates. You can load some []byte with `LoadCAConfig()`. This bundle
 // gets passed into the `ProxyCtx` and may be overridden in the [TODO:
 // FIXME] `HandleConnect()` callback, before doing SNI sniffing.
-func (proxy *ProxyHttpServer) SetMITMCertConfig(config *GoproxyConfig) {
+func (proxy *ProxyHttpServer) SetMITMCertConfig(config *GoproxyConfigServer) {
 	proxy.MITMCertConfig = config
 }
 

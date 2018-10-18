@@ -57,7 +57,7 @@ func getWildcardHost(host string) string {
 // Used to resolve certificate chains (Global)
 var certtransport	*intransport.InTransport
 
-// Global lock on the certificate store. Locks cannot be copied so they were removed from GoproxyConfig.
+// Global lock on the certificate store.
 var certmu          	sync.RWMutex
 
 // Stores metadata about a particular host. Used to improve performance.
@@ -65,28 +65,40 @@ type HostInfo struct {
 	LastVerify 	time.Time
 	NextAttempt	time.Time	// Set to future time for invalid certs to avoid frequent reloading
 	mu 		sync.Mutex
+	Config		*tls.Config
 }
 
-// Config is a set of configuration values that are used to build TLS configs
-// capable of MITM.
-type GoproxyConfig struct {
+// Maintains a global list of immutable TLS Configs which can be used for TLS handshakes.
+type GoproxyConfigServer struct {
 	Root            *x509.Certificate
+	RootCAs		*x509.CertPool
 	capriv          interface{}
 	priv            *rsa.PrivateKey
 	keyID           []byte
 	validity        time.Duration
-	*tls.Config
+	//*tls.Config
 	bypassDnsDialer *net.Dialer // Custom DNS resolver
 	Host		map[string]*HostInfo
+	//Config		map[string]
 }
 
 // NewConfig creates a MITM config using the CA certificate and
 // private key to generate on-the-fly certificates.
-func NewConfig(filename string, ca *x509.Certificate, privateKey interface{}) (*GoproxyConfig, error) {
+func NewConfigServer(filename string, ca *x509.Certificate, privateKey interface{}) (*GoproxyConfigServer, error) {
 	needcert := true
 	var priv *rsa.PrivateKey
 	var err error
 
+	// Must set in order to self-sign x509 certificates.
+	ca.BasicConstraintsValid = true
+	ca.IsCA = true
+	//ca.KeyUsage = x509.KeyUsageCertSign
+	ca.KeyUsage = x509.KeyUsageKeyEncipherment | x509.KeyUsageDigitalSignature | x509.KeyUsageCertSign
+	ca.ExtKeyUsage = []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth}
+	//fmt.Printf("[DEBUG] ca.IsCA=%t\n", ca.IsCA)
+
+
+	// Load the cached private key if present. This greatly improves startup time.
 	if filename != "" {
 		_, err := os.Stat(filename)
 
@@ -112,7 +124,7 @@ func NewConfig(filename string, ca *x509.Certificate, privateKey interface{}) (*
 		priv, err = rsa.GenerateKey(rand.Reader, 2048)
 	}
 
-	// Save the key to disk
+	// Cache the private key to disk
 	if filename != "" && err == nil {
 		var buff bytes.Buffer
 		enc := gob.NewEncoder(&buff)
@@ -140,35 +152,38 @@ func NewConfig(filename string, ca *x509.Certificate, privateKey interface{}) (*
 	h.Write(pkixpub)
 	keyID := h.Sum(nil)
 
-	tlsConfig := &GoproxyConfig{
-		Root:     ca,
-		capriv:   privateKey,
-		priv:     priv,
-		keyID:    keyID,
-		validity: time.Hour * 24 * 3650,
-		Config:   rootCAs(nil),
-		bypassDnsDialer:	  WhitelistedDNSDialer(),
+	tlsConfigServer := &GoproxyConfigServer{
+		Root:     		ca,
+		capriv:   		privateKey,
+		priv:     		priv,
+		keyID:    		keyID,
+		validity: 		time.Hour * 24 * 3650,
+		bypassDnsDialer:	WhitelistedDNSDialer(),
+		//Config:	  		make(map[string]*tls.Config),//
+		Host:     		make(map[string]*HostInfo),
+		RootCAs:		x509.NewCertPool(),
+	}
 
+
+	if tlsConfigServer.RootCAs == nil {
+		tlsConfigServer.RootCAs = x509.NewCertPool()
 	}
-	if tlsConfig.Config.RootCAs == nil {
-		tlsConfig.Config.RootCAs = x509.NewCertPool()
-	}
-	tlsConfig.Config.RootCAs.AddCert(ca)
+
+	tlsConfigServer.RootCAs.AddCert(ca)
+
+	/*  Move to Config generation routine
 	tlsConfig.Config.Certificates = make([]tls.Certificate, 0)
 	tlsConfig.Config.NameToCertificate = make(map[string]*tls.Certificate)
+	*/
+	//newtlsconfig.Certificates = append(newtlsconfig.Certificates, *tlsc)
 
 	// Used to check certificate chains when we create new MITM certs
-	//tlsConfig.Config / nil
 	certtransport = intransport.NewInTransport(nil)
 
-	//tlsConfig.Config.VerifyPeerCertificate = tlsConfig.VerifyPeerCertificate
-
-	tlsConfig.Host = make(map[string]*HostInfo)
-
-	return tlsConfig, nil
+	return tlsConfigServer, nil
 }
 
-// Returns a DNS dialer for port 54 (whitelisted DNS)
+// Returns a DNS dialer for port 54 (unfiltered DNS which allows all requests to succeed)
 // TODO: Should we check for DNS server on port 54 and default to port 53 if not available? For now, caller is responsible for this.
 func WhitelistedDNSDialer() (*net.Dialer) {
 	dnsclient := new(dns.Client)
@@ -195,17 +210,17 @@ func WhitelistedDNSDialer() (*net.Dialer) {
 }
 
 // RLS 3/19/2018 - exported for testng
-func (c *GoproxyConfig) Cert(hostname string) error {
+func (c *GoproxyConfigServer) Cert(hostname string) (*tls.Config, error) {
 	return c.cert(hostname)
 }
 
-func (c *GoproxyConfig) cert(hostname string) error {
+func (c *GoproxyConfigServer) cert(hostname string) (*tls.Config, error) {
 	return c.certWithCommonName(hostname, "")
 }
 
 // Removes the certificate associated with the given hostname from the cache. This is necessary if we change the
 // whitelist or blacklist settings for a domain.
-func (c *GoproxyConfig) FlushCert(hostname string) {
+func (c *GoproxyConfigServer) FlushCert(hostname string) {
 	// Remove the port if it exists.
 	host, _, err := net.SplitHostPort(hostname)
 	if err == nil {
@@ -213,14 +228,14 @@ func (c *GoproxyConfig) FlushCert(hostname string) {
 	}
 	certmu.Lock()
 	defer certmu.Unlock()
-	delete(c.NameToCertificate, hostname)
+	//delete(c.NameToCertificate, hostname)
+	delete(c.Host, hostname)
 }
 
 // If commonName is provided, it will be used in the certificate. This is used to
 // service non-SNI requests.
 // TODO: commonName may no longer be needed. Refactor to remove it.
-// TODO: Should we remember bad requests so we don't keep making them? Routine is subject to an internal flood attack.
-func (c *GoproxyConfig) certWithCommonName(hostname string, commonName string) error {
+func (c *GoproxyConfigServer) certWithCommonName(hostname string, commonName string) (*tls.Config, error) {
 
 	//trace := false
 	//if strings.Contains(hostname, ".badssl.com") {
@@ -246,7 +261,7 @@ func (c *GoproxyConfig) certWithCommonName(hostname string, commonName string) e
 
 	// Need a lock to protect the certificate store. Can't block here because we may already be writing a certificate.
 	certmu.RLock()
-	tlsc, ok := c.NameToCertificate[host]
+	//tlsc, ok := c.NameToCertificate[host]
 	hostmetadata, found := c.Host[host]
 
 	certmu.RUnlock()
@@ -255,9 +270,9 @@ func (c *GoproxyConfig) certWithCommonName(hostname string, commonName string) e
 	// because in the worst cast, we'll fetch the downstream certificate multiple times on the initial call.
 	if !found {
 		hostmetadata = &HostInfo{}
-		certmu.Lock()
-		c.Host[host] = hostmetadata
-		certmu.Unlock()
+		//certmu.Lock()
+		//c.Host[host] = hostmetadata
+		//certmu.Unlock()
 	}
 
 	// Get a lock only on this domain name
@@ -266,11 +281,9 @@ func (c *GoproxyConfig) certWithCommonName(hostname string, commonName string) e
 
 
 	// A write lock on the HostInfo struct is held at this point. We can write to it freely.
-
-	if ok {
+	if found {
 		//if experiment {
 		//	//fmt.Printf("  *** Cached cert used for %s.\n     Subject: %+v\n     DNS Names:%+v\n     IssuingCertificateURL: %+v\n     Issuer: %+v\n     Valid: %+v - %+v\n", hostname, tlsc.Leaf.Subject, tlsc.Leaf.DNSNames, tlsc.Leaf.IssuingCertificateURL, tlsc.Leaf.Issuer, tlsc.Leaf.NotBefore, tlsc.Leaf.NotAfter)
-		//	fmt.Printf("[DEBUG] certWithCommonName - Cached cert used. Subject: %+v\n  Issuer: %+v\n  AuthorityKeyId=%v\n", tlsc.Leaf.Subject.CommonName, tlsc.Leaf.Issuer.CommonName, tlsc.Leaf.AuthorityKeyId)
 		//}
 
 		// Check validity of the certificate for hostname match, expiry, etc. In
@@ -278,6 +291,11 @@ func (c *GoproxyConfig) certWithCommonName(hostname string, commonName string) e
 		// Don't check more than once an hour.
 		if hostmetadata.LastVerify.Before(time.Now().Add(-60 * time.Minute)) {
 			//fmt.Printf("[DEBUG] Verifying certificate [%s]\n", host)
+			tlsc, ok := (*hostmetadata).Config.NameToCertificate[host]
+			if !ok {
+				fmt.Printf("[ERROR] Couldn't find certificate in tlsconfig. This should never happen! %s\n", host)
+			}
+			fmt.Printf("[DEBUG] certWithCommonName - Cached cert used. Subject: %+v\n  Issuer: %+v\n  AuthorityKeyId=%v\n", tlsc.Leaf.Subject.CommonName, tlsc.Leaf.Issuer.CommonName, tlsc.Leaf.AuthorityKeyId)
 			var err error
 			if isIP {
 				// Don't verify hostname if we have an ip address
@@ -297,11 +315,11 @@ func (c *GoproxyConfig) certWithCommonName(hostname string, commonName string) e
 			if err == nil {
 				// Update the last verification time
 				(*hostmetadata).LastVerify = time.Now()
-				return nil
+				return (*hostmetadata).Config, nil
 			}
 		} else {
 			//fmt.Printf("[DEBUG] Skipping certificate verify [%s]\n", host)
-			return nil
+			return (*hostmetadata).Config, nil
 		}
 	}
 
@@ -328,12 +346,11 @@ func (c *GoproxyConfig) certWithCommonName(hostname string, commonName string) e
 
 		var conn *tls.Conn
 
-		// TODO: This breaks the original goproxy unit tests.
 		conn, err = tls.DialWithDialer(c.bypassDnsDialer, "tcp", host + ":" + port, &tls.Config{InsecureSkipVerify: true})
 
 		if err != nil {
 			fmt.Printf("[DEBUG] Signer.go - Error while dialing %s: %v\n", host, err)
-			return err
+			return nil, err
 		} else {
 			//fmt.Println("[DEBUG] Signer.go() DialWithDialer() completed", host)
 			// Only close the connection if we couldn't connect.
@@ -386,7 +403,7 @@ func (c *GoproxyConfig) certWithCommonName(hostname string, commonName string) e
 	// Create a new certificate.
 	serial, err := rand.Int(rand.Reader, MaxSerialNumber)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	certificateCommonName := host
@@ -416,6 +433,8 @@ func (c *GoproxyConfig) certWithCommonName(hostname string, commonName string) e
 	//	fmt.Printf("[DEBUG] Certificate [%s] NotBefore: %v  NotAfter: %v\n", hostname, notbefore, notafter)
 	//}
 
+	//fmt.Println()
+	//fmt.Printf("[DEBUG] Creating x509 certificate. serial=%v CommonName=%s\n", serial, certificateCommonName)
 
 	tmpl := &x509.Certificate{
 		SerialNumber: serial,
@@ -425,7 +444,7 @@ func (c *GoproxyConfig) certWithCommonName(hostname string, commonName string) e
 		},
 		SubjectKeyId:          c.keyID,
 		KeyUsage:              x509.KeyUsageKeyEncipherment | x509.KeyUsageDigitalSignature,
-		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth },
 		BasicConstraintsValid: true,
 		NotBefore:             notbefore,
 		NotAfter:              notafter,
@@ -461,16 +480,16 @@ func (c *GoproxyConfig) certWithCommonName(hostname string, commonName string) e
 
 	raw, err := x509.CreateCertificate(rand.Reader, tmpl, c.Root, c.priv.Public(), c.capriv)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	// Parse certificate bytes so that we have a leaf certificate.
 	x509c, err := x509.ParseCertificate(raw)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
-	tlsc = &tls.Certificate{
+	tlsc := &tls.Certificate{
 		Certificate: [][]byte{raw, c.Root.Raw},
 		PrivateKey:  c.priv,
 		Leaf:        x509c,
@@ -485,23 +504,39 @@ func (c *GoproxyConfig) certWithCommonName(hostname string, commonName string) e
 	// Therefore, we should check if a certificate already exists and only overwrite it if we determined it's invalid.
 	certmu.Lock()
 	defer certmu.Unlock()
-	_, ok = c.NameToCertificate[host]
-	if !ok || badcert {
+	//_, ok = c.NameToCertificate[host]
+	//hostmetadata, found = c.Host[host]
+	(*hostmetadata).LastVerify = time.Now()
+	if !found || badcert {
 		// Only add it if we didn't find it or ours is invalid
-		c.NameToCertificate[host] = tlsc
-		c.Certificates = append(c.Certificates, *tlsc)
+
+		// Create new config
+		newtlsconfig := &tls.Config{
+			//RootCAs: x509.NewCertPool(),
+		}
+
+		newtlsconfig.RootCAs = c.RootCAs
+		newtlsconfig.Certificates = make([]tls.Certificate, 0)
+		newtlsconfig.Certificates = append(newtlsconfig.Certificates, *tlsc)
+		newtlsconfig.NameToCertificate = make(map[string]*tls.Certificate)
+		newtlsconfig.NameToCertificate[host] = tlsc
+
+		// Hook the certificate chain verification
+		//if c.VerifyPeerCertificate != nil {
+		//	newtlsconfig.VerifyPeerCertificate = c.VerifyPeerCertificate
+		//}
+
+		(*hostmetadata).Config = newtlsconfig
+
+		c.Host[host] = hostmetadata
+		return newtlsconfig, nil
 	}
 
-	// Update the last verification time. Don't need lock.
-	(*hostmetadata).LastVerify = time.Now()
-	//c.Host[host] = hostmetadata
-
-
-	return nil
+	return (*hostmetadata).Config, nil
 }
 
 // Used for unit testing. Gets a certificate from a server and port and creates a local version suitable for MITM.
-func (c *GoproxyConfig) GetTestCertificate(host string, port string) error {
+func (c *GoproxyConfigServer) GetTestCertificate(host string, port string) (*tls.Config, error) {
 
 
 	// Is this an IP address?
@@ -515,22 +550,22 @@ func (c *GoproxyConfig) GetTestCertificate(host string, port string) error {
 	var origcert *x509.Certificate
 
 	// Have to add the port number to connect. Assume 443.
-	if port == "" {
-		port = "443"
-	}
+	//if port == "" {
+	//	port = "443"
+	//}
 
-	var conn *tls.Conn
-	var err error
-
-	conn, err = tls.Dial("tcp", host + ":" + port, &tls.Config{InsecureSkipVerify: true})
-
-	if err != nil {
-		fmt.Printf("[DEBUG] GetTestCertificate - Error while dialing: %v\n", err)
-		return err
-	} else {
-		// Only close the connection if we couldn't connect.
-		defer conn.Close()
-	}
+	//var conn *tls.Conn
+	//var err error
+	//
+	//conn, err = tls.Dial("tcp", host + ":" + port, &tls.Config{InsecureSkipVerify: true})
+	//
+	//if err != nil {
+	//	fmt.Printf("[DEBUG] GetTestCertificate - Error while dialing: %v\n", err)
+	//	return nil, err
+	//} else {
+	//	// Only close the connection if we couldn't connect.
+	//	defer conn.Close()
+	//}
 
 	// Create a new certificate
 	certmu.Lock()
@@ -538,7 +573,7 @@ func (c *GoproxyConfig) GetTestCertificate(host string, port string) error {
 
 	serial, err := rand.Int(rand.Reader, MaxSerialNumber)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	certificateCommonName := host
@@ -549,7 +584,7 @@ func (c *GoproxyConfig) GetTestCertificate(host string, port string) error {
 			Organization: []string{OrganizationName},
 		},
 		SubjectKeyId:          c.keyID,
-		KeyUsage:              x509.KeyUsageKeyEncipherment | x509.KeyUsageDigitalSignature,
+		KeyUsage:              x509.KeyUsageKeyEncipherment | x509.KeyUsageDigitalSignature | x509.KeyUsageCertSign,
 		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
 		BasicConstraintsValid: true,
 		NotBefore:             time.Now().Add(-c.validity),
@@ -570,7 +605,6 @@ func (c *GoproxyConfig) GetTestCertificate(host string, port string) error {
 		tmpl.NotAfter = origcert.NotAfter
 		tmpl.KeyUsage = origcert.KeyUsage
 
-		// TODO: Are we copying the original Authority Key Id
 		tmpl.AuthorityKeyId = origcert.AuthorityKeyId
 		tmpl.IPAddresses = origcert.IPAddresses
 
@@ -582,34 +616,47 @@ func (c *GoproxyConfig) GetTestCertificate(host string, port string) error {
 			//fmt.Printf("  *** Blocked domain.: host=%s  DNSNames[0]=%s\n", originalhostname, hostname )
 			tmpl.DNSNames = []string{host}
 		}
-
-
 	}
 
 
 	raw, err := x509.CreateCertificate(rand.Reader, tmpl, c.Root, c.priv.Public(), c.capriv)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	// Parse certificate bytes so that we have a leaf certificate.
 
 	x509c, err := x509.ParseCertificate(raw)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
-	tlsc, _ := c.NameToCertificate[host]
+	//tlsc, _ := c.NameToCertificate[host]
 
-	tlsc = &tls.Certificate{
+	tlsc := &tls.Certificate{
 		Certificate: [][]byte{raw, c.Root.Raw},
 		PrivateKey:  c.priv,
 		Leaf:        x509c,
 	}
 
-	c.NameToCertificate[host] = tlsc
-	c.Certificates = append(c.Certificates, *tlsc)
+	//c.NameToCertificate[host] = tlsc
+	//c.Certificates = append(c.Certificates, *tlsc)
 
-	return nil
+	// Create new config
+	newtlsconfig := &tls.Config{
+		RootCAs: x509.NewCertPool(),
+	}
+
+	newtlsconfig.RootCAs = c.RootCAs
+	newtlsconfig.Certificates = make([]tls.Certificate, 0)
+	newtlsconfig.Certificates = append(newtlsconfig.Certificates, *tlsc)
+	newtlsconfig.NameToCertificate = make(map[string]*tls.Certificate)
+	newtlsconfig.NameToCertificate[host] = tlsc
+
+	hostmetadata := &HostInfo{}
+	(*hostmetadata).Config = newtlsconfig
+	c.Host[host] = hostmetadata
+
+	return newtlsconfig, nil
 }
 
