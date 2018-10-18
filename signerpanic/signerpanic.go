@@ -81,7 +81,7 @@ func main() {
 	wgmain.Add(1)
 	go func() {
 		defer wgmain.Done()
-		for i := 0; i < 25; i++ {
+		for i := 0; i < 500; i++ {
 			var wg sync.WaitGroup
 			j := random.Intn(len(domains))
 			var host string
