@@ -29,6 +29,7 @@ import (
 	"io/ioutil"
 	"os"
 	//"runtime/debug"
+	"golang.org/x/net/publicsuffix"
 )
 
 // OrganizationName is the name your CA cert will be signed with. It
@@ -259,10 +260,28 @@ func (c *GoproxyConfigServer) certWithCommonName(hostname string, commonName str
 		isIP = true
 	}
 
+	subdomains := GetSubdomains(host)
+
 	// Need a lock to protect the certificate store. Can't block here because we may already be writing a certificate.
 	certmu.RLock()
-	//tlsc, ok := c.NameToCertificate[host]
+
+	// Check for exact match
+	//fmt.Printf("[DEBUG] c.Host=%+v\n", c.Host)
+	//fmt.Printf("[TEST] Checking for %s\n", host)
 	hostmetadata, found := c.Host[host]
+
+	// Check for wildcard match, from most general to most specific.
+	// Note that we still have to check the most specific domain to ensure that a lookup for somedomain.com matches *.somedomain.com.
+	if !found {
+		for ind := len(subdomains) - 1; ind >= 0; ind-- {
+			fmt.Printf("[TEST] Checking for %s\n", "*." + subdomains[ind])
+			hostmetadata, found = c.Host["*." + subdomains[ind]]
+			if found {
+				fmt.Printf("[TEST] Found %s\n", "*." + subdomains[ind])
+				break
+			}
+		}
+	}
 
 	certmu.RUnlock()
 
@@ -672,3 +691,50 @@ func (c *GoproxyConfigServer) GetTestCertificate(host string, port string) (*tls
 	return newtlsconfig, nil
 }
 
+// Returns a list of more general subdomains down to the TLDPlusOne, including the original.
+// ie: "a.b.example.com" returns "a.b.example.com", "b.example.com" and "example.com"
+// Returns most specific to least specific
+func GetSubdomains(domain string) []string {
+	// We should only believe the public suffix if it comes from icann.
+	TLDPlusOne, icann := publicsuffix.PublicSuffix(domain)
+
+	// If not an icann domain, then strip another domain off if we can. If we don't do this
+	// then calls to "www.googleapis.com" will fail to strip off the leading www because
+	// publicsuffix thinks googleapis.com is a TLD.
+	if !icann {
+		newdomain := ""
+		parts := strings.Split(TLDPlusOne, ".")
+		if len(parts) > 1 {
+			for i := 1; i < len(parts); i++ {
+				newdomain += parts[i]
+			}
+		} else {
+			// Can't strip anything off. Just use it.
+			newdomain = TLDPlusOne
+		}
+
+		TLDPlusOne = newdomain
+	}
+
+	if TLDPlusOne == domain {
+		return []string{domain}
+	}
+
+	// Split by periods.
+	parts := strings.Split(domain, ".")
+	length := len(parts)
+	TLDlen := strings.Count(TLDPlusOne, ".") + 1
+
+	domains := make([]string, length - TLDlen + 1)
+	domains[length - TLDlen] = TLDPlusOne
+
+	// Reassemble in reverse order starting from TLDPlusOne
+	for i:= length - TLDlen - 1; i>=0; i-- {
+		domains[i] = parts[i] + "." + domains[i+1]
+	}
+
+	// Discard the original TLD (.com, .org, etc)
+	domains = domains[:length - TLDlen]
+	return domains
+
+}
