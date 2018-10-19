@@ -14,7 +14,6 @@ import (
 	"net/http"
 	"strings"
 	"io/ioutil"
-	//"net/url"
 )
 
 
@@ -291,6 +290,45 @@ func TestSigner(t *testing.T) {
 
 	})
 
-	// TODO: Second certificate fetch retrieves same cert (check serial)
+	Convey("Certificates are cached", t, func() {
+		So (CA_CERT, ShouldNotEqual, nil)
+		So (CA_KEY, ShouldNotEqual, nil)
+		So(GoproxyCaConfig, ShouldNotEqual, nil)
 
+		tlsconfig, err := GoproxyCaConfig.Cert("twitter.com")
+		So(err, ShouldEqual, nil)
+		So(tlsconfig, ShouldNotEqual, nil)
+		//fmt.Printf("[TEST] tlsconfig = %+v\n", tlsconfig)
+
+		// TODO: Retrieve a page with the new certificate?
+
+		cert, ok := tlsconfig.NameToCertificate["twitter.com"]
+		So(ok, ShouldEqual, true)
+		So(cert, ShouldNotEqual, nil)
+
+		cert.Leaf, err = x509.ParseCertificate(cert.Certificate[0])
+
+		// Note: x509 serial numbers are *big.Int so you can't compare them directly.
+		// They must be converted to strings first.
+		serial := cert.Leaf.SerialNumber.String()
+
+		cert.Leaf, err = x509.ParseCertificate(cert.Certificate[0])
+		So(err, ShouldEqual, nil)
+
+		// Get another certificate and ensure the first cert isn't in its dictionary.
+		tlsconfig2, err := GoproxyCaConfig.Cert("twitter.com")
+		So(err, ShouldEqual, nil)
+		So(tlsconfig2, ShouldNotEqual, nil)
+		cert2, ok := tlsconfig2.NameToCertificate["twitter.com"]
+		So(ok, ShouldEqual, true)
+		So(cert2, ShouldNotEqual, nil)
+
+		cert2.Leaf, err = x509.ParseCertificate(cert2.Certificate[0])
+		serial2 := cert2.Leaf.SerialNumber.String()
+
+		So(serial2, ShouldEqual, serial)
+		
+
+
+	})
 }
