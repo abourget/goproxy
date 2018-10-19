@@ -229,10 +229,48 @@ func (c *GoproxyConfigServer) FlushCert(hostname string) {
 	}
 	certmu.Lock()
 	defer certmu.Unlock()
-	//delete(c.NameToCertificate, hostname)
-	delete(c.Host, hostname)
+
+	// Get the pointer to the HostInfo struct as we have to delete all references to it.
+	ptr, found := c.getMatchingTlsConfig(hostname)
+	if found && ptr != nil {
+		// Find all keys that point to it
+		var keys []string
+		for k, hostptr := range c.Host {
+			if ptr == hostptr {
+				keys = append(keys, k)
+			}
+		}
+
+		//fmt.Printf("[DEBUG] Deleting keys: %+v\n", keys)
+		delete(c.Host, hostname)
+		for _, hosttodelete := range keys {
+			delete(c.Host, hosttodelete)
+		}
+	}
 }
 
+// Caller must already hold lock on certmu for this to be safe
+func (c *GoproxyConfigServer) getMatchingTlsConfig(host string) (*HostInfo, bool) {
+	subdomains := GetSubdomains(host)
+
+	hostmetadata, found := c.Host[host]
+
+	// Check for wildcard match, from most general to most specific.
+	// Note that we still have to check the most specific domain to ensure that a lookup for somedomain.com matches *.somedomain.com.
+	if !found {
+		for ind := len(subdomains) - 1; ind >= 0; ind-- {
+			//fmt.Printf("[TEST] Checking for %s\n", "*." + subdomains[ind])
+			hostmetadata, found = c.Host["*." + subdomains[ind]]
+			if found {
+				//fmt.Printf("[TEST] Found %s\n", "*." + subdomains[ind])
+				break
+			}
+		}
+	}
+
+	return hostmetadata, found
+
+}
 // If commonName is provided, it will be used in the certificate. This is used to
 // service non-SNI requests.
 // TODO: commonName may no longer be needed. Refactor to remove it.
@@ -260,28 +298,11 @@ func (c *GoproxyConfigServer) certWithCommonName(hostname string, commonName str
 		isIP = true
 	}
 
-	subdomains := GetSubdomains(host)
-
 	// Need a lock to protect the certificate store. Can't block here because we may already be writing a certificate.
 	certmu.RLock()
 
 	// Check for exact match
-	//fmt.Printf("[DEBUG] c.Host=%+v\n", c.Host)
-	//fmt.Printf("[TEST] Checking for %s\n", host)
-	hostmetadata, found := c.Host[host]
-
-	// Check for wildcard match, from most general to most specific.
-	// Note that we still have to check the most specific domain to ensure that a lookup for somedomain.com matches *.somedomain.com.
-	if !found {
-		for ind := len(subdomains) - 1; ind >= 0; ind-- {
-			fmt.Printf("[TEST] Checking for %s\n", "*." + subdomains[ind])
-			hostmetadata, found = c.Host["*." + subdomains[ind]]
-			if found {
-				fmt.Printf("[TEST] Found %s\n", "*." + subdomains[ind])
-				break
-			}
-		}
-	}
+	hostmetadata, found := c.getMatchingTlsConfig(host)
 
 	certmu.RUnlock()
 

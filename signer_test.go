@@ -173,8 +173,35 @@ func (h ConstantHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 func TestSigner(t *testing.T) {
 	LoadDefaultConfig()
 
+	Convey("FlushCert removes related domains from certificate cache", t, func() {
+		// Microsoft.com cert contains SAN for *.microsoftitacademy.com as of 10/19/2018
+		// Note that it does not contain microsoftitacademy.com so this ensures we don't
+		// fall back on an exact match.
+		host := "microsoft.com"
+		SANhost := "microsoftitacademy.com"
 
-	if true {
+		So (CA_CERT, ShouldNotEqual, nil)
+		So (CA_KEY, ShouldNotEqual, nil)
+		So(GoproxyCaConfig, ShouldNotEqual, nil)
+
+		// Download the certificate
+		tlsconfig, err := GoproxyCaConfig.certWithCommonName(host, "443")
+		So(err, ShouldEqual, nil)
+		So(tlsconfig, ShouldNotEqual, nil)
+
+		// There are lots of domains on this certificate
+		So(len(GoproxyCaConfig.Host), ShouldBeGreaterThan, 20)
+
+		fmt.Printf("[TEST] Len before Flushcert: %d\n", len(GoproxyCaConfig.Host))
+		GoproxyCaConfig.FlushCert(SANhost)
+		fmt.Printf("[TEST] Len after Flushcert: %d\n", len(GoproxyCaConfig.Host))
+		So(len(GoproxyCaConfig.Host), ShouldEqual, 0)
+
+
+	})
+
+
+	if false {
 
 		Convey("TLD+1 matches wildcard SAN", t, func() {
 			// Microsoft.com cert contains SAN for *.microsoftitacademy.com as of 10/19/2018
