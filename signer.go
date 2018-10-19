@@ -295,7 +295,7 @@ func (c *GoproxyConfigServer) certWithCommonName(hostname string, commonName str
 			if !ok {
 				fmt.Printf("[ERROR] Couldn't find certificate in tlsconfig. This should never happen! %s\n", host)
 			}
-			fmt.Printf("[DEBUG] certWithCommonName - Cached cert used. Subject: %+v\n  Issuer: %+v\n  AuthorityKeyId=%v\n", tlsc.Leaf.Subject.CommonName, tlsc.Leaf.Issuer.CommonName, tlsc.Leaf.AuthorityKeyId)
+			//fmt.Printf("[DEBUG] certWithCommonName - Cached cert used. Subject: %+v\n  Issuer: %+v\n  AuthorityKeyId=%v\n", tlsc.Leaf.Subject.CommonName, tlsc.Leaf.Issuer.CommonName, tlsc.Leaf.AuthorityKeyId)
 			var err error
 			if isIP {
 				// Don't verify hostname if we have an ip address
