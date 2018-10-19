@@ -400,6 +400,10 @@ func (c *GoproxyConfigServer) certWithCommonName(hostname string, commonName str
 		}
 	}
 
+	//if !badcert {
+	//	fmt.Printf("[DEBUG] Fetched downstream certificate. Subject: %+v\n  Issuer: %+v\n  Alternative Names: %v\n", origcert.Subject.CommonName, origcert.Issuer.CommonName, origcert.DNSNames)
+	//}
+
 	// Create a new certificate.
 	serial, err := rand.Int(rand.Reader, MaxSerialNumber)
 	if err != nil {
@@ -409,7 +413,6 @@ func (c *GoproxyConfigServer) certWithCommonName(hostname string, commonName str
 	certificateCommonName := host
 	if len(commonName) > 0 {
 		certificateCommonName = commonName
-		//fmt.Printf("  *** Overrode common name with %s \n", commonName)
 	}
 
 	// Determine the validity period. This has to be set when the certificate is created.
@@ -529,6 +532,15 @@ func (c *GoproxyConfigServer) certWithCommonName(hostname string, commonName str
 		(*hostmetadata).Config = newtlsconfig
 
 		c.Host[host] = hostmetadata
+
+		// Parse Subject alternative names. Point all SANs at the same HostInfo object because they share certs.
+		for _, sanhost := range origcert.DNSNames {
+			if sanhost != host {
+				//fmt.Printf("[DEBUG] Pointing %s at cert.\n", sanhost)
+				newtlsconfig.NameToCertificate[sanhost] = tlsc
+				c.Host[sanhost] = hostmetadata
+			}
+		}
 		return newtlsconfig, nil
 	}
 
