@@ -291,4 +291,6 @@ func TestSigner(t *testing.T) {
 
 	})
 
+	// TODO: Second certificate fetch retrieves same cert (check serial)
+
 }
