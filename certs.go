@@ -38,7 +38,7 @@ func rootCAs(c *rootcerts.Config) *tls.Config {
 		// This must be set to true for our custom certificate validator to be called. If set to false
 		// (the usual setting), then our callback will only be called on successfully validated websites.
 		InsecureSkipVerify: true,
-		MinVersion:         tls.VersionTLS10,
+		MinVersion:         tls.VersionTLS11,
 		MaxVersion:         tls.VersionTLS12,
 		Renegotiation:      tls.RenegotiateFreelyAsClient,
 	}

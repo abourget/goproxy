@@ -408,7 +408,7 @@ func rootCAs(c *rootcerts.Config) *tls.Config {
 
 	t := &tls.Config{
 		InsecureSkipVerify: true,
-		MinVersion:         tls.VersionTLS10,
+		MinVersion:         tls.VersionTLS11,
 		MaxVersion:         tls.VersionTLS12,
 		Renegotiation:      tls.RenegotiateFreelyAsClient,
 	}

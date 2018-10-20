@@ -230,57 +230,61 @@ func (c *GoproxyConfigServer) FlushCert(hostname string) {
 	certmu.Lock()
 	defer certmu.Unlock()
 
-	// Get the pointer to the HostInfo struct as we have to delete all references to it.
-	ptr, found := c.getMatchingTlsConfig(hostname)
-	if found && ptr != nil {
-		// Find all keys that point to it
-		var keys []string
-		for k, hostptr := range c.Host {
-			if ptr == hostptr {
-				keys = append(keys, k)
-			}
-		}
+	delete(c.Host, hostname)
 
-		//fmt.Printf("[DEBUG] Deleting keys: %+v\n", keys)
-		delete(c.Host, hostname)
-		for _, hosttodelete := range keys {
-			delete(c.Host, hosttodelete)
-		}
-	}
+	// Get the pointer to the HostInfo struct as we have to delete all references to it.
+	//ptr, found := c.getMatchingTlsConfig(hostname)
+	//if found && ptr != nil {
+	//	// Find all keys that point to it
+	//	var keys []string
+	//	for k, hostptr := range c.Host {
+	//		if ptr == hostptr {
+	//			keys = append(keys, k)
+	//		}
+	//	}
+	//
+	//	//fmt.Printf("[DEBUG] Deleting keys: %+v\n", keys)
+	//
+	//	for _, hosttodelete := range keys {
+	//		delete(c.Host, hosttodelete)
+	//	}
+	//}
 }
 
 // Caller must already hold lock on certmu for this to be safe
-func (c *GoproxyConfigServer) getMatchingTlsConfig(host string) (*HostInfo, bool) {
-	subdomains := GetSubdomains(host)
-
-	hostmetadata, found := c.Host[host]
-
-	// Check for wildcard match, from most general to most specific.
-	// Note that we still have to check the most specific domain to ensure that a lookup for somedomain.com matches *.somedomain.com.
-	if !found {
-		for ind := len(subdomains) - 1; ind >= 0; ind-- {
-			//fmt.Printf("[TEST] Checking for %s\n", "*." + subdomains[ind])
-			hostmetadata, found = c.Host["*." + subdomains[ind]]
-			if found {
-				//fmt.Printf("[TEST] Found %s\n", "*." + subdomains[ind])
-				break
-			}
-		}
-	}
-
-	return hostmetadata, found
-
-}
+// RLS 10/20/2018 - Browsers are required to fetch certificates for each subdomain, even if they specify alternative
+// names.
+//func (c *GoproxyConfigServer) getMatchingTlsConfig(host string) (*HostInfo, bool) {
+//	subdomains := GetSubdomains(host)
+//
+//	hostmetadata, found := c.Host[host]
+//
+//	// Check for wildcard match, from most general to most specific.
+//	// Note that we still have to check the most specific domain to ensure that a lookup for somedomain.com matches *.somedomain.com.
+//	if !found {
+//		for ind := len(subdomains) - 1; ind >= 0; ind-- {
+//			//fmt.Printf("[TEST] Checking for %s\n", "*." + subdomains[ind])
+//			hostmetadata, found = c.Host["*." + subdomains[ind]]
+//			if found {
+//				//fmt.Printf("[TEST] Found %s\n", "*." + subdomains[ind])
+//				break
+//			}
+//		}
+//	}
+//
+//	return hostmetadata, found
+//
+//}
 // If commonName is provided, it will be used in the certificate. This is used to
 // service non-SNI requests.
 // TODO: commonName may no longer be needed. Refactor to remove it.
 func (c *GoproxyConfigServer) certWithCommonName(hostname string, commonName string) (*tls.Config, error) {
 
-	//trace := false
-	//if strings.Contains(hostname, ".badssl.com") {
-	//	fmt.Printf("[DEBUG] Starting trace: %s\n", hostname)
-	//	trace = true
-	//}
+	/*trace := false
+	if strings.Contains(hostname, ".badssl.com") {
+		fmt.Printf("[DEBUG] Starting trace: %s\n", hostname)
+		trace = true
+	}*/
 
 	// Remove the port if it exists.
 	// host must contain a domain/IP address only at this point.
@@ -302,17 +306,17 @@ func (c *GoproxyConfigServer) certWithCommonName(hostname string, commonName str
 	certmu.RLock()
 
 	// Check for exact match
-	hostmetadata, found := c.getMatchingTlsConfig(host)
-
+	//if trace {
+	//	fmt.Printf("[DEBUG] Looking for existing certificate... (%s)\n", host)
+	//}
+	//hostmetadata, found := c.getMatchingTlsConfig(host)
+	hostmetadata, found := c.Host[host]
 	certmu.RUnlock()
 
 	// In a race condition, it is possible that multiple threads could attempt to create a metadata entry. That's ok
 	// because in the worst cast, we'll fetch the downstream certificate multiple times on the initial call.
 	if !found {
 		hostmetadata = &HostInfo{}
-		//certmu.Lock()
-		//c.Host[host] = hostmetadata
-		//certmu.Unlock()
 	}
 
 	// Get a lock only on this domain name
@@ -322,16 +326,18 @@ func (c *GoproxyConfigServer) certWithCommonName(hostname string, commonName str
 
 	// A write lock on the HostInfo struct is held at this point. We can write to it freely.
 	if found {
-		//if experiment {
-		//	//fmt.Printf("  *** Cached cert used for %s.\n     Subject: %+v\n     DNS Names:%+v\n     IssuingCertificateURL: %+v\n     Issuer: %+v\n     Valid: %+v - %+v\n", hostname, tlsc.Leaf.Subject, tlsc.Leaf.DNSNames, tlsc.Leaf.IssuingCertificateURL, tlsc.Leaf.Issuer, tlsc.Leaf.NotBefore, tlsc.Leaf.NotAfter)
+		//if trace {
+		//	fmt.Printf("[DEBUG] Cached cert used for %s.\n     Subject: %+v\n     DNS Names:%+v\n     IssuingCertificateURL: %+v\n     Issuer: %+v\n     Valid: %+v - %+v\n", hostname, tlsc.Leaf.Subject, tlsc.Leaf.DNSNames, tlsc.Leaf.IssuingCertificateURL, tlsc.Leaf.Issuer, tlsc.Leaf.NotBefore, tlsc.Leaf.NotAfter)
 		//}
 
 		// Check validity of the certificate for hostname match, expiry, etc. In
 		// particular, if the cached certificate has expired, create a new one.
 		// Don't check more than once an hour.
 		if hostmetadata.LastVerify.Before(time.Now().Add(-60 * time.Minute)) {
-			//fmt.Printf("[DEBUG] Verifying certificate [%s]\n", host)
 			tlsc, ok := (*hostmetadata).Config.NameToCertificate[host]
+			//if trace {
+			//	fmt.Printf("[DEBUG] Verifying certificate [%s]\n", host)
+			//}
 			if !ok {
 				fmt.Printf("[ERROR] Couldn't find certificate in tlsconfig. This should never happen! %s\n", host)
 			}
@@ -358,13 +364,15 @@ func (c *GoproxyConfigServer) certWithCommonName(hostname string, commonName str
 				return (*hostmetadata).Config, nil
 			}
 		} else {
-			//fmt.Printf("[DEBUG] Skipping certificate verify [%s]\n", host)
+			//if trace {
+			//	fmt.Printf("[DEBUG] Skipping certificate verify [%s]\n", host)
+			//}
 			return (*hostmetadata).Config, nil
 		}
 	}
 
-	//if experiment {
-	//	fmt.Println("[DEBUG] Signer.go - about to generate new certificate.")
+	//if trace {
+	//	fmt.Printf("[DEBUG] Signer.go - Generating new certificate. %s\n", host)
 	//}
 
 	// Begin downstream certificate retrieval and copy logic
@@ -440,7 +448,7 @@ func (c *GoproxyConfigServer) certWithCommonName(hostname string, commonName str
 		}
 	}
 
-	//if !badcert {
+	//if trace {
 	//	fmt.Printf("[DEBUG] Fetched downstream certificate. Subject: %+v\n  Issuer: %+v\n  Alternative Names: %v\n", origcert.Subject.CommonName, origcert.Issuer.CommonName, origcert.DNSNames)
 	//}
 
@@ -563,6 +571,9 @@ func (c *GoproxyConfigServer) certWithCommonName(hostname string, commonName str
 		newtlsconfig.Certificates = append(newtlsconfig.Certificates, *tlsc)
 		newtlsconfig.NameToCertificate = make(map[string]*tls.Certificate)
 		newtlsconfig.NameToCertificate[host] = tlsc
+		newtlsconfig.MinVersion = tls.VersionTLS11
+		newtlsconfig.MaxVersion = tls.VersionTLS12
+		newtlsconfig.Renegotiation = tls.RenegotiateFreelyAsClient
 
 		// Hook the certificate chain verification
 		//if c.VerifyPeerCertificate != nil {
@@ -574,13 +585,13 @@ func (c *GoproxyConfigServer) certWithCommonName(hostname string, commonName str
 		c.Host[host] = hostmetadata
 
 		// Parse Subject alternative names. Point all SANs at the same HostInfo object because they share certs.
-		for _, sanhost := range origcert.DNSNames {
-			if sanhost != host {
-				//fmt.Printf("[DEBUG] Pointing %s at cert.\n", sanhost)
-				newtlsconfig.NameToCertificate[sanhost] = tlsc
-				c.Host[sanhost] = hostmetadata
-			}
-		}
+		//for _, sanhost := range origcert.DNSNames {
+		//	if sanhost != host {
+		//		//fmt.Printf("[DEBUG] Pointing %s at cert.\n", sanhost)
+		//		newtlsconfig.NameToCertificate[sanhost] = tlsc
+		//		c.Host[sanhost] = hostmetadata
+		//	}
+		//}
 		return newtlsconfig, nil
 	}
 

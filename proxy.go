@@ -146,6 +146,7 @@ func NewProxyHttpServer() *ProxyHttpServer {
 			ExpectContinueTimeout: 30 * time.Second,
 			MaxIdleConns:          20,
 			IdleConnTimeout:       60 * time.Second,
+
 			//DialContext: (&net.Dialer{
 			//	Timeout:   30 * time.Second,
 			//	KeepAlive: 30 * time.Second,

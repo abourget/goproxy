@@ -170,40 +170,184 @@ func (h ConstantHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte(h))
 }
 
+// Sets up a fake server having the given host name and simulates a client TLS request to it.
+// The certificate is downloaded from the actual website.
+//
+// Returns:
+// Read certificate: bool
+// Handshake succeeded: bool
+// Read body: bool
+// Body: []byte
+func simulateHttpsRequest(host string) (bool, bool, bool, []byte) {
+	// Preload the cert cache
+	tlsconfig, err := GoproxyCaConfig.certWithCommonName(host, "443")
+
+	if tlsconfig == nil || err != nil {
+		fmt.Printf("[TEST] Unexpected error - couldn't fetch certificate.")
+		return false, false, false, nil
+	}
+
+	expected := "WINSTON OK"
+	// To use a domain name other than localhost, we have to set up a pipe and manage the connection ourselves.
+	var pipe *fasthttputil.PipeConns
+	pipe = fasthttputil.NewPipeConns()
+
+	// Client needs the public key of the cert
+	// This confirms that the certificate works for the SAN host.
+	cert, ok := tlsconfig.NameToCertificate[host]
+	So(ok, ShouldEqual, true)
+	So(cert, ShouldNotEqual, nil)
+	certpool := x509.NewCertPool()
+	certpool.AddCert(cert.Leaf)
+
+	fakeclient := http.Client{
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{
+				RootCAs: certpool,
+				InsecureSkipVerify: false,
+			},
+			DialContext: func(ctx context.Context, network string, addr string) (net.Conn, error) {
+				return pipe.Conn1(), nil
+			},
+		},
+	}
+
+	// Simulate a listener (server)
+	var wg sync.WaitGroup
+	wg.Add(1)
+	var handshakesucceeded bool
+	go func() {
+		defer wg.Done()
+		// We'll serve the original microsoft.com certificate to the myservice.xbox.com domain.
+		tlsconfig, err := GoproxyCaConfig.certWithCommonName(host, "443")
+
+		tlsConnClient, err := vhost.TLS(pipe.Conn2())
+		timeoutDuration := time.Duration(5) * time.Second
+		if err != nil {
+			fmt.Printf("[ERROR] Server couldn't open pipe to fake client. Unmodified https response not available. $+v\n", err)
+			os.Exit(1)
+		}
+
+		tlsConnClient.SetReadDeadline(time.Now().Add(timeoutDuration))
+		tlsConnClient.SetWriteDeadline(time.Now().Add(timeoutDuration))
+
+		rawClientTls := tls.Server(tlsConnClient, tlsconfig)
+		rawClientTls.SetReadDeadline(time.Now().Add(timeoutDuration))
+		rawClientTls.SetWriteDeadline(time.Now().Add(timeoutDuration))
+
+		err = rawClientTls.Handshake()
+		if err==nil {
+			handshakesucceeded = true
+
+			// Return a string so we can confirm it worked
+			io.WriteString(rawClientTls, "HTTP/1.1 200 OK\r\n\r\n")
+			io.WriteString(rawClientTls, expected)
+			fmt.Printf("[TEST] Server wrote to client: [%s]\n", expected)
+
+			// Give it some time to complete or we may close the connection before the body can be read.
+			time.Sleep(500 * time.Millisecond)
+
+		} /*else {
+				fmt.Printf("[TEST] Handshake failed: %v\n", err)
+			}*/
+
+		tlsConnClient.Close()
+		rawClientTls.Close()
+	}()
+
+	// Initiate a request. This must be done in a new goroutine so the handshakes can complete.
+	// We don't care about sending valid headers or what the response is.
+	var readbody bool
+	var body []byte
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		request, _ := http.NewRequest("GET", "https://" + host + ":443", nil)
+
+		// Perform TLS handshake, read body and ensure it's what we expected.
+		resp, err := fakeclient.Do(request)
+		if resp != nil && err == nil {
+			body, err = ioutil.ReadAll(resp.Body)
+			if err == nil {
+				fmt.Printf("[TEST] Client read body [%s]\n", string(body))
+				if string(body) == expected {
+					readbody = true
+				}
+			} else {
+				//fmt.Printf("[TEST] Couldn't read body. err=%v\n", err)
+			}
+			resp.Body.Close()
+		} else {
+			//fmt.Printf("[TEST] No response received by client. err=%v\n", err)
+		}
+
+	}()
+
+	// Wait until they complete
+	wg.Wait()
+
+	return true, handshakesucceeded, readbody, body
+
+}
+
 func TestSigner(t *testing.T) {
 	LoadDefaultConfig()
 
-	Convey("FlushCert removes related domains from certificate cache", t, func() {
-		// Microsoft.com cert contains SAN for *.microsoftitacademy.com as of 10/19/2018
-		// Note that it does not contain microsoftitacademy.com so this ensures we don't
-		// fall back on an exact match.
-		host := "microsoft.com"
-		SANhost := "microsoftitacademy.com"
+	Convey("Expired SSL certificates are rejected", t, func() {
+		host := "expired.badssl.com"
 
 		So (CA_CERT, ShouldNotEqual, nil)
 		So (CA_KEY, ShouldNotEqual, nil)
 		So(GoproxyCaConfig, ShouldNotEqual, nil)
 
-		// Download the certificate
-		tlsconfig, err := GoproxyCaConfig.certWithCommonName(host, "443")
-		So(err, ShouldEqual, nil)
-		So(tlsconfig, ShouldNotEqual, nil)
 
-		// There are lots of domains on this certificate
-		So(len(GoproxyCaConfig.Host), ShouldBeGreaterThan, 20)
+		// Test that encrypted tunnel can be established to SANHost using the cached certificate
+		fmt.Println()
+		fmt.Printf("[TEST] Starting expired certificate test\n")
 
-		fmt.Printf("[TEST] Len before Flushcert: %d\n", len(GoproxyCaConfig.Host))
-		GoproxyCaConfig.FlushCert(SANhost)
-		fmt.Printf("[TEST] Len after Flushcert: %d\n", len(GoproxyCaConfig.Host))
-		So(len(GoproxyCaConfig.Host), ShouldEqual, 0)
+		readcertificate, handshakesucceeded, readbody, _ := simulateHttpsRequest(host)
 
+		So(readcertificate, ShouldEqual, true)
+		So(handshakesucceeded, ShouldEqual, false)
+		So(readbody, ShouldEqual, false)
 
 	})
 
 
-	if false {
 
-		Convey("TLD+1 matches wildcard SAN", t, func() {
+	if true {
+
+		/*Convey("FlushCert removes related domains from certificate cache", t, func() {
+			// Microsoft.com cert contains SAN for *.microsoftitacademy.com as of 10/19/2018
+			// Note that it does not contain microsoftitacademy.com so this ensures we don't
+			// fall back on an exact match.
+			host := "microsoft.com"
+			SANhost := "microsoftitacademy.com"
+
+			So (CA_CERT, ShouldNotEqual, nil)
+			So (CA_KEY, ShouldNotEqual, nil)
+			So(GoproxyCaConfig, ShouldNotEqual, nil)
+
+			// Clear out the cache so other tests don't interfere
+			GoproxyCaConfig.Host = make(map[string]*HostInfo)
+
+			// Download the certificate
+			tlsconfig, err := GoproxyCaConfig.certWithCommonName(host, "443")
+			So(err, ShouldEqual, nil)
+			So(tlsconfig, ShouldNotEqual, nil)
+
+			// There are lots of domains on this certificate
+			So(len(GoproxyCaConfig.Host), ShouldBeGreaterThan, 20)
+
+			fmt.Printf("[TEST] Len before Flushcert: %d\n", len(GoproxyCaConfig.Host))
+			GoproxyCaConfig.FlushCert(SANhost)
+			fmt.Printf("[TEST] Len after Flushcert: %d\n", len(GoproxyCaConfig.Host))
+			So(len(GoproxyCaConfig.Host), ShouldEqual, 0)
+
+
+		})*/
+
+		/*Convey("TLD+1 matches wildcard SAN", t, func() {
 			// Microsoft.com cert contains SAN for *.microsoftitacademy.com as of 10/19/2018
 			// Note that it does not contain microsoftitacademy.com so this ensures we don't
 			// fall back on an exact match.
@@ -256,9 +400,9 @@ func TestSigner(t *testing.T) {
 
 			So(serial, ShouldEqual, serialSAN)
 
-		})
+		})*/
 
-		Convey("subdomain matches wildcard SAN", t, func() {
+		/*Convey("subdomain matches wildcard SAN", t, func() {
 			// Microsoft.com cert contains SAN for *.microsoftitacademy.com as of 10/19/2018
 			// Note that it does not contain microsoftitacademy.com so this ensures we don't
 			// fall back on an exact match.
@@ -311,9 +455,9 @@ func TestSigner(t *testing.T) {
 
 			So(serial, ShouldEqual, serialSAN)
 
-		})
+		})*/
 
-		Convey("Two level subdomain matches wildcard SAN", t, func() {
+		/*Convey("Two level subdomain matches wildcard SAN", t, func() {
 			// Microsoft.com cert contains SAN for *.microsoftitacademy.com as of 10/19/2018
 			// Note that it does not contain microsoftitacademy.com so this ensures we don't
 			// fall back on an exact match.
@@ -366,9 +510,9 @@ func TestSigner(t *testing.T) {
 
 			So(serial, ShouldEqual, serialSAN)
 
-		})
+		})*/
 
-		Convey("Can establish TLS tunnel for wildcard domains listed in SAN extension", t, func() {
+		/*Convey("Can establish TLS tunnel for wildcard domains listed in SAN extension", t, func() {
 			// Microsoft.com cert contains SAN for xbox.com as of 10/19/2018
 			host := "microsoft.com"
 			SANhost := "somedomain.microsoftitacademy.com"
@@ -493,9 +637,9 @@ func TestSigner(t *testing.T) {
 			So(handshakesucceeded, ShouldEqual, true)
 			So(readbody, ShouldEqual, true)
 
-		})
+		})*/
 
-		Convey("Can establish TLS tunnel for domains listed in SAN extension", t, func() {
+		/*Convey("Can establish TLS tunnel for domains listed in SAN extension", t, func() {
 			// Microsoft.com cert contains SAN for xbox.com as of 10/19/2018
 			host := "microsoft.com"
 			SANhost := "myservice.xbox.com"
@@ -619,9 +763,9 @@ func TestSigner(t *testing.T) {
 			So(handshakesucceeded, ShouldEqual, true)
 			So(readbody, ShouldEqual, true)
 
-		})
+		})*/
 
-		Convey("Cannot establish TLS tunnel for domains not listed in SAN extension", t, func() {
+		/*Convey("Cannot establish TLS tunnel for domains not listed in SAN extension", t, func() {
 			// Microsoft.com cert contains SAN for xbox.com as of 10/19/2018
 			host := "microsoft.com"
 			SANhost := "myservice.xbox.com"
@@ -703,9 +847,9 @@ func TestSigner(t *testing.T) {
 					// Give it some time to complete or we may close the connection before the body can be read.
 					time.Sleep(500 * time.Millisecond)
 
-				} /*else {
+				} *//*else {
 				fmt.Printf("[TEST] Handshake failed: %v\n", err)
-			}*/
+			}*//*
 
 				tlsConnClient.Close()
 				rawClientTls.Close()
@@ -746,7 +890,7 @@ func TestSigner(t *testing.T) {
 			So(handshakesucceeded, ShouldEqual, false)
 			So(readbody, ShouldEqual, false)
 
-		})
+		})*/
 
 
 		Convey("Can retrieve valid certificate", t, func() {
