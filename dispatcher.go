@@ -172,33 +172,6 @@ func (proxy *ProxyHttpServer) DispatchRequestHandlers(ctx *ProxyCtx) {
 			break
 		case MITM:
 			panic("MITM doesn't make sense when we are already parsing the request")
-		//case WELCOME:
-		//	// Test - 302 redirect them to winston homepage
-		//
-		//	title := "Welcome to Winston"
-		//	errorcode := "302 Found"
-		//	text := "Welcome to Winston"
-		//	proceed := ""
-		//
-		//	body := strings.Replace(blockedhtml, "%BLOCKED%", errorcode, 1)
-		//	body = strings.Replace(body, "%TITLE%", title, 1)
-		//	body = strings.Replace(body, "%TEXT%", text, 1)
-		//	body = strings.Replace(body, "%PROCEED%", proceed, 1)
-		//	ctx.NewResponse(302, "text/html; charset=utf-8", body)
-		//
-		//	// slice port from host
-		//	host := ctx.Host()
-		//	if i := strings.Index(host, ":") ; i != -1 {
-		//		host = host[:i]
-		//	}
-		//
-		//	redirecturl := "http://winston.conf/pages/welcome?url=" + host
-		//	ctx.Resp.Header.Set("Location", redirecturl)
-		//	ctx.Resp.Header.Add("Set-Cookie", "winston=yes; domain=winston.conf; Max-Age=3600;")
-		//	ctx.ForwardResponse(ctx.Resp)
-		//
-		//	return
-
 		case REJECT:
 			ext := filepath.Ext(ctx.Req.URL.Path)
 			//fmt.Printf("[DEBUG] DispatchRequestHandlers() - REJECT. [%s]\n", ctx.host)

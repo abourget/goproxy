@@ -48,7 +48,6 @@ const (
 	MITM    // Continue with Man-in-the-middle attempt, either through HTTP or HTTPS.
 	REJECT  // Reject the CONNECT attempt outright
 	SIGNATURE	// Return the client TLS signature (RLS 3-5-2018)
-	WELCOME		// Captive portal detection (RLS 10-30-2018)
 )
 
 // About CONNECT requests
