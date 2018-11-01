@@ -162,8 +162,6 @@ func NewProxyHttpServer() *ProxyHttpServer {
 		},
 	}
 
-
-
 	// RLS 3/18/2018 - Add session ticket support
 	// Setting a relatively low number will force tickets out more quickly, helping to prevent against snooping attacks.
 	proxy.Transport.TLSClientConfig.ClientSessionCache = tls.NewLRUClientSessionCache(25)
@@ -267,7 +265,7 @@ func (proxy *ProxyHttpServer) ServeHTTP(w http.ResponseWriter, r *http.Request) 
 	//}
 
 	// Check for websockets request. These need to be tunneled like a CONNECT request.
-	//fmt.Printf("[DEBUG] ServeHTTP() called [%s] %+v\n", ctx.host, r)
+	//fmt.Printf("[DEBUG] ServeHTTP() called [%s] %+v\n", ctx.host, r.URL)
 	nonhttpprotocol := false
 	if ctx.Req.Header.Get("Upgrade") != "" {
 		nonhttpprotocol = true
@@ -503,8 +501,7 @@ func (proxy *ProxyHttpServer) ListenAndServeTLS(httpsAddr string) error {
 			}
 
 			// TEST
-			// Set up a shar
-			// ed buffer so the second request can see the original request body
+			// Set up a shared buffer so the second request can see the original request body
 			//var buf []byte
 			if proxy.Trace != nil {
 				shouldTrace := proxy.Trace(ctx)

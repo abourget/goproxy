@@ -394,7 +394,13 @@ func (c *GoproxyConfigServer) certWithCommonName(hostname string, commonName str
 
 		var conn *tls.Conn
 
-		conn, err = tls.DialWithDialer(c.bypassDnsDialer, "tcp", host + ":" + port, &tls.Config{InsecureSkipVerify: true})
+		// RLS - Disable support for TLS 1.0
+		conn, err = tls.DialWithDialer(c.bypassDnsDialer, "tcp", host + ":" + port,
+			&tls.Config{
+				InsecureSkipVerify: true,
+				MinVersion: tls.VersionTLS11,
+				MaxVersion: tls.VersionTLS12,
+			})
 
 		if err != nil {
 			fmt.Printf("[DEBUG] Signer.go - Error while dialing %s: %v\n", host, err)

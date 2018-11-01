@@ -293,29 +293,27 @@ func simulateHttpsRequest(host string) (bool, bool, bool, []byte) {
 func TestSigner(t *testing.T) {
 	LoadDefaultConfig()
 
-	Convey("Expired SSL certificates are rejected", t, func() {
-		host := "expired.badssl.com"
-
-		So (CA_CERT, ShouldNotEqual, nil)
-		So (CA_KEY, ShouldNotEqual, nil)
-		So(GoproxyCaConfig, ShouldNotEqual, nil)
-
-
-		// Test that encrypted tunnel can be established to SANHost using the cached certificate
-		fmt.Println()
-		fmt.Printf("[TEST] Starting expired certificate test\n")
-
-		readcertificate, handshakesucceeded, readbody, _ := simulateHttpsRequest(host)
-
-		So(readcertificate, ShouldEqual, true)
-		So(handshakesucceeded, ShouldEqual, false)
-		So(readbody, ShouldEqual, false)
-
-	})
-
-
-
 	if true {
+
+		Convey("Expired SSL certificates are rejected", t, func() {
+			host := "expired.badssl.com"
+
+			So (CA_CERT, ShouldNotEqual, nil)
+			So (CA_KEY, ShouldNotEqual, nil)
+			So(GoproxyCaConfig, ShouldNotEqual, nil)
+
+
+			// Test that encrypted tunnel can be established to SANHost using the cached certificate
+			fmt.Println()
+			fmt.Printf("[TEST] Starting expired certificate test\n")
+
+			readcertificate, handshakesucceeded, readbody, _ := simulateHttpsRequest(host)
+
+			So(readcertificate, ShouldEqual, true)
+			So(handshakesucceeded, ShouldEqual, false)
+			So(readbody, ShouldEqual, false)
+
+		})
 
 		/*Convey("FlushCert removes related domains from certificate cache", t, func() {
 			// Microsoft.com cert contains SAN for *.microsoftitacademy.com as of 10/19/2018

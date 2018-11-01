@@ -608,7 +608,7 @@ func (t *NonHTTPRoundTripper) dialConn(ctx context.Context, cm connectMethod, or
 	/*if trace != nil {
 		fmt.Printf("*** KCPTransport.dialConn() - pconn seems to be ok. Starting loops. \n")
 	}*/
-	fmt.Printf("[DEBUG] dialConn() 4 - original request: %s\n\n", string(*originalrequest))
+	//fmt.Printf("[DEBUG] dialConn() 4 - original request: %s\n\n", string(*originalrequest))
 	go pconn.readLoop()
 	go pconn.writeLoop(originalrequest)
 	return pconn, nil

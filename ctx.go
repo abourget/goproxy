@@ -144,7 +144,6 @@ type ProxyCtx struct {
 	Referrer		string		// Referrer taken from HTTP request. Used for logging.
 	CookiesModified		int		// # of cookies blocked or modified for the current request. Used for logging.
 	ElementsModified	int		// # of page elements removed or modified for the current request. Used for logging.
-
 }
 
 // Append a message to the context. This will be sent back to the client as a "Winston-Response" header.

@@ -50,7 +50,6 @@ func (ctx *ProxyCtx) RoundTrip(req *http.Request) (*http.Response, error) {
 				ctx.ShadowTransport = ctx.Proxy.PrivateNetwork.Transport()
 				if ctx.ShadowTransport == nil {
 					tr = ctx.Proxy.Transport
-
 					// Ensures we report the correct cloaked status back to the caller
 					ctx.PrivateNetwork = false
 				} else {
@@ -139,6 +138,7 @@ func (ctx *ProxyCtx) wrapTransport(tr *http.RoundTripper) RoundTripper {
 		}*/
 
 		//fmt.Println("[DEBUG] GoProxy.RoundTripper() Start")
+
 		resp, err := (*tr).RoundTrip(req)
 
 		// Record the original status code
