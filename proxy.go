@@ -435,7 +435,7 @@ func (proxy *ProxyHttpServer) ListenAndServeTLS(httpsAddr string) error {
 
 			if Host == "" {
 				Host = nonSNIHost.String()
-				log.Printf("[DEBUG] Non-SNI or non-TLS protocol detected on port 443 - destination: [%s]\n", Host)
+				proxy.Logf(1, "[DEBUG] Non-SNI or non-TLS protocol detected on port 443 - destination: [%s]\n", Host)
 			}
 
 			// Check for local host
