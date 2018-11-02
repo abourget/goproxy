@@ -67,22 +67,20 @@ func (proxy *ProxyHttpServer) HandleDone(f Handler) {
 func (proxy *ProxyHttpServer) dispatchConnectHandlers(ctx *ProxyCtx) {
 
 	//fmt.Printf("[DEBUG] dispatchConnectHandlers() [%s]\n", ctx.host)
-	//trace := false
-	//if strings.Contains(ctx.host, "winston.conf") {
+	trace := ctx.Trace
+	//if strings.Contains(ctx.host, "204.141") {
 	//	trace = true
 	//}
 	// We haven't made a connection to the destination site yet. Here we're just hijacking
 	// the connection back to the local client.
 	hij, ok := ctx.ResponseWriter.(http.Hijacker)
 	if !ok {
-		//fmt.Printf("[DEBUG] dispatchConnectHandlers() err 1\n")
 		panic("httpserver does not support hijacking")
 	}
 
 	// This sets up a new connection to the original client
 	conn, _, err := hij.Hijack()
 	if err != nil {
-		//fmt.Printf("[DEBUG] dispatchConnectHandlers() err 2\n")
 		fmt.Printf("[DEBUG] dispatchConnectHandlers() Hijack error [%s]\n", ctx.host, err)
 		panic("cannot hijack connection " + err.Error())
 	}
@@ -103,15 +101,15 @@ func (proxy *ProxyHttpServer) dispatchConnectHandlers(ctx *ProxyCtx) {
 
 		case FORWARD:
 			// Don't update allowed metrics for whitelisted sites
-			//if trace {
-			//	fmt.Printf("[DEBUG] dispatchConnectHandlers() - FORWARD. [%s]\n", ctx.host)
-			//}
+			if trace {
+				fmt.Printf("[DEBUG] dispatchConnectHandlers() - FORWARD. [%s]\n", ctx.host)
+			}
 			break
 
 		case MITM:
-			//if trace {
-			//	fmt.Printf("[DEBUG] dispatchConnectHandlers() - MITM. [%s]\n", ctx.host)
-			//}
+			if trace {
+				fmt.Printf("[DEBUG] dispatchConnectHandlers() - MITM. [%s]\n", ctx.host)
+			}
 			err := ctx.ManInTheMiddle()
 			if err != nil {
 				ctx.Logf(1, "ERROR: Couldn't MITM: %s", err)
@@ -120,9 +118,9 @@ func (proxy *ProxyHttpServer) dispatchConnectHandlers(ctx *ProxyCtx) {
 			return
 
 		case REJECT:
-			//if trace {
-			//	fmt.Printf("[DEBUG] dispatchConnectHandlers() - REJECT. [%s]\n", ctx.host)
-			//}
+			if trace {
+				fmt.Printf("[DEBUG] dispatchConnectHandlers() - REJECT. [%s]\n", ctx.host)
+			}
 			ctx.RejectConnect()
 
 			// What happens if we don't return anything?
@@ -130,20 +128,23 @@ func (proxy *ProxyHttpServer) dispatchConnectHandlers(ctx *ProxyCtx) {
 		case SIGNATURE:
 			return
 		case DONE:
+			if trace {
+				fmt.Printf("[DEBUG] dispatchConnectHandlers() - DONE. [%s]\n", ctx.host)
+			}
 			return
 		default:
 			panic(fmt.Sprintf("Invalid value %v for Next after calling %v", then, handler))
 		}
 	}
 
-	//if trace {
-	//	fmt.Printf("[DEBUG] dispatchConnectHandlers() - about to call ForwardConnect(). [%s]\n", ctx.host)
-	//}
+	if trace {
+		fmt.Printf("[DEBUG] dispatchConnectHandlers() -> ForwardConnect(). [%s]\n", ctx.host)
+	}
 
 	if err := ctx.ForwardConnect(); err != nil {
-		//if trace {
-		//	fmt.Printf("[DEBUG] dispatchConnectHandlers() - err from ForwardConnect(). [%s]\n", ctx.host, err)
-		//}
+		if trace {
+			fmt.Printf("[DEBUG] dispatchConnectHandlers() - err from ForwardConnect(). [%s]\n", ctx.host, err)
+		}
 		ctx.Logf(1, "ERROR: Failed forwarding in fallback clause: %s", err)
 	}
 

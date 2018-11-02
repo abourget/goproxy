@@ -373,18 +373,29 @@ func (proxy *ProxyHttpServer) ListenAndServeTLS(httpsAddr string) error {
 			//log.Printf(" *** INCOMING TLS CONNECTION - source: %s / destination: %s", c.RemoteAddr().String(), c.LocalAddr().String())
 			tlsConn, err := vhost.TLS(c)
 
+			forwardwithoutintercept := false
 			if err != nil {
-				// Someone connected and dropped. Don't care.
-				//log.Printf("Error accepting new connection (err 3) - %v", err)
-				//log.Printf(" *** BAD TLS CONNECTION? - source: %s / destination: %s", c.RemoteAddr().String(), c.LocalAddr().String())
-				return
+				// The Honeywell Lynx 5100 (and possibly other devices) send a non-TLS protocol over port 443.
+				// For now, we'll let these connect. TODO: Should we expose these to the user?
+
+				//log.Printf("[ERROR] Error accepting new connection (err 3) - %v", err)
+				//log.Println("[WARN] Non-TLS protocol detected on port 443.")
+
+				forwardwithoutintercept = true
+
+				// Read the first 10 bytes off and see if they match
+				//p := make([]byte, 10)
+				//n, err := tlsConn.Read(p)
+				//fmt.Printf("[DEBUG] Read %d bytes. Err=%v\n%v\n", n, err, p)
+
+				//return
 			}
 
 
 			// Non-SNI request handling routine
 			var nonSNIHost net.IP
 			if tlsConn.Host() == "" {
-				//log.Printf("   *** non-SNI client detected - source: %s / destination: %s", c.RemoteAddr().String(), c.LocalAddr().String())
+				//log.Printf("[DEBUG] non-SNI client detected - source: %s / destination: %s", c.RemoteAddr().String(), c.LocalAddr().String())
 
 				// Some devices (Smarthome devices and especially anything by Amazon) do not
 				// send the hostname in the SNI extension. To get around this, we will query
@@ -392,7 +403,7 @@ func (proxy *ProxyHttpServer) ListenAndServeTLS(httpsAddr string) error {
 				// addresses will be tunnelled through to their original destination.
 				connections, connerr := conntrack.Flows()
 				if connerr != nil {
-					log.Println("non-SNI client detected but couldn't read connection table. Dropping connection request. [%v]", connerr)
+					log.Println("[ERROR] non-SNI client detected but couldn't read connection table. Dropping connection request. [%v]", connerr)
 					return
 				}
 
@@ -401,14 +412,14 @@ func (proxy *ProxyHttpServer) ListenAndServeTLS(httpsAddr string) error {
 				portIndex := strings.IndexRune(c.RemoteAddr().String(), ':')
 
 				if portIndex == -1 {
-					log.Println("non-SNI client detected but there was no source port on the request. Dropping connection request.")
+					log.Println("[ERROR] non-SNI client detected but there was no source port on the request. Dropping connection request.")
 					return
 				} else {
 					sourcePort, _ = strconv.Atoi(c.RemoteAddr().String()[(portIndex+1):])
 				}
 
 				if sourcePort == 0 {
-					log.Println("non-SNI client detected but couldn't parse source port on the request. Dropping connection request.")
+					log.Println("[ERROR] non-SNI client detected but couldn't parse source port on the request. Dropping connection request.")
 					return
 				}
 
@@ -424,12 +435,12 @@ func (proxy *ProxyHttpServer) ListenAndServeTLS(httpsAddr string) error {
 
 			if Host == "" {
 				Host = nonSNIHost.String()
-				//log.Printf("[DEBUG]  Non-SNI request detected - destination: [%s]\n", Host)
+				log.Printf("[DEBUG] Non-SNI or non-TLS protocol detected on port 443 - destination: [%s]\n", Host)
 			}
 
 			// Check for local host
 			if strings.HasPrefix(Host, "192.168") {
-				//log.Printf("  *** non-SNI attempt at local host. Dropping request: [%s]\n", Host)
+				log.Printf("[DEBUG] non-SNI attempt at local host. Dropping request: [%s]\n", Host)
 				return
 			}
 
@@ -450,20 +461,20 @@ func (proxy *ProxyHttpServer) ListenAndServeTLS(httpsAddr string) error {
 
 			// Set up a context object for the current request
 			ctx := &ProxyCtx{
-				Method:         connectReq.Method,
-				SourceIP:       connectReq.RemoteAddr, // pick it from somewhere else ? have a plugin to override this ?
-				Req:            connectReq,
-				ResponseWriter: resp,
-				UserData:       make(map[string]string),
-				UserObjects:    make(map[string]interface{}),
-				Session:        atomic.AddInt64(&proxy.sess, 1),
-				Proxy:          proxy,
-				MITMCertConfig: proxy.MITMCertConfig,
-				Tlsfailure:	proxy.Tlsfailure,
-				VerbosityLevel: proxy.VerbosityLevel,
-				DeviceType: -1,
-				RequestTime:	time.Now(),
-
+				Method:         	connectReq.Method,
+				SourceIP:       	connectReq.RemoteAddr, // pick it from somewhere else ? have a plugin to override this ?
+				Req:            	connectReq,
+				ResponseWriter: 	resp,
+				UserData:       	make(map[string]string),
+				UserObjects:    	make(map[string]interface{}),
+				Session:        	atomic.AddInt64(&proxy.sess, 1),
+				Proxy:          	proxy,
+				MITMCertConfig: 	proxy.MITMCertConfig,
+				Tlsfailure:		proxy.Tlsfailure,
+				VerbosityLevel: 	proxy.VerbosityLevel,
+				DeviceType: 		-1,
+				RequestTime:		time.Now(),
+				IsNonHttpProtocol:	forwardwithoutintercept,
 			}
 
 

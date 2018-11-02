@@ -112,7 +112,7 @@ func NewConfigServer(filename string, ca *x509.Certificate, privateKey interface
 				err = dec.Decode(&config)
 				if err == nil {
 					// Found an existing certificate
-					fmt.Println("[INFO] Using cached private key")
+
 					priv = &config
 					needcert = false
 				}
@@ -122,6 +122,7 @@ func NewConfigServer(filename string, ca *x509.Certificate, privateKey interface
 
 
 	if needcert {
+		fmt.Println("[INFO] Generating new private key")
 		priv, err = rsa.GenerateKey(rand.Reader, 2048)
 	}
 
