@@ -29,24 +29,28 @@ func stripPort(s string) string {
 // RLS 2/15/2018 - New DialContext routines. Preferred because these allow the transport
 // to cancel dials as soon as they are no longer needed.
 func (proxy *ProxyHttpServer) dialContext(ctx context.Context, network, addr string) (c net.Conn, err error) {
-	//fmt.Printf("[DEBUG] dialContext %s\n", addr)
+	//fmt.Printf("[DEBUG] https.go/dialContext() %s\n", addr)
 	// ctx must be non-nil. Ensure we always have one.
 	if ctx == nil {
 		ctx = context.Background()
 	}
 
 	privatenetwork, ok := ctx.Value(shadownetwork.PrivateNetworkKey).(bool)
+	//fmt.Println("[DEBUG] privatenetwork", privatenetwork)
 	if ok && privatenetwork && proxy.PrivateNetwork != nil {
-		//fmt.Printf("[DEBUG] dialContext -> forwarding through private network [%s]. PrivateNetwork:\n", addr, )
+		//fmt.Printf("[DEBUG] https.go/dialContext() -> forwarding through private network [%s]. PrivateNetwork:\n", addr, )
 		shadowtr := proxy.PrivateNetwork.Transport()
 		if shadowtr != nil {
 			ctx2 := context.WithValue(ctx, shadownetwork.ShadowTransportKey, shadowtr)
 			return shadowtr.Transport.(*shadownetwork.KCPTransport).DialContext(ctx2, network, addr)
 		}
-	}
+	} //else {
+		//fmt.Printf("[DEBUG] https.go/dialContext() -> Local network [%s]\n", addr)
+	//}
 
 
 	if proxy.Transport.DialContext != nil {
+		//fmt.Printf("[DEBUG] https.go/dialContext() -> Custom DialContext [%s] %v\n", addr, ctx)
 		// Call the custom dialer, if we have one.
 		return proxy.Transport.DialContext(ctx, network, addr)
 	}
