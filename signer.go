@@ -30,6 +30,7 @@ import (
 	"os"
 	//"runtime/debug"
 	"golang.org/x/net/publicsuffix"
+	"github.com/ethereum/go-ethereum/p2p/netutil"
 )
 
 // OrganizationName is the name your CA cert will be signed with. It
@@ -393,88 +394,95 @@ func (c *GoproxyConfigServer) certWithCommonName(hostname string, commonName str
 		//	fmt.Println("[DEBUG] Signer.go() DialWithDialer()", host)
 		//}
 
-		var conn *tls.Conn
+		// TODO: Check if this is an external address. If it resolved locally, it means we blocked it
+		// and a TLS connection attempt will simply timeout.
+		if IsExternal(hostname) {
 
-		// RLS - Disable support for TLS 1.0
-		start := time.Now()
-		conn, err = tls.DialWithDialer(c.bypassDnsDialer, "tcp", host + ":" + port,
-			&tls.Config{
-				InsecureSkipVerify: true,
-				MinVersion: tls.VersionTLS10,
-				MaxVersion: tls.VersionTLS12,
-			})
-		elapsed := time.Since(start)
-		if err != nil {
-			// Timeouts should be rare but they aren't. CoreDNS appears to single thread some lookups
-			// (perhaps when loading the hosts file) resulting in a stampede timeout.
-			fmt.Printf("[DEBUG] Signer.go - Error while dialing %s: %v\n", host, err, elapsed)
-			if elapsed > time.Duration(2) * time.Second && strings.Contains(err.Error(), "timeout") {
-				// TEST - retry in event of timeout. A slight delay is better than a failed page load.
-				start = time.Now()
-				conn, err = tls.DialWithDialer(c.bypassDnsDialer, "tcp", host + ":" + port,
-					&tls.Config{
-						InsecureSkipVerify: true,
-						MinVersion: tls.VersionTLS10,
-						MaxVersion: tls.VersionTLS12,
-					})
-				elapsed = time.Since(start)
-				if err != nil {
-					fmt.Printf("[DEBUG] Signer.go - Error while retrying. Giving up. %s %s: %v\n", host, err, elapsed)
-					return nil, err
+			var conn *tls.Conn
+
+			// RLS - Disable support for TLS 1.0
+			start := time.Now()
+			conn, err = tls.DialWithDialer(c.bypassDnsDialer, "tcp", host + ":" + port,
+				&tls.Config{
+					InsecureSkipVerify: true,
+					MinVersion: tls.VersionTLS10,
+					MaxVersion: tls.VersionTLS12,
+				})
+			elapsed := time.Since(start)
+			if err != nil {
+				// Timeouts should be rare but they aren't. CoreDNS appears to single thread some lookups
+				// (perhaps when loading the hosts file) resulting in a stampede timeout.
+				fmt.Printf("[DEBUG] Signer.go - Error while dialing %s: %v\n", host, err, elapsed)
+				if elapsed > time.Duration(2) * time.Second && strings.Contains(err.Error(), "timeout") {
+					// TEST - retry in event of timeout. A slight delay is better than a failed page load.
+					start = time.Now()
+					conn, err = tls.DialWithDialer(c.bypassDnsDialer, "tcp", host + ":" + port,
+						&tls.Config{
+							InsecureSkipVerify: true,
+							MinVersion: tls.VersionTLS10,
+							MaxVersion: tls.VersionTLS12,
+						})
+					elapsed = time.Since(start)
+					if err != nil {
+						fmt.Printf("[DEBUG] Signer.go - Error while retrying. Giving up. %s %s: %v\n", host, err, elapsed)
+						return nil, err
+					} else {
+						fmt.Printf("[INFO] Signer.go - Retry succeeded. %s: %v\n", host, elapsed)
+					}
 				} else {
-					fmt.Printf("[INFO] Signer.go - Retry succeeded. %s: %v\n", host, elapsed)
+					// Some other error happened. Don't retry.
+					return nil, err
 				}
+			}
+
+
+			//fmt.Println("[DEBUG] Signer.go() DialWithDialer() completed", host)
+			// Only close the connection if we couldn't connect.
+			defer conn.Close()
+			if len(conn.ConnectionState().PeerCertificates) >= 1 {
+				//if trace {
+				//	fmt.Println("[DEBUG] Signer.go - verifying certificate...")
+				//}
+				origcert = conn.ConnectionState().PeerCertificates[0]
+
+				rawCerts := make([][]byte, len(conn.ConnectionState().PeerCertificates))
+				for i, cert := range conn.ConnectionState().PeerCertificates {
+					rawCerts[i] = cert.Raw
+				}
+
+				// We only verify here to check the intermediate certificate chain. We don't want errors
+				// to prevent us from copying the remote certificate to the store.
+				// TEST: We could have a stampede. If so, try to skip the expensive chain checks.
+				if hostmetadata.LastVerify.Before(time.Now().Add(-60 * time.Minute)) {
+					err = certtransport.VerifyPeerCertificate(rawCerts, nil)
+					if err != nil {
+						//if trace {
+						//	fmt.Println("[DEBUG] Signer.go - certificate verification failed - err:", err)
+						//}
+						(*hostmetadata).NextAttempt = time.Now().Add(24 * time.Hour)
+
+						// Don't need lock because we have are guaranteed to have a lock on the pointer to hostInfo
+						//certmu.Lock()
+						//c.Host[host] = hostmetadata
+						//certmu.Unlock()
+
+						// TEST: add bad certs anyway
+						badcert = true
+						//return nil
+					}
+				}
+
+				//if trace {
+				//	fmt.Printf("[DEBUG] certWithCommonName() - successfully retrieved remote certificate.\n")
+				//}
+
+				// TODO: Check upstream server's certificate and deny if it is encoded in SHA-1
+				// https://ssldecoder.org/?host=sha1-intermediate.badssl.com&port=&csr=&s=
 			} else {
-				// Some other error happened. Don't retry.
-				return nil, err
+				fmt.Printf("[ERROR] signer.go - no peer certificates. This shouldn't happen. %s\n", host)
 			}
-		}
-
-
-		//fmt.Println("[DEBUG] Signer.go() DialWithDialer() completed", host)
-		// Only close the connection if we couldn't connect.
-		defer conn.Close()
-		if len(conn.ConnectionState().PeerCertificates) >= 1 {
-			//if trace {
-			//	fmt.Println("[DEBUG] Signer.go - verifying certificate...")
-			//}
-			origcert = conn.ConnectionState().PeerCertificates[0]
-
-			rawCerts := make([][]byte, len(conn.ConnectionState().PeerCertificates))
-			for i, cert := range conn.ConnectionState().PeerCertificates {
-				rawCerts[i] = cert.Raw
-			}
-
-			// We only verify here to check the intermediate certificate chain. We don't want errors
-			// to prevent us from copying the remote certificate to the store.
-			// TEST: We could have a stampede. If so, try to skip the expensive chain checks.
-			if hostmetadata.LastVerify.Before(time.Now().Add(-60 * time.Minute)) {
-				err = certtransport.VerifyPeerCertificate(rawCerts, nil)
-				if err != nil {
-					//if trace {
-					//	fmt.Println("[DEBUG] Signer.go - certificate verification failed - err:", err)
-					//}
-					(*hostmetadata).NextAttempt = time.Now().Add(24 * time.Hour)
-
-					// Don't need lock because we have are guaranteed to have a lock on the pointer to hostInfo
-					//certmu.Lock()
-					//c.Host[host] = hostmetadata
-					//certmu.Unlock()
-
-					// TEST: add bad certs anyway
-					badcert = true
-					//return nil
-				}
-			}
-
-			//if trace {
-			//	fmt.Printf("[DEBUG] certWithCommonName() - successfully retrieved remote certificate.\n")
-			//}
-
-			// TODO: Check upstream server's certificate and deny if it is encoded in SHA-1
-			// https://ssldecoder.org/?host=sha1-intermediate.badssl.com&port=&csr=&s=
 		} else {
-			fmt.Printf("[ERROR] signer.go - no peer certificates. This shouldn't happen. %s\n", host)
+			fmt.Println("[DEBUG] Bypassing certificate lookup for local/blocked host", hostname)
 		}
 
 	}
@@ -800,4 +808,22 @@ func GetSubdomains(domain string) []string {
 	domains = domains[:length - TLDlen]
 	return domains
 
+}
+
+func IsExternal(hostname string) (bool) {
+	hasExternalIP := true
+	addrs, err := net.LookupHost(hostname)
+	if err == nil {
+		//ctx.Logf(2, "  *** Lookup: %+v", addrs)
+		if len(addrs) > 0 {
+			ip := net.ParseIP(addrs[0])
+			if netutil.IsLAN(ip) {
+				hasExternalIP = false
+			}
+		}
+	} else {
+		hasExternalIP = false
+	}
+
+	return hasExternalIP
 }
