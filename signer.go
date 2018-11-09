@@ -481,9 +481,9 @@ func (c *GoproxyConfigServer) certWithCommonName(hostname string, commonName str
 			} else {
 				fmt.Printf("[ERROR] signer.go - no peer certificates. This shouldn't happen. %s\n", host)
 			}
-		} else {
+		} /*else {
 			fmt.Println("[DEBUG] Bypassing certificate lookup for local/blocked host", hostname)
-		}
+		}*/
 
 	}
 
