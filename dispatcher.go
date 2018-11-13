@@ -67,7 +67,7 @@ func (proxy *ProxyHttpServer) HandleDone(f Handler) {
 func (proxy *ProxyHttpServer) dispatchConnectHandlers(ctx *ProxyCtx) {
 
 	//fmt.Printf("[DEBUG] dispatchConnectHandlers() [%s]\n", ctx.host)
-	trace := ctx.Trace
+	trace := ctx.Trace.Modified || ctx.Trace.Unmodified
 	//if strings.Contains(ctx.host, "204.141") {
 	//	trace = true
 	//}
@@ -216,7 +216,7 @@ func (proxy *ProxyHttpServer) DispatchRequestHandlers(ctx *ProxyCtx) {
 		ctx.ForwardNonHTTPRequest(ctx.host)
 	} else {
 		// If we're tracing, we need to copy the original headers so that we can duplicate the request
-		if ctx.Trace {
+		if ctx.Trace.Modified || ctx.Trace.Unmodified {
 			ctx.TraceInfo.originalheaders = make(map[string]string)
 			for name, headers := range ctx.Req.Header {
 				for _, h := range headers {

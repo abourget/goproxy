@@ -135,7 +135,7 @@ type ProxyCtx struct {
 	ShadowTransport *shadownetwork.ShadowTransport
 
 					  	// If true, then Winston diagnostic information will be recorded about the current request
-	Trace           bool
+	Trace           traceRequest
 
 	TraceInfo       *TraceInfo        	// Information about the original request/response
 	SkipRequestHandler bool	  		// If set to true, then response handler will be skipped
@@ -583,7 +583,7 @@ func (ctx *ProxyCtx) ManInTheMiddleHTTPS() error {
 
 
 		if err != nil {
-			if ctx.Trace {
+			if ctx.Trace.Modified {
 				fmt.Printf("[DEBUG] Request creation failed: %s err=%+v\n", ctx.host, err)
 			}
 			//	fmt.Printf("[DEBUG] Client hung up on TLS connection after handshake (2). Calling NoCertificate(). [%s] [%s] elapsed time: %s\n", ctx.host, ctx.CipherSignature, time.Since(ctx.RequestTime))
@@ -595,7 +595,7 @@ func (ctx *ProxyCtx) ManInTheMiddleHTTPS() error {
 		}
 
 		// Copy the request
-		if ctx.Trace {
+		if ctx.Trace.Modified || ctx.Trace.Unmodified {
 			// Copy the original method.
 			if ctx.TraceInfo.Method == nil {
 				origmethod := subReq.Method
@@ -713,7 +713,7 @@ func (ctx *ProxyCtx) ManInTheMiddleHTTPS() error {
 
 
 		// MITM calls are asynchronous so we have to record the trace information here
-		if ctx.Trace {
+		if ctx.Trace.Modified || ctx.Trace.Unmodified {
 			writeTrace(ctx)
 		}
 	}(ctx)
@@ -1157,6 +1157,7 @@ func (ctx *ProxyCtx) ForwardNonHTTPRequest(host string) error {
 	var targetSiteConn net.Conn
 	var err error
 
+	//fmt.Println("ForwardNonHTTPRequest() host:", host)
 	 //If the request was whitelisted, then use the upstream DNS.
 	dnsbypassctx := ctx.Req.Context()
 	if ctx.Whitelisted {
@@ -1169,6 +1170,7 @@ func (ctx *ProxyCtx) ForwardNonHTTPRequest(host string) error {
 	if !ctx.IsSecure {
 		d := HijackedDNSDialer()
 		targetSiteConn, err = d.DialContext(dnsbypassctx, "tcp", ctx.host)
+		//fmt.Println("ForwardNonHTTPRequest() HTTP:", host, targetSiteConn)
 		if err != nil {
 			fmt.Printf("[DEBUG] ForwardNonHTTPRequest: Couldn't dial tcp connection - error - %+v\n", err)
 			ctx.httpError(err)
@@ -1176,7 +1178,7 @@ func (ctx *ProxyCtx) ForwardNonHTTPRequest(host string) error {
 		}
 	} else {
 		// Set up a TLS connection to the downstream site
-
+		//fmt.Println("ForwardNonHTTPRequest() HTTPS:", host)
 		// unit testing: Ignore verification with self-signed certificates coming from localhost
 		skipverification := false
 		if strings.HasPrefix(ctx.host, "127.0.0.") {
@@ -1202,8 +1204,8 @@ func (ctx *ProxyCtx) ForwardNonHTTPRequest(host string) error {
 	}
 
 	// Tunnel the connections together and block until they close.
-	fuse(ctx.Conn, targetSiteConn, ctx.Host())
 	//fmt.Printf("[DEBUG] WSS request to: %s\n", ctx.Host())
+	fuse(ctx.Conn, targetSiteConn, ctx.Host())
 	//toClose := make(chan net.Conn)
 	//go ctx.copyAndClose(targetSiteConnIdle, clientConnIdle, toClose)
 	//go ctx.copyAndClose(clientConnIdle, targetSiteConnIdle, toClose)
@@ -1271,7 +1273,7 @@ func (ctx *ProxyCtx) ForwardRequest(host string) error {
 	resp, err := ctx.RoundTrip(ctx.Req.WithContext(dnsbypassctx))
 
 	// Log RoundTrip error if one was received
-	if ctx.Trace && err != nil {
+	if (ctx.Trace.Modified || ctx.Trace.Unmodified) && err != nil {
 		ctx.TraceInfo.RoundTripError = err.Error()
 	}
 
@@ -1325,7 +1327,7 @@ func (ctx *ProxyCtx) DispatchResponseHandlers() error {
 		switch then {
 		case DONE:
 			//fmt.Println("[DEBUG] DispatchResponseHandlers() DONE")
-			if ctx.Trace {
+			if ctx.Trace.Modified || ctx.Trace.Unmodified {
 				ctx.writeResponseHeaders()
 			}
 			return ctx.DispatchDoneHandlers()
@@ -1446,7 +1448,7 @@ func (ctx *ProxyCtx) DispatchResponseHandlers() error {
 		return nil
 	}
 
-	if ctx.Trace {
+	if ctx.Trace.Modified || ctx.Trace.Unmodified {
 		ctx.writeResponseHeaders()
 	}
 
@@ -1549,7 +1551,7 @@ func (ctx *ProxyCtx) forwardMITMResponse(resp *http.Response) error {
 
 	text := resp.Status
 	//fmt.Printf("[DEBUG] forwardMITMResponse()  Status: %s", text)
-	if ctx.Trace {
+	if ctx.Trace.Modified || ctx.Trace.Unmodified {
 		fmt.Printf("[TRACE] Response protocol: %s\n", resp.Proto)
 	}
 	statusCode := strconv.Itoa(resp.StatusCode) + " "
@@ -1829,6 +1831,7 @@ func (ctx *ProxyCtx) closeTogether(toClose chan net.Conn) {
 // standard 60 second idle timeout.
 const serverReadTimeout = 15 * 60	// response timeout in seconds
 const clientReadTimeout = 15 * 60	// Client request timeout in seconds
+const connectionIdleTimeout = 60	// Connections close if idle for this long
 
 // RLS 9/6/2018 - Cleaner method to pipe two conns together.
 // Fuse connections together. Have to take precautions to close connections down in various cases.
@@ -1840,19 +1843,31 @@ func fuse(client, backend net.Conn, debug string) {
 	//defer p.logConnectionMessage("closed", client, backend)
 	//p.logConnectionMessage("opening", client, backend)
 
+	start := time.Now()
+
 	defer client.Close()
 	defer backend.Close()
 
 	// Pipes data from the remote server to our client
 	backenddie := make(chan struct{})
 	go func() {
-		backend.SetReadDeadline(time.Now().Add(serverReadTimeout * time.Second))
-
+		//backend.SetReadDeadline(time.Now().Add(serverReadTimeout * time.Second))
 		// Wrap the backend connection so that we can enforce an idle timeout.
-		idleconn := &IdleTimeoutConn{Conn: backend}
+		//idleconn := &IdleTimeoutConn{Conn: backend}
+
+		// Wrap the backend connection so that we can enforce an idle timeout (60 seconds)
+		idleconn := &IdleTimeoutConn{Conn: backend, IdleTimeout: connectionIdleTimeout}
+
+		// Connections cannot stay open longer than this period of time (15 minutes)
+		idleconn.SetDeadline(time.Now().Add(time.Duration(serverReadTimeout) * time.Second))
+
+
 
 		//n, err :=
-		copyData(client, idleconn)
+			copyData(client, idleconn)
+		//if strings.HasPrefix(debug, "104") {
+		//	fmt.Println("[DEBUG] Fuse remote->client", n, debug, err)
+		//}
 		// These errors are common with streaming sites. Uncomment to see.
 		//if err != nil && !strings.Contains(err.Error(), "closed network connection") {
 		//	fmt.Printf("[ERROR] ctx.go/fuse() error backend->client: %d bytes transferred. [%s] Err=%s\n", n, debug, err)
@@ -1867,13 +1882,22 @@ func fuse(client, backend net.Conn, debug string) {
 		// Set read timeout
 		// With HTTP/S requests, we expect these to complete quickly. However, websockets and other protocols
 		// may need to keep the connection open more or less indefinitely.
-		client.SetReadDeadline(time.Now().Add(clientReadTimeout * time.Second))
+		//client.SetReadDeadline(time.Now().Add(clientReadTimeout * time.Second))
 
 		// Wrap the backend connection so that we can enforce an idle timeout.
-		idleconn := &IdleTimeoutConn{Conn: client}
+		//idleconn := &IdleTimeoutConn{Conn: client}
 
-		// n, err :=
-		copyData(backend, idleconn)
+		idleconn := &IdleTimeoutConn{
+			Conn: client,
+			IdleTimeout: connectionIdleTimeout,
+			Deadline: time.Now().Add(time.Duration(clientReadTimeout) * time.Second)}
+
+
+		//n, err :=
+			copyData(backend, idleconn)
+		//if strings.HasPrefix(debug, "104") {
+		//	fmt.Println("[DEBUG] Fuse client->remote", n, debug, err)
+		//}
 
 		// Timeouts and connection reset errors are very common, especially with Netflix.
 		// Uncomment to see these... not particularly helpful in most cases though.
@@ -1888,6 +1912,10 @@ func fuse(client, backend net.Conn, debug string) {
 	// in a race condition where the client request ends and shuts the tunnel down.
 	<-backenddie
 	<-clientdie
+
+	elapsed := time.Since(start)
+	//fmt.Println("[DEBUG] Fuse() terminated.", debug, elapsed)
+
 
 }
 

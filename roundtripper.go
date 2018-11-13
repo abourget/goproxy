@@ -142,7 +142,7 @@ func (ctx *ProxyCtx) wrapTransport(tr *http.RoundTripper) RoundTripper {
 		resp, err := (*tr).RoundTrip(req)
 
 		// Record the original status code
-		if ctx.Trace {
+		if ctx.Trace.Modified || ctx.Trace.Unmodified {
 			ctx.TraceInfo.StatusCode = resp.StatusCode
 		}
 		//if err != nil {

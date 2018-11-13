@@ -92,7 +92,7 @@ type ProxyHttpServer struct {
 	ConnectDialContext func(ctx context.Context, network string, addr string) (net.Conn, error)
 
 	// Callback function to determine if request should be traced.
-	Trace func(ctx *ProxyCtx) (bool)
+	Trace func(ctx *ProxyCtx) (traceRequest)
 
 	// Closure to alert listeners that a TLS handshake failed
 	// RLS 6-29-2017
@@ -205,7 +205,7 @@ func (proxy *ProxyHttpServer) SetSignature(signature string) {
 // Standard net/http function. Shouldn't be used directly, http.Serve will use it.
 func (proxy *ProxyHttpServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	//r.Header["X-Forwarded-For"] = w.RemoteAddr()
-
+	//fmt.Println("[DEBUG] ServeHTTP() - ctx.host", r.Method, "Scheme", r.URL.Scheme, "Host", r.Host, "Host", r.URL.Host, "URI", r.RequestURI)
 	ctx := &ProxyCtx{
 		Method:         r.Method,
 		SourceIP:       r.RemoteAddr, // pick it from somewhere else ? have a plugin to override this ?
@@ -219,14 +219,14 @@ func (proxy *ProxyHttpServer) ServeHTTP(w http.ResponseWriter, r *http.Request) 
 		Tlsfailure:	proxy.Tlsfailure,
 		VerbosityLevel: proxy.VerbosityLevel,
 		DeviceType: -1,
-		Trace:		false,
+		//Trace:		false,
 		RequestTime:	time.Now(),
 	}
 
 	// Set up request trace
 	if proxy.Trace != nil {
-		shouldTrace := proxy.Trace(ctx)
-		if shouldTrace {
+		ctx.Trace = proxy.Trace(ctx)
+		if ctx.Trace.Modified {
 			setupTrace(ctx, "Modified request")
 
 			// Copy the request body
@@ -238,6 +238,9 @@ func (proxy *ProxyHttpServer) ServeHTTP(w http.ResponseWriter, r *http.Request) 
 		}
 	}
 
+	// Need a better way to detect WSS. Should try to read the headers?
+	//fmt.Println("[DEBUG] ServeHTTP() - ctx.host", r.Method, "Scheme", r.URL.Scheme, "Host", r.Host, "Host", r.URL.Host, "URI", r.RequestURI)
+
 	// Convert relative URL to absolute
 	if !r.URL.IsAbs() {
 		r.URL.Scheme = "http"
@@ -247,21 +250,21 @@ func (proxy *ProxyHttpServer) ServeHTTP(w http.ResponseWriter, r *http.Request) 
 	// Set up host and port
 	ctx.host = r.URL.Host
 
-	//fmt.Println("ServeHTTP() - ctx.host", ctx.host)
+	// If no port was provided, guess it based on the scheme.
 	if strings.IndexRune(ctx.host, ':') == -1 {
-		if r.URL.Scheme == "http" {
+		if r.URL.Scheme == "http" || r.URL.Scheme == "ws" {
 			ctx.host += ":80"
-		} else if r.URL.Scheme == "https" {
+		} else if r.URL.Scheme == "https" || r.URL.Scheme == "wss" {
 			ctx.host += ":443"
 		}
 	}
 
 	// Disable handlers and P2P network. Can be used to more quickly debug website compatibility problems.
-	//if strings.Contains(ctx.host, "onbirkod")  {
-	//	fmt.Println("[DEBUG] Target HTTPS request - skipping  handlers.")
-		//ctx.SkipRequestHandler = true
-		//ctx.SkipResponseHandler = true
-		//ctx.PrivateNetwork = false
+	//if strings.Contains(ctx.host, "scdn.co")  {
+	//	fmt.Println("[DEBUG] Target HTTPS request - skipping handlers.")
+	//	ctx.SkipRequestHandler = true
+	//	ctx.SkipResponseHandler = true
+	//	ctx.PrivateNetwork = false
 	//}
 
 	// Check for websockets request. These need to be tunneled like a CONNECT request.
@@ -289,12 +292,12 @@ func (proxy *ProxyHttpServer) ServeHTTP(w http.ResponseWriter, r *http.Request) 
 	}
 
 	// Complete request trace
-	if ctx.Trace {
+	if ctx.Trace.Modified {
 		writeTrace(ctx)
 	}
 
 	// Duplicate the request but skip the request and response handling
-	if ctx.Trace {
+	if ctx.Trace.Unmodified {
 		// TODO: Use channel instead of sleeping
 		time.Sleep(10 * time.Second)
 		// Duplicate the request and send it through as whitelisted. This will show us the original
@@ -312,7 +315,7 @@ func (proxy *ProxyHttpServer) ServeHTTP(w http.ResponseWriter, r *http.Request) 
 			Tlsfailure:	proxy.Tlsfailure,
 			VerbosityLevel: proxy.VerbosityLevel,
 			DeviceType: -1,
-			Trace:			true,
+			Trace:			ctx.Trace,
 			SkipRequestHandler: 	true,
 			SkipResponseHandler: 	true,
 			RequestTime:	time.Now(),
@@ -515,8 +518,8 @@ func (proxy *ProxyHttpServer) ListenAndServeTLS(httpsAddr string) error {
 			// Set up a shared buffer so the second request can see the original request body
 			//var buf []byte
 			if proxy.Trace != nil {
-				shouldTrace := proxy.Trace(ctx)
-				if shouldTrace {
+				ctx.Trace = proxy.Trace(ctx)
+				if ctx.Trace.Modified {
 
 					//fmt.Printf("ClientHELLO: \n %+v\n", tlsConn.ClientHelloMsg)
 
@@ -533,7 +536,7 @@ func (proxy *ProxyHttpServer) ListenAndServeTLS(httpsAddr string) error {
 			//}
 
 			// Disable handlers and P2P network. Can be used to more quickly debug website compatibility problems.
-			//if strings.Contains(ctx.host, "onbirkod")  {
+			//if strings.Contains(ctx.host, "scdn")  {
 			//	fmt.Println("[DEBUG] Target HTTPS request - skipping  handlers.")
 			//	ctx.SkipRequestHandler = true
 			//	ctx.SkipResponseHandler = true
@@ -543,7 +546,7 @@ func (proxy *ProxyHttpServer) ListenAndServeTLS(httpsAddr string) error {
 			proxy.dispatchConnectHandlers(ctx)
 
 			// If tracing, run the same request but skip any filtering.
-			if ctx.Trace {
+			if ctx.Trace.Unmodified {
 
 				// Wait a little while for the original request to complete
 				// TODO: Use a channel for this. Also send back original request body???
@@ -634,7 +637,7 @@ func (proxy *ProxyHttpServer) ListenAndServeTLS(httpsAddr string) error {
 						sniffedTLS:             ctx.sniffedTLS,
 						sniHost:                ctx.sniHost,
 						host:			ctx.host,
-						Trace:                  true,
+						Trace:                  ctx.Trace,
 						SkipRequestHandler:     true,
 						SkipResponseHandler:    true,
 					}

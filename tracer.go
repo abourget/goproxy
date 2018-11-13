@@ -17,6 +17,7 @@ import (
 	//"net"
 	//"io"
 	//"os"
+	"sync"
 )
 
 // Used to store information about a roundtrip.
@@ -39,36 +40,97 @@ type TraceInfo struct {
 
 type RequestTracer struct {
 	Requests []traceRequest
+	mu	sync.RWMutex
 }
 
 type traceRequest struct {
 	matchbytes	[]byte		// Request URL matching this string will be traced. Match may occur anywhere in URL.
 	expires		time.Time	// Request will be deleted after this time
+	Modified	bool
+	Unmodified	bool
+	SkipRequest	bool
+	SkipResponse	bool
+	SkipInject	bool
+	SkipPrivate	bool
+	SkipMonitor	bool
+	SkipToolbar	bool
 }
 
-// Requests a trace. By default, will be deleted after two minutes if not triggered.
-func (tr *RequestTracer) RequestTrace(match []byte, seconds int) {
+/* Requests a trace. By default, will be disabled after two minutes if not triggered.
+	[Host] -> Required
+Optional parameters:
+	modified - display modified trace for next request only
+	unmodified - display the original trace for next request only
+	SkipRequest - skip request handling
+	SkipResponse - skip response handling
+	SkipInject - skip toolbar and monitor
+	SkipPrivate - Bypass the private network
+	SkipMonitor - Bypass the javascript monitor injection
+	SkipToolbar - Bypass the toolbar injection code
+*/
+func (tr *RequestTracer) RequestTrace(cmd []string, seconds int) {
 	if seconds == 0 {
 		seconds = 120
 	}
 
-	if tr == nil {
+	//fmt.Printf("[DEBUG] cmd=%v\n", cmd)
+	if tr == nil || len(cmd) < 1 {
 		return
 	}
-	
-	tr.Requests = append(tr.Requests, traceRequest{
-		matchbytes:	match,
+
+	host := strings.Trim(cmd[0], " ")
+	host = strings.ToLower(host)
+
+	req := traceRequest{
+		matchbytes:	[]byte(host),
 		expires:	time.Now().Add(time.Second * time.Duration(seconds)),
-	})
+	}
+
+	// Parse the command flags
+	for _, param := range cmd {
+		//fmt.Printf("[DEBUG] param=[%s]\n", param)
+		switch strings.ToLower(strings.Trim(param, " ")) {
+		case "modified":
+			req.Modified = true
+		case "unmodified":
+			// Have to trace the original request because we copy values from it.
+			req.Modified = true
+			req.Unmodified = true
+		case "skiprequest":
+			req.SkipRequest = true
+		case "skipresponse":
+			req.SkipResponse = true
+		case "skipinject":
+			req.SkipInject = true
+		case "skipprivate":
+			req.SkipPrivate = true
+		case "skipmonitor":
+			req.SkipMonitor = true
+		case "skiptoolbar":
+			req.SkipToolbar = true
+		}
+	}
+
+	// If no arguments provided, assume modified.
+	if len(cmd) == 1 {
+		req.Modified = true
+	}
+
+	// Only allow one active trace request. Why would we ever need more running at the same time?
+	tr.mu.Lock()
+	tr.Requests = []traceRequest{req}
+	tr.mu.Unlock()
+
+	//tr.Requests = append(tr.Requests,req)
 }
 
-// Returns true if the given request should be traced and removes the item from the trace request list.
-func (tr *RequestTracer) Trace(ctx *ProxyCtx) (bool) {
-
-
+// Returns a trace request if one has been registered for the given ctx
+func (tr *RequestTracer) Trace(ctx *ProxyCtx) (traceRequest) {
 	// Check for active trace request
+	tr.mu.RLock()
+	defer tr.mu.RUnlock()
 	if len(tr.Requests) > 0 {
-		for ind, req := range tr.Requests {
+		for _, req := range tr.Requests {
 			if req.expires.After(time.Now()) {
 				b, err := ctx.Req.URL.MarshalBinary()
 				// If URL is relative, preface with the host
@@ -79,12 +141,12 @@ func (tr *RequestTracer) Trace(ctx *ProxyCtx) (bool) {
 				}
 				if err == nil {
 					if bytes.Contains(b, req.matchbytes) {
-						//fmt.Printf("*** Trace matched: %s\n, req.matchbytes")
-						// delete the entry
-						tr.Requests[ind] = tr.Requests[len(tr.Requests) - 1]
-						tr.Requests = tr.Requests[:len(tr.Requests)-1]
-
-						return true
+						//fmt.Printf("[DEBUG] Trace matched: %s  URL=%s\n", req.matchbytes, b)
+						// If it was modified or unmodified, delete the request
+						if req.Modified || req.Unmodified {
+							tr.Requests = []traceRequest{}
+						}
+						return req
 					}
 				}
 			}
@@ -99,12 +161,12 @@ func (tr *RequestTracer) Trace(ctx *ProxyCtx) (bool) {
 			}
 		}
 	}
-	return false
+	return traceRequest{}
 }
 
 func setupTrace(ctx *ProxyCtx, tracename string) {
 
-	ctx.Trace = true
+	//ctx.Trace = true
 	var buf []byte
 
 	ctx.TraceInfo = &TraceInfo{
@@ -129,7 +191,7 @@ func writeTrace(ctx *ProxyCtx) {
 	ctx.TraceInfo.MITM = ctx.IsThroughMITM
 
 	// Store the request handlers
-	if ctx.Trace {
+	if ctx.Trace.Modified || ctx.Trace.Unmodified {
 		for name, headers := range ctx.Req.Header {
 			name = strings.ToLower(name)
 			for _, h := range headers {
