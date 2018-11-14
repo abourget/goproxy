@@ -1843,7 +1843,7 @@ func fuse(client, backend net.Conn, debug string) {
 	//defer p.logConnectionMessage("closed", client, backend)
 	//p.logConnectionMessage("opening", client, backend)
 
-	start := time.Now()
+	//start := time.Now()
 
 	defer client.Close()
 	defer backend.Close()
@@ -1913,7 +1913,7 @@ func fuse(client, backend net.Conn, debug string) {
 	<-backenddie
 	<-clientdie
 
-	elapsed := time.Since(start)
+	//elapsed := time.Since(start)
 	//fmt.Println("[DEBUG] Fuse() terminated.", debug, elapsed)
 
 
