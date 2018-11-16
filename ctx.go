@@ -285,7 +285,7 @@ func (ctx *ProxyCtx) SetConnectScheme(scheme string) {
 // HTTP requests through the CONNECT stream, dispatching calls to the Request Handlers
 func (ctx *ProxyCtx) ManInTheMiddle() error {
 	if ctx.getConnectScheme() == "http" {
-		fmt.Println("[DEBUG] ManInTheMiddle() - bypassing TunnelHTTP(). This should only happen for websockets requests.")
+		//fmt.Println("[DEBUG] ManInTheMiddle() - bypassing TunnelHTTP(). This should only happen for websockets requests.")
 		ctx.Proxy.DispatchRequestHandlers(ctx)
 	} else {
 		return ctx.ManInTheMiddleHTTPS()

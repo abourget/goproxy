@@ -39,7 +39,7 @@ func (proxy *ProxyHttpServer) dialContext(ctx context.Context, network, addr str
 	//fmt.Println("[DEBUG] privatenetwork", privatenetwork)
 	if ok && privatenetwork && proxy.PrivateNetwork != nil {
 		//fmt.Printf("[DEBUG] https.go/dialContext() -> forwarding through private network [%s]. PrivateNetwork:\n", addr, )
-		shadowtr := proxy.PrivateNetwork.Transport()
+		shadowtr := proxy.PrivateNetwork.Transport(addr)
 		if shadowtr != nil {
 			ctx2 := context.WithValue(ctx, shadownetwork.ShadowTransportKey, shadowtr)
 			return shadowtr.Transport.(*shadownetwork.KCPTransport).DialContext(ctx2, network, addr)
