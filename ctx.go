@@ -1560,7 +1560,7 @@ func (ctx *ProxyCtx) forwardMITMResponse(resp *http.Response) error {
 	}
 	// always use 1.1 to support chunked encoding
 	if _, err := io.WriteString(ctx.Conn, "HTTP/1.1"+" "+statusCode+text+"\r\n"); err != nil {
-		fmt.Printf("[ERROR] Cannot write TLS response HTTP status from mitm'd client [%s]: %v\n", ctx.Host(), err)
+		//fmt.Printf("[ERROR] Cannot write TLS response HTTP status from mitm'd client [%s]: %v\n", ctx.Host(), err)
 		return err
 	}
 
