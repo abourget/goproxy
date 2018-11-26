@@ -232,6 +232,8 @@ func (c *GoproxyConfigServer) FlushCert(hostname string) {
 	certmu.Lock()
 	defer certmu.Unlock()
 
+	//fmt.Println("[DEBUG] FlushCert", hostname)
+
 	delete(c.Host, hostname)
 
 	// Get the pointer to the HostInfo struct as we have to delete all references to it.
@@ -282,11 +284,11 @@ func (c *GoproxyConfigServer) FlushCert(hostname string) {
 // TODO: commonName may no longer be needed. Refactor to remove it.
 func (c *GoproxyConfigServer) certWithCommonName(hostname string, commonName string) (*tls.Config, error) {
 
-	/*trace := false
-	if strings.Contains(hostname, ".badssl.com") {
-		fmt.Printf("[DEBUG] Starting trace: %s\n", hostname)
-		trace = true
-	}*/
+	//trace := false
+	//if strings.Contains(hostname, "hsforms.net") {
+	//	fmt.Printf("[DEBUG] Starting trace: %s\n", hostname)
+	//	trace = true
+	//}
 
 	// Remove the port if it exists.
 	// host must contain a domain/IP address only at this point.
@@ -481,9 +483,9 @@ func (c *GoproxyConfigServer) certWithCommonName(hostname string, commonName str
 			} else {
 				fmt.Printf("[ERROR] signer.go - no peer certificates. This shouldn't happen. %s\n", host)
 			}
-		} /*else {
-			fmt.Println("[DEBUG] Bypassing certificate lookup for local/blocked host", hostname)
-		}*/
+		} //else {
+		//	fmt.Println("[DEBUG] Bypassing certificate lookup for local/blocked host", hostname)
+		//}
 
 	}
 

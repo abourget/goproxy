@@ -449,7 +449,6 @@ func (proxy *ProxyHttpServer) ListenAndServeTLS(httpsAddr string) error {
 
 			//log.Printf("[DEBUG] ListenAndServeTLS called... %s\n", Host)
 
-
 			connectReq := &http.Request{
 				Method: "CONNECT",
 				URL: &url.URL{

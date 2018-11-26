@@ -1074,9 +1074,10 @@ func (ctx *ProxyCtx) ForwardConnect() error {
 
 	if ctx.Whitelisted {
 		//ctx.Logf(1, "  *** ForwardConnect() - Bypassing DNS for whitelisted host [%s]", ctx.host)
+		//fmt.Println("[DEBUG] ForwardConnect() - bypassing DNS for whitelisted host", ctx.host)
 		dnsbypassctx = context.WithValue(ctx.Req.Context(), dns.UpstreamKey, 0)
 	} else if ctx.PrivateNetwork {
-		//ctx.Logf(1, "  *** ForwardConnect() - Bypassing DNS for whitelisted host [%s]", ctx.host)
+		//fmt.Println("[DEBUG] ForwardConnect() - Using private network", ctx.host)
 		dnsbypassctx = context.WithValue(ctx.Req.Context(), shadownetwork.PrivateNetworkKey, true)
 	}
 
@@ -1254,6 +1255,9 @@ func HijackedDNSDialer() (*net.Dialer) {
 // TODO: Remove host from function parameters
 func (ctx *ProxyCtx) ForwardRequest(host string) error {
 
+	//if strings.Contains(host, "hsforms.net") {
+	//	fmt.Println("[DEBUG] ForwardRequest() - hsforms.net whitelisted", ctx.Whitelisted)
+	//}
 	// If the request was whitelisted, then use the upstream DNS.
 	dnsbypassctx := ctx.Req.Context()
 	if ctx.Whitelisted {

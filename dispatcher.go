@@ -65,10 +65,11 @@ func (proxy *ProxyHttpServer) HandleDone(f Handler) {
 //////
 
 func (proxy *ProxyHttpServer) dispatchConnectHandlers(ctx *ProxyCtx) {
-
 	//fmt.Printf("[DEBUG] dispatchConnectHandlers() [%s]\n", ctx.host)
 	trace := ctx.Trace.Modified || ctx.Trace.Unmodified
-	//if strings.Contains(ctx.host, "204.141") {
+
+	//if strings.Contains(ctx.host, "hsforms.net") {
+	//	fmt.Println("[DEBUG] dispatchConnectHandlers()", ctx.host)
 	//	trace = true
 	//}
 	// We haven't made a connection to the destination site yet. Here we're just hijacking
