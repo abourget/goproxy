@@ -242,7 +242,8 @@ func (proxy *ProxyHttpServer) ServeHTTP(w http.ResponseWriter, r *http.Request) 
 	//fmt.Println("[DEBUG] ServeHTTP() - ctx.host", r.Method, "Scheme", r.URL.Scheme, "Host", r.Host, "Host", r.URL.Host, "URI", r.RequestURI)
 
 	// Convert relative URL to absolute
-	if !r.URL.IsAbs() {
+	if r.Method != "CONNECT" && !r.URL.IsAbs() {
+		//fmt.Println("[DEBUG] r.URL:", r.URL, "r.URL.Host", r.URL.Host)
 		r.URL.Scheme = "http"
 		r.URL.Host = r.Host //net.JoinHostPort(r.Host, "80")
 	}

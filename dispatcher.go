@@ -67,7 +67,6 @@ func (proxy *ProxyHttpServer) HandleDone(f Handler) {
 func (proxy *ProxyHttpServer) dispatchConnectHandlers(ctx *ProxyCtx) {
 	//fmt.Printf("[DEBUG] dispatchConnectHandlers() [%s]\n", ctx.host)
 	trace := ctx.Trace.Modified || ctx.Trace.Unmodified
-
 	//if strings.Contains(ctx.host, "hsforms.net") {
 	//	fmt.Println("[DEBUG] dispatchConnectHandlers()", ctx.host)
 	//	trace = true

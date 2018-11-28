@@ -1088,8 +1088,14 @@ func (ctx *ProxyCtx) ForwardConnect() error {
 		return err
 	}
 
-	if !ctx.sniffedTLS && ctx.IsSecure {
-		fmt.Println("[TODO] Check HTTP 1/0 response to sender here (5).")
+	// TEST:
+	//fmt.Println("[DEBUG] ForwardConnect(): ctx.Method", ctx.Method)
+	if ctx.Method == "CONNECT" && !ctx.sniffedTLS {
+		//fmt.Println("[DEBUG] ForwardConnect() - Responding with 200 OK")
+		ctx.Conn.Write([]byte("HTTP/1.0 200 OK\r\n\r\n"))
+	} else if !ctx.sniffedTLS && ctx.IsSecure {
+		// This doesn't appear to be necessary but leaving it in just in case. Never gets triggered.
+		fmt.Println("[TODO] Check HTTP 1.0 response to sender here (5).")
 		ctx.Conn.Write([]byte("HTTP/1.0 200 OK\r\n\r\n"))
 	}
 
