@@ -399,13 +399,14 @@ func (c *GoproxyConfigServer) certWithCommonName(hostname string, commonName str
 
 		// Check if this host is blocked. If it resolved locally, it means we blocked it
 		// and a TLS connection attempt will simply timeout.
-		start := time.Now()
-		isexternal := true
-		if c.IsExternal != nil {
-			isexternal = c.IsExternal(hostname)
-		}
-		fmt.Println("[DEBUG] signer.go - IsExternal elapsed time: ", time.Since(start))
-		if isexternal {
+		// RLS 12/1/2018 - This proved to be unnecessary and slow.
+		//start := time.Now()
+		//isexternal := true
+		//if c.IsExternal != nil {
+		//	isexternal = c.IsExternal(hostname)
+		//}
+		//fmt.Println("[DEBUG] signer.go - IsExternal elapsed time: ", time.Since(start))
+		if true {
 
 			var conn *tls.Conn
 
@@ -421,7 +422,7 @@ func (c *GoproxyConfigServer) certWithCommonName(hostname string, commonName str
 			if err != nil {
 				// Timeouts should be rare but they aren't. CoreDNS appears to single thread some lookups
 				// (perhaps when loading the hosts file) resulting in a stampede timeout.
-				fmt.Printf("[DEBUG] Signer.go - Error while dialing %s: %v\n", host, err, elapsed)
+				//fmt.Printf("[DEBUG] Signer.go - Error while dialing %s: %v\n", host, err, elapsed)
 				if elapsed > time.Duration(2) * time.Second && strings.Contains(err.Error(), "timeout") {
 					// TEST - retry in event of timeout. A slight delay is better than a failed page load.
 					start = time.Now()
