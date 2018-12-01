@@ -82,6 +82,7 @@ type GoproxyConfigServer struct {
 	bypassDnsDialer *net.Dialer // Custom DNS resolver
 	Host		map[string]*HostInfo
 	//Config		map[string]
+	IsExternal 	func(string) (bool)
 }
 
 // NewConfig creates a MITM config using the CA certificate and
@@ -396,9 +397,15 @@ func (c *GoproxyConfigServer) certWithCommonName(hostname string, commonName str
 		//	fmt.Println("[DEBUG] Signer.go() DialWithDialer()", host)
 		//}
 
-		// TODO: Check if this is an external address. If it resolved locally, it means we blocked it
+		// Check if this host is blocked. If it resolved locally, it means we blocked it
 		// and a TLS connection attempt will simply timeout.
-		if IsExternal(hostname) {
+		start := time.Now()
+		isexternal := true
+		if c.IsExternal != nil {
+			isexternal = c.IsExternal(hostname)
+		}
+		fmt.Println("[DEBUG] signer.go - IsExternal elapsed time: ", time.Since(start))
+		if isexternal {
 
 			var conn *tls.Conn
 

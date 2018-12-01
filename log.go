@@ -17,6 +17,7 @@ var currentlogsignature 	string
 var bufferedlogdeadline 	time.Time
 
 
+
 // Logf prints a message to the proxy's log. Should be used in a ProxyHttpServer's filter
 // This message will be printed only if the Verbose field of the ProxyHttpServer is set to true
 func (ctx *ProxyCtx) Logf(level uint16, msg string, argv ...interface{}) {

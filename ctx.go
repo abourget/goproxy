@@ -1067,10 +1067,11 @@ func (ctx *ProxyCtx) HijackConnect() net.Conn {
 }
 
 // This is used to pipe a request directly through to the target site back to the client via MITM.
-// In the original goproxy implementation, this was used only for CONNECT requests. However, we also
-// use it to pipe non-HTTP protocols through.
+// Note that we have to already have a connection to the remote server before calling.
 func (ctx *ProxyCtx) ForwardConnect() error {
 	var dnsbypassctx context.Context
+
+	//fmt.Println("[DEBUG] ForwardConnect()", ctx.host)
 
 	if ctx.Whitelisted {
 		//ctx.Logf(1, "  *** ForwardConnect() - Bypassing DNS for whitelisted host [%s]", ctx.host)
@@ -1269,6 +1270,9 @@ func (ctx *ProxyCtx) ForwardRequest(host string) error {
 	if ctx.Whitelisted {
 		//ctx.Logf(1, "  *** ForwardRequest() - Bypassing DNS for whitelisted site [%s]", ctx.host)
 		dnsbypassctx = context.WithValue(ctx.Req.Context(), dns.UpstreamKey, 0)
+	} else if ctx.PrivateNetwork {
+		//fmt.Println("[DEBUG] ForwardRequest() - Using private network", ctx.host)
+		dnsbypassctx = context.WithValue(ctx.Req.Context(), shadownetwork.PrivateNetworkKey, true)
 	}
 
 	// Send in a pointer to a struct that RoundTrip can modify to let us know if there was an error calling out to the private network
@@ -1304,7 +1308,6 @@ func (ctx *ProxyCtx) ForwardRequest(host string) error {
 		ctx.ResponseError = err
 		return err
 	}
-
 
 	ctx.originalResponseBody = resp.Body
 	ctx.ResponseError = nil

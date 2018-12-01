@@ -101,17 +101,6 @@ type ProxyHttpServer struct {
 	// Closure to give listeners a chance to service a request directly. Return true if handled.
 	HandleHTTP func(ctx *ProxyCtx) (bool)
 
-	// References to persistent caches for statistics collection
-	// RLS 7-5-2017
-	//blockedmu sync.Mutex
-	//BlockedStats *diskv.Diskv
-
-	//allowedmu sync.Mutex
-	//AllowedStats *diskv.Diskv
-	//
-	//blockedhostsmu sync.Mutex
-	//BlockedHosts *diskv.Diskv
-
 	// If set to true, then the next HTTP request will flush all idle connections. Will be reset to false afterwards.
 	FlushIdleConnections bool
 
@@ -279,7 +268,7 @@ func (proxy *ProxyHttpServer) ServeHTTP(w http.ResponseWriter, r *http.Request) 
 
 
 	if r.Method == "CONNECT" || nonhttpprotocol {
-		//fmt.Println("[DEBUG] ServeHTTP() -> dispatchConnectHandlers")
+		//fmt.Println("[DEBUG] ServeHTTP() -> dispatchConnectHandlers  Method:", r.Method, "  nonhttpprotocol: ", nonhttpprotocol)
 		proxy.dispatchConnectHandlers(ctx)
 	} else {
 		// Give listener a chance to service the request
@@ -288,7 +277,7 @@ func (proxy *ProxyHttpServer) ServeHTTP(w http.ResponseWriter, r *http.Request) 
 				return
 			}
 		}
-		//fmt.Println("[DEBUG] ServeHTTP() -> dispatchRequestHandlers")
+		//fmt.Println("[DEBUG] ServeHTTP() -> dispatchRequestHandlers  Method:", r.Method, "  nonhttpprotocol: ", nonhttpprotocol)
 		proxy.DispatchRequestHandlers(ctx)
 	}
 
