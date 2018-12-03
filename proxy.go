@@ -26,7 +26,7 @@ import (
 	"crypto/tls"
 	"github.com/winston/shadownetwork"
 	//"crypto/x509"
-	"github.com/winstonprivacyinc/fasthttp/fasthttputil"
+	"github.com/valyala/fasthttp/fasthttputil"
 	"io/ioutil"
 )
 
