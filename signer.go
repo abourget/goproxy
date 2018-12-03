@@ -23,14 +23,14 @@ import (
 	"sync"
 	"time"
 	"fmt"
-	"github.com/benburkert/dns"
-	"github.com/nathanejohnson/intransport"
+	"github.com/winstonprivacyinc/dns"
+	"github.com/winstonprivacyinc/intransport"
 	"encoding/gob"
 	"io/ioutil"
 	"os"
 	//"runtime/debug"
 	"golang.org/x/net/publicsuffix"
-	"github.com/ethereum/go-ethereum/p2p/netutil"
+	"github.com/winstonprivacyinc/go-ethereum/p2p/netutil"
 )
 
 // OrganizationName is the name your CA cert will be signed with. It

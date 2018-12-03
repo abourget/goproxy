@@ -13,12 +13,12 @@ import (
 	"sync"
 	"sync/atomic"
 	"github.com/inconshreveable/go-vhost"
-	"github.com/abourget/goproxy/har"
+	"github.com/winstonprivacyinc/goproxy/har"
 	"net/url"
 	//"github.com/peterbourgon/diskv"
 	"time"
 	"fmt"
-	"github.com/honnef.co/go-conntrack"
+	"github.com/winstonprivacyinc/go-conntrack"
 	"strconv"
 	"encoding/hex"
 	"crypto/md5"
@@ -26,7 +26,7 @@ import (
 	"crypto/tls"
 	"github.com/winston/shadownetwork"
 	//"crypto/x509"
-	"github.com/valyala/fasthttp/fasthttputil"
+	"github.com/winstonprivacyinc/fasthttp/fasthttputil"
 	"io/ioutil"
 )
 

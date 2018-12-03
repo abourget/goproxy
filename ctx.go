@@ -23,7 +23,7 @@ import (
 	"net/textproto"
 	"sync"
 	"context"
-	"github.com/benburkert/dns"
+	"github.com/winstonprivacyinc/dns"
 	"github.com/winston/shadownetwork"
 	"net/url"
 	"crypto/rand"

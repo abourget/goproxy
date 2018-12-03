@@ -1,0 +1,731 @@
+{
+	"comment": "",
+	"ignore": "test",
+	"package": [
+		{
+			"checksumSHA1": "pWw3xLiP73NGFM6Tgbz+xznjHKE=",
+			"origin": "github.com/winstonprivacyinc/go-ethereum/vendor/github.com/aristanetworks/goarista/monotime",
+			"path": "github.com/aristanetworks/goarista/monotime",
+			"revision": "5c1866c965891d7ec5b3f15a5171bd49f486b3bb",
+			"revisionTime": "2018-12-03T19:06:40Z"
+		},
+		{
+			"checksumSHA1": "eVH6ttDfEiYTzPMf4UO0W6mrpTk=",
+			"origin": "github.com/winstonprivacyinc/go-ethereum/vendor/github.com/btcsuite/btcd/btcec",
+			"path": "github.com/btcsuite/btcd/btcec",
+			"revision": "5c1866c965891d7ec5b3f15a5171bd49f486b3bb",
+			"revisionTime": "2018-12-03T19:06:40Z"
+		},
+		{
+			"checksumSHA1": "u50p7C1VNNzFlOhzGP8VIne1jn4=",
+			"origin": "github.com/winstonprivacyinc/go-ethereum/vendor/github.com/go-stack/stack",
+			"path": "github.com/go-stack/stack",
+			"revision": "5c1866c965891d7ec5b3f15a5171bd49f486b3bb",
+			"revisionTime": "2018-12-03T19:06:40Z"
+		},
+		{
+			"checksumSHA1": "iDAyJMnswBRktzVlZSg7qdI5+A8=",
+			"origin": "github.com/winston/vendor/github.com/golang/snappy",
+			"path": "github.com/golang/snappy",
+			"revision": "61201d8da8475f7146d826839141777094b90396",
+			"revisionTime": "2018-12-02T20:14:19Z"
+		},
+		{
+			"checksumSHA1": "OXf9kFpRLuoUIQaMjmjHtVXz8pk=",
+			"path": "github.com/google/btree",
+			"revision": "e89373fe6b4a7413d7acd6da1725b83ef713e6e4",
+			"revisionTime": "2018-01-24T18:54:31Z"
+		},
+		{
+			"checksumSHA1": "x4M2uMULc5qiKQNN6CPioGNXAnk=",
+			"path": "github.com/hashicorp/go-rootcerts",
+			"revision": "6bb64b370b90e7ef1fa532be9e591a81c3493e00",
+			"revisionTime": "2016-05-03T14:34:40Z"
+		},
+		{
+			"checksumSHA1": "pXPPxTaLl/jmyXGK/LQyBWaxmUI=",
+			"origin": "github.com/winstonprivacyinc/go-ethereum/vendor/github.com/huin/goupnp",
+			"path": "github.com/huin/goupnp",
+			"revision": "5c1866c965891d7ec5b3f15a5171bd49f486b3bb",
+			"revisionTime": "2018-12-03T19:06:40Z"
+		},
+		{
+			"checksumSHA1": "ICtOOaniEClvKxrUTfCrKLOapxE=",
+			"origin": "github.com/winstonprivacyinc/go-ethereum/vendor/github.com/huin/goupnp/dcps/internetgateway1",
+			"path": "github.com/huin/goupnp/dcps/internetgateway1",
+			"revision": "5c1866c965891d7ec5b3f15a5171bd49f486b3bb",
+			"revisionTime": "2018-12-03T19:06:40Z"
+		},
+		{
+			"checksumSHA1": "TPjSYyw3nwc5CHufVnFCmsycd9I=",
+			"origin": "github.com/winstonprivacyinc/go-ethereum/vendor/github.com/huin/goupnp/dcps/internetgateway2",
+			"path": "github.com/huin/goupnp/dcps/internetgateway2",
+			"revision": "5c1866c965891d7ec5b3f15a5171bd49f486b3bb",
+			"revisionTime": "2018-12-03T19:06:40Z"
+		},
+		{
+			"checksumSHA1": "lXtDDcdb0oqa07lE2sDZVuIOFzE=",
+			"origin": "github.com/winstonprivacyinc/go-ethereum/vendor/github.com/huin/goupnp/httpu",
+			"path": "github.com/huin/goupnp/httpu",
+			"revision": "5c1866c965891d7ec5b3f15a5171bd49f486b3bb",
+			"revisionTime": "2018-12-03T19:06:40Z"
+		},
+		{
+			"checksumSHA1": "SI2em6g0rrGFJjCgUxca95rLmpg=",
+			"origin": "github.com/winstonprivacyinc/go-ethereum/vendor/github.com/huin/goupnp/scpd",
+			"path": "github.com/huin/goupnp/scpd",
+			"revision": "5c1866c965891d7ec5b3f15a5171bd49f486b3bb",
+			"revisionTime": "2018-12-03T19:06:40Z"
+		},
+		{
+			"checksumSHA1": "0zrBtUFumu2WvY10J1tQ8KnzgWY=",
+			"origin": "github.com/winstonprivacyinc/go-ethereum/vendor/github.com/huin/goupnp/soap",
+			"path": "github.com/huin/goupnp/soap",
+			"revision": "5c1866c965891d7ec5b3f15a5171bd49f486b3bb",
+			"revisionTime": "2018-12-03T19:06:40Z"
+		},
+		{
+			"checksumSHA1": "YBFXvSiScuBqxkbAX7hIl3pd9rY=",
+			"origin": "github.com/winstonprivacyinc/go-ethereum/vendor/github.com/huin/goupnp/ssdp",
+			"path": "github.com/huin/goupnp/ssdp",
+			"revision": "5c1866c965891d7ec5b3f15a5171bd49f486b3bb",
+			"revisionTime": "2018-12-03T19:06:40Z"
+		},
+		{
+			"checksumSHA1": "UgoKaZ+F+fGkq4iitR4MhDprUeY=",
+			"path": "github.com/inconshreveable/go-vhost",
+			"revision": "06d84117953b22058c096b49a429ebd4f3d3d97b",
+			"revisionTime": "2016-06-27T19:31:04Z"
+		},
+		{
+			"checksumSHA1": "oCwmCT8k/CgavJNwmiEtKalo5J8=",
+			"origin": "github.com/winston/vendor/github.com/influxdata/influxdb/client/v2",
+			"path": "github.com/influxdata/influxdb/client/v2",
+			"revision": "61201d8da8475f7146d826839141777094b90396",
+			"revisionTime": "2018-12-02T20:14:19Z"
+		},
+		{
+			"checksumSHA1": "8eIpFKPlph5W6W189hegtS7RNDI=",
+			"origin": "github.com/winston/vendor/github.com/influxdata/influxdb/models",
+			"path": "github.com/influxdata/influxdb/models",
+			"revision": "61201d8da8475f7146d826839141777094b90396",
+			"revisionTime": "2018-12-02T20:14:19Z"
+		},
+		{
+			"checksumSHA1": "1dQs4phJorMiTCzO9eo+RczrTEE=",
+			"origin": "github.com/winston/vendor/github.com/influxdata/influxdb/pkg/escape",
+			"path": "github.com/influxdata/influxdb/pkg/escape",
+			"revision": "61201d8da8475f7146d826839141777094b90396",
+			"revisionTime": "2018-12-02T20:14:19Z"
+		},
+		{
+			"checksumSHA1": "69Q0u2zDGUAob+oeQBiIc7OgAA4=",
+			"origin": "github.com/winstonprivacyinc/go-ethereum/vendor/github.com/jackpal/go-nat-pmp",
+			"path": "github.com/jackpal/go-nat-pmp",
+			"revision": "5c1866c965891d7ec5b3f15a5171bd49f486b3bb",
+			"revisionTime": "2018-12-03T19:06:40Z"
+		},
+		{
+			"checksumSHA1": "zAYiCImp71kmsyPMbcaoc0cGT6k=",
+			"path": "github.com/jtolds/gls",
+			"revision": "77f18212c9c7edc9bd6a33d383a7b545ce62f064",
+			"revisionTime": "2017-05-03T22:40:06Z"
+		},
+		{
+			"checksumSHA1": "0zabCMmAzzi+2DhnewlT9MOUPVg=",
+			"origin": "github.com/winstonprivacyinc/kcp-go/vendor/github.com/klauspost/cpuid",
+			"path": "github.com/klauspost/cpuid",
+			"revision": "8384a3f4c86b2f356bf526f35e8f446b1caf93d7",
+			"revisionTime": "2018-08-06T20:23:47Z"
+		},
+		{
+			"checksumSHA1": "Yw2KVYQA7TApWL67Kgn+HZjeKRY=",
+			"origin": "github.com/winstonprivacyinc/kcp-go/vendor/github.com/klauspost/reedsolomon",
+			"path": "github.com/klauspost/reedsolomon",
+			"revision": "8384a3f4c86b2f356bf526f35e8f446b1caf93d7",
+			"revisionTime": "2018-08-06T20:23:47Z"
+		},
+		{
+			"checksumSHA1": "Y3FDYaq8uAyR2glEUJ+t7tDDOIc=",
+			"origin": "github.com/winston/vendor/github.com/orcaman/concurrent-map",
+			"path": "github.com/orcaman/concurrent-map",
+			"revision": "61201d8da8475f7146d826839141777094b90396",
+			"revisionTime": "2018-12-02T20:14:19Z"
+		},
+		{
+			"checksumSHA1": "d6BycwPpKXW09I/tXMqcItE8SA4=",
+			"path": "github.com/pkg/errors",
+			"revision": "816c9085562cd7ee03e7f8188a1cfd942858cded",
+			"revisionTime": "2018-03-11T21:45:15Z"
+		},
+		{
+			"checksumSHA1": "kqdmxGYPrmCvWw05eyP1O+znK7c=",
+			"path": "github.com/smartystreets/assertions",
+			"revision": "7c9eb446e3cf06e83049467a5f25c38730ce7034",
+			"revisionTime": "2018-08-20T20:17:07Z"
+		},
+		{
+			"checksumSHA1": "bEq2actOyCy5xDJZryVU18ZNVTE=",
+			"path": "github.com/smartystreets/assertions/internal/go-render/render",
+			"revision": "7c9eb446e3cf06e83049467a5f25c38730ce7034",
+			"revisionTime": "2018-08-20T20:17:07Z"
+		},
+		{
+			"checksumSHA1": "/Mlt459vsuvFRHpxOiCNMasmE28=",
+			"path": "github.com/smartystreets/assertions/internal/oglematchers",
+			"revision": "7c9eb446e3cf06e83049467a5f25c38730ce7034",
+			"revisionTime": "2018-08-20T20:17:07Z"
+		},
+		{
+			"checksumSHA1": "hDSy/PFcjqOhKkUTtfjhbpJaUKI=",
+			"path": "github.com/smartystreets/goconvey/convey",
+			"revision": "ef6db91d284a0e7badaa1f0c404c30aa7dee3aed",
+			"revisionTime": "2018-02-22T19:45:00Z"
+		},
+		{
+			"checksumSHA1": "6hm9X0fDAe0Iyn/l1yVx3iImoSY=",
+			"path": "github.com/smartystreets/goconvey/convey/gotest",
+			"revision": "ef6db91d284a0e7badaa1f0c404c30aa7dee3aed",
+			"revisionTime": "2018-02-22T19:45:00Z"
+		},
+		{
+			"checksumSHA1": "t3Kpg1pgZfUHTYUVSisBrXyPNXc=",
+			"path": "github.com/smartystreets/goconvey/convey/reporting",
+			"revision": "ef6db91d284a0e7badaa1f0c404c30aa7dee3aed",
+			"revisionTime": "2018-02-22T19:45:00Z"
+		},
+		{
+			"checksumSHA1": "RDfp4st+m+Ar1Chb8FGFGDSpmzw=",
+			"origin": "github.com/winstonprivacyinc/go-ethereum/vendor/github.com/syndtr/goleveldb/leveldb",
+			"path": "github.com/syndtr/goleveldb/leveldb",
+			"revision": "5c1866c965891d7ec5b3f15a5171bd49f486b3bb",
+			"revisionTime": "2018-12-03T19:06:40Z"
+		},
+		{
+			"checksumSHA1": "N9nV8IFnjnSv7vDyFmI2KY1+3UQ=",
+			"origin": "github.com/winstonprivacyinc/go-ethereum/vendor/github.com/syndtr/goleveldb/leveldb/cache",
+			"path": "github.com/syndtr/goleveldb/leveldb/cache",
+			"revision": "5c1866c965891d7ec5b3f15a5171bd49f486b3bb",
+			"revisionTime": "2018-12-03T19:06:40Z"
+		},
+		{
+			"checksumSHA1": "fX6hNc8MjmY0uRXLeDDR1yP1RW4=",
+			"origin": "github.com/winstonprivacyinc/go-ethereum/vendor/github.com/syndtr/goleveldb/leveldb/comparer",
+			"path": "github.com/syndtr/goleveldb/leveldb/comparer",
+			"revision": "5c1866c965891d7ec5b3f15a5171bd49f486b3bb",
+			"revisionTime": "2018-12-03T19:06:40Z"
+		},
+		{
+			"checksumSHA1": "KPLIq+6AiJ0T3M8ujkuPkUHExZg=",
+			"origin": "github.com/winstonprivacyinc/go-ethereum/vendor/github.com/syndtr/goleveldb/leveldb/errors",
+			"path": "github.com/syndtr/goleveldb/leveldb/errors",
+			"revision": "5c1866c965891d7ec5b3f15a5171bd49f486b3bb",
+			"revisionTime": "2018-12-03T19:06:40Z"
+		},
+		{
+			"checksumSHA1": "nzy2qKBrYeptC6EU0+fOOYVRCWk=",
+			"origin": "github.com/winstonprivacyinc/go-ethereum/vendor/github.com/syndtr/goleveldb/leveldb/filter",
+			"path": "github.com/syndtr/goleveldb/leveldb/filter",
+			"revision": "5c1866c965891d7ec5b3f15a5171bd49f486b3bb",
+			"revisionTime": "2018-12-03T19:06:40Z"
+		},
+		{
+			"checksumSHA1": "pygPiya6HS5PuUkBY2P9Pe2QyP0=",
+			"origin": "github.com/winstonprivacyinc/go-ethereum/vendor/github.com/syndtr/goleveldb/leveldb/iterator",
+			"path": "github.com/syndtr/goleveldb/leveldb/iterator",
+			"revision": "5c1866c965891d7ec5b3f15a5171bd49f486b3bb",
+			"revisionTime": "2018-12-03T19:06:40Z"
+		},
+		{
+			"checksumSHA1": "HiQVGWLBnlhm0isR9T7mAeAjoTo=",
+			"origin": "github.com/winstonprivacyinc/go-ethereum/vendor/github.com/syndtr/goleveldb/leveldb/journal",
+			"path": "github.com/syndtr/goleveldb/leveldb/journal",
+			"revision": "5c1866c965891d7ec5b3f15a5171bd49f486b3bb",
+			"revisionTime": "2018-12-03T19:06:40Z"
+		},
+		{
+			"checksumSHA1": "vKP/JJ5Fg7Yk+GWFTyVn4sNRUGc=",
+			"origin": "github.com/winstonprivacyinc/go-ethereum/vendor/github.com/syndtr/goleveldb/leveldb/memdb",
+			"path": "github.com/syndtr/goleveldb/leveldb/memdb",
+			"revision": "5c1866c965891d7ec5b3f15a5171bd49f486b3bb",
+			"revisionTime": "2018-12-03T19:06:40Z"
+		},
+		{
+			"checksumSHA1": "6Umu4vGG/SklM+2SKN3Gbr9mafs=",
+			"origin": "github.com/winstonprivacyinc/go-ethereum/vendor/github.com/syndtr/goleveldb/leveldb/opt",
+			"path": "github.com/syndtr/goleveldb/leveldb/opt",
+			"revision": "5c1866c965891d7ec5b3f15a5171bd49f486b3bb",
+			"revisionTime": "2018-12-03T19:06:40Z"
+		},
+		{
+			"checksumSHA1": "YxotEUXLwQMc2aw+CsosLlJpWIQ=",
+			"origin": "github.com/winstonprivacyinc/go-ethereum/vendor/github.com/syndtr/goleveldb/leveldb/storage",
+			"path": "github.com/syndtr/goleveldb/leveldb/storage",
+			"revision": "5c1866c965891d7ec5b3f15a5171bd49f486b3bb",
+			"revisionTime": "2018-12-03T19:06:40Z"
+		},
+		{
+			"checksumSHA1": "xryWOq73uFiB8+DmSXCmu7+WVAI=",
+			"origin": "github.com/winstonprivacyinc/go-ethereum/vendor/github.com/syndtr/goleveldb/leveldb/table",
+			"path": "github.com/syndtr/goleveldb/leveldb/table",
+			"revision": "5c1866c965891d7ec5b3f15a5171bd49f486b3bb",
+			"revisionTime": "2018-12-03T19:06:40Z"
+		},
+		{
+			"checksumSHA1": "mXrGK0bZN9FtKwifjw//2qwYroQ=",
+			"origin": "github.com/winstonprivacyinc/go-ethereum/vendor/github.com/syndtr/goleveldb/leveldb/util",
+			"path": "github.com/syndtr/goleveldb/leveldb/util",
+			"revision": "5c1866c965891d7ec5b3f15a5171bd49f486b3bb",
+			"revisionTime": "2018-12-03T19:06:40Z"
+		},
+		{
+			"checksumSHA1": "48lpywtyJAUpJ7LTt93rCLuwwKI=",
+			"origin": "github.com/winstonprivacyinc/kcp-go/vendor/github.com/templexxx/cpufeat",
+			"path": "github.com/templexxx/cpufeat",
+			"revision": "8384a3f4c86b2f356bf526f35e8f446b1caf93d7",
+			"revisionTime": "2018-08-06T20:23:47Z"
+		},
+		{
+			"checksumSHA1": "D5Ae8HcHTAzDe7lG5SuSGzt6kvg=",
+			"origin": "github.com/winstonprivacyinc/kcp-go/vendor/github.com/templexxx/xor",
+			"path": "github.com/templexxx/xor",
+			"revision": "8384a3f4c86b2f356bf526f35e8f446b1caf93d7",
+			"revisionTime": "2018-08-06T20:23:47Z"
+		},
+		{
+			"checksumSHA1": "+4bxxoRPhD8zZlE4laoyCK9nPCo=",
+			"origin": "github.com/winstonprivacyinc/kcp-go/vendor/github.com/tjfoc/gmsm/sm4",
+			"path": "github.com/tjfoc/gmsm/sm4",
+			"revision": "8384a3f4c86b2f356bf526f35e8f446b1caf93d7",
+			"revisionTime": "2018-08-06T20:23:47Z"
+		},
+		{
+			"checksumSHA1": "FKpGr9ks3beJsCl6HYXjK2srtEE=",
+			"path": "github.com/winston/shadownetwork",
+			"revision": "61201d8da8475f7146d826839141777094b90396",
+			"revisionTime": "2018-12-02T20:14:19Z"
+		},
+		{
+			"checksumSHA1": "EKvlxvtNkYHSz0Y62XIhaXqT0BI=",
+			"path": "github.com/winstonprivacyinc/diskv",
+			"revision": "dee87d93863a4d53293124112d08067847ce5bd2",
+			"revisionTime": "2018-05-19T14:26:14Z"
+		},
+		{
+			"checksumSHA1": "7mHUy49wRkfSn1pbzWPeQn1FTlI=",
+			"path": "github.com/winstonprivacyinc/dns",
+			"revision": "57ffa853ce0677809267318267706ab92ee74d6d",
+			"revisionTime": "2018-08-21T19:38:37Z"
+		},
+		{
+			"checksumSHA1": "yhLa691mK9DxDebnKkW16TxHOIY=",
+			"path": "github.com/winstonprivacyinc/go-conntrack",
+			"revision": "76dff6dd27da27c46c5c965c9a60b7ac359f6d70",
+			"revisionTime": "2018-07-20T19:52:40Z"
+		},
+		{
+			"checksumSHA1": "DZfMBbThDQrjUa8oPwiCWN1hZgY=",
+			"path": "github.com/winstonprivacyinc/go-ethereum/common",
+			"revision": "5c1866c965891d7ec5b3f15a5171bd49f486b3bb",
+			"revisionTime": "2018-12-03T19:06:40Z"
+		},
+		{
+			"checksumSHA1": "CCDTcbQgrJQHKdeD3XcAVnm+7h4=",
+			"path": "github.com/winstonprivacyinc/go-ethereum/common/bitutil",
+			"revision": "5c1866c965891d7ec5b3f15a5171bd49f486b3bb",
+			"revisionTime": "2018-12-03T19:06:40Z"
+		},
+		{
+			"checksumSHA1": "a9BhS3iYVEo3mijeD4rUraafpDQ=",
+			"path": "github.com/winstonprivacyinc/go-ethereum/common/hexutil",
+			"revision": "5c1866c965891d7ec5b3f15a5171bd49f486b3bb",
+			"revisionTime": "2018-12-03T19:06:40Z"
+		},
+		{
+			"checksumSHA1": "8g4aholxcl3vowxuSlGPaH4d3Fc=",
+			"path": "github.com/winstonprivacyinc/go-ethereum/common/math",
+			"revision": "5c1866c965891d7ec5b3f15a5171bd49f486b3bb",
+			"revisionTime": "2018-12-03T19:06:40Z"
+		},
+		{
+			"checksumSHA1": "DRCkgpfcFsEfiShbasi4+ZNILuU=",
+			"path": "github.com/winstonprivacyinc/go-ethereum/common/mclock",
+			"revision": "5c1866c965891d7ec5b3f15a5171bd49f486b3bb",
+			"revisionTime": "2018-12-03T19:06:40Z"
+		},
+		{
+			"checksumSHA1": "mSBfPDyCpC/Rf1biD8S+Xeu6yQg=",
+			"path": "github.com/winstonprivacyinc/go-ethereum/crypto",
+			"revision": "5c1866c965891d7ec5b3f15a5171bd49f486b3bb",
+			"revisionTime": "2018-12-03T19:06:40Z"
+		},
+		{
+			"checksumSHA1": "id7n8D1o+twhghiDaIyxddIxMLg=",
+			"path": "github.com/winstonprivacyinc/go-ethereum/crypto/ecies",
+			"revision": "5c1866c965891d7ec5b3f15a5171bd49f486b3bb",
+			"revisionTime": "2018-12-03T19:06:40Z"
+		},
+		{
+			"checksumSHA1": "Ix0koC1G2Kb2g/t0X5vhNATQSDU=",
+			"path": "github.com/winstonprivacyinc/go-ethereum/crypto/secp256k1",
+			"revision": "5c1866c965891d7ec5b3f15a5171bd49f486b3bb",
+			"revisionTime": "2018-12-03T19:06:40Z"
+		},
+		{
+			"checksumSHA1": "WQTJvqTOP9uHk0fV1ZRBCm6Y45I=",
+			"path": "github.com/winstonprivacyinc/go-ethereum/crypto/sha3",
+			"revision": "5c1866c965891d7ec5b3f15a5171bd49f486b3bb",
+			"revisionTime": "2018-12-03T19:06:40Z"
+		},
+		{
+			"checksumSHA1": "eQWLyCWg6bOj0EkXC4LAM1HWCX0=",
+			"path": "github.com/winstonprivacyinc/go-ethereum/event",
+			"revision": "5c1866c965891d7ec5b3f15a5171bd49f486b3bb",
+			"revisionTime": "2018-12-03T19:06:40Z"
+		},
+		{
+			"checksumSHA1": "dqtEkVAJiiy0B3b8JTAElWITxa0=",
+			"path": "github.com/winstonprivacyinc/go-ethereum/log",
+			"revision": "5c1866c965891d7ec5b3f15a5171bd49f486b3bb",
+			"revisionTime": "2018-12-03T19:06:40Z"
+		},
+		{
+			"checksumSHA1": "A/iDOofXhwKbLakWmkqAy8ys5PI=",
+			"path": "github.com/winstonprivacyinc/go-ethereum/metrics",
+			"revision": "5c1866c965891d7ec5b3f15a5171bd49f486b3bb",
+			"revisionTime": "2018-12-03T19:06:40Z"
+		},
+		{
+			"checksumSHA1": "CL4Kh5HVwAh5Kz+PTfboMj3FxUE=",
+			"path": "github.com/winstonprivacyinc/go-ethereum/p2p",
+			"revision": "5c1866c965891d7ec5b3f15a5171bd49f486b3bb",
+			"revisionTime": "2018-12-03T19:06:40Z"
+		},
+		{
+			"checksumSHA1": "e1dWVXYT/+aLAk9GRE5BvN4vpRw=",
+			"path": "github.com/winstonprivacyinc/go-ethereum/p2p/discover",
+			"revision": "5c1866c965891d7ec5b3f15a5171bd49f486b3bb",
+			"revisionTime": "2018-12-03T19:06:40Z"
+		},
+		{
+			"checksumSHA1": "5C8JWXTJ9vhkKTMHSLKKeNZ6JCo=",
+			"path": "github.com/winstonprivacyinc/go-ethereum/p2p/discv5",
+			"revision": "5c1866c965891d7ec5b3f15a5171bd49f486b3bb",
+			"revisionTime": "2018-12-03T19:06:40Z"
+		},
+		{
+			"checksumSHA1": "B5h0k8cmNVMwuac2GAGiRYBYFrk=",
+			"path": "github.com/winstonprivacyinc/go-ethereum/p2p/enode",
+			"revision": "5c1866c965891d7ec5b3f15a5171bd49f486b3bb",
+			"revisionTime": "2018-12-03T19:06:40Z"
+		},
+		{
+			"checksumSHA1": "YVB7xxL4TEi5M1XVrzYZ9K5wvb0=",
+			"path": "github.com/winstonprivacyinc/go-ethereum/p2p/enr",
+			"revision": "5c1866c965891d7ec5b3f15a5171bd49f486b3bb",
+			"revisionTime": "2018-12-03T19:06:40Z"
+		},
+		{
+			"checksumSHA1": "DhyF+fvi6HOaXd1ZR7LqO3IcOEc=",
+			"path": "github.com/winstonprivacyinc/go-ethereum/p2p/nat",
+			"revision": "5c1866c965891d7ec5b3f15a5171bd49f486b3bb",
+			"revisionTime": "2018-12-03T19:06:40Z"
+		},
+		{
+			"checksumSHA1": "/B7E0l7eYMLH38WFNx7krHc0Dqg=",
+			"path": "github.com/winstonprivacyinc/go-ethereum/p2p/netutil",
+			"revision": "5c1866c965891d7ec5b3f15a5171bd49f486b3bb",
+			"revisionTime": "2018-12-03T19:06:40Z"
+		},
+		{
+			"checksumSHA1": "Im5VuJOgsNun8+3h7xwRUsFhR88=",
+			"path": "github.com/winstonprivacyinc/go-ethereum/rlp",
+			"revision": "5c1866c965891d7ec5b3f15a5171bd49f486b3bb",
+			"revisionTime": "2018-12-03T19:06:40Z"
+		},
+		{
+			"checksumSHA1": "B1d5Pspg7Iu/2rU85g7mJRmOXJ8=",
+			"path": "github.com/winstonprivacyinc/go-netdb",
+			"revision": "0825d8497c856aba355358bdf8a9fd8a08227ff1",
+			"revisionTime": "2018-07-20T18:21:36Z"
+		},
+		{
+			"checksumSHA1": "ZIdDAMiB3BorKwb9lQQIt8TTnsU=",
+			"path": "github.com/winstonprivacyinc/intransport",
+			"revision": "875befd853b8c433f68bd2e435630090255d28ce",
+			"revisionTime": "2018-09-21T15:07:42Z"
+		},
+		{
+			"checksumSHA1": "coiW2dI8gxfP9HnKy+NYO4UwUVI=",
+			"path": "github.com/winstonprivacyinc/kcp-go",
+			"revision": "8384a3f4c86b2f356bf526f35e8f446b1caf93d7",
+			"revisionTime": "2018-08-06T20:23:47Z"
+		},
+		{
+			"checksumSHA1": "TZnMf97f1kcnE+eVaoigxlZE/zE=",
+			"path": "github.com/winstonprivacyinc/smux",
+			"revision": "3f1526450e03b63c3cba57a0c171fd6ef70903f0",
+			"revisionTime": "2018-08-10T18:46:11Z"
+		},
+		{
+			"checksumSHA1": "oVPHWesOmZ02vLq2fglGvf+AMgk=",
+			"origin": "github.com/winstonprivacyinc/kcp-go/vendor/golang.org/x/crypto/blowfish",
+			"path": "golang.org/x/crypto/blowfish",
+			"revision": "8384a3f4c86b2f356bf526f35e8f446b1caf93d7",
+			"revisionTime": "2018-08-06T20:23:47Z"
+		},
+		{
+			"checksumSHA1": "TT1rac6kpQp2vz24m5yDGUNQ/QQ=",
+			"origin": "github.com/winstonprivacyinc/kcp-go/vendor/golang.org/x/crypto/cast5",
+			"path": "golang.org/x/crypto/cast5",
+			"revision": "8384a3f4c86b2f356bf526f35e8f446b1caf93d7",
+			"revisionTime": "2018-08-06T20:23:47Z"
+		},
+		{
+			"checksumSHA1": "/U7f2gaH6DnEmLguVLDbipU6kXU=",
+			"origin": "github.com/winstonprivacyinc/kcp-go/vendor/golang.org/x/crypto/internal/subtle",
+			"path": "golang.org/x/crypto/internal/subtle",
+			"revision": "8384a3f4c86b2f356bf526f35e8f446b1caf93d7",
+			"revisionTime": "2018-08-06T20:23:47Z"
+		},
+		{
+			"checksumSHA1": "AaKVj98Ox8zTwHJdNoQc4hNrcIc=",
+			"path": "golang.org/x/crypto/ocsp",
+			"revision": "e3636079e1a4c1f337f212cc5cd2aca108f6c900",
+			"revisionTime": "2018-09-26T22:24:25Z"
+		},
+		{
+			"checksumSHA1": "1MGpGDQqnUoRpv7VEcQrXOBydXE=",
+			"origin": "github.com/winston/vendor/golang.org/x/crypto/pbkdf2",
+			"path": "golang.org/x/crypto/pbkdf2",
+			"revision": "61201d8da8475f7146d826839141777094b90396",
+			"revisionTime": "2018-12-02T20:14:19Z"
+		},
+		{
+			"checksumSHA1": "8jqc1sHlUFV6ivSechW+PA8wL0g=",
+			"origin": "github.com/winstonprivacyinc/kcp-go/vendor/golang.org/x/crypto/salsa20",
+			"path": "golang.org/x/crypto/salsa20",
+			"revision": "8384a3f4c86b2f356bf526f35e8f446b1caf93d7",
+			"revisionTime": "2018-08-06T20:23:47Z"
+		},
+		{
+			"checksumSHA1": "cRCpfAgTnlIDpdcfjivbiv+9YJU=",
+			"origin": "github.com/winstonprivacyinc/kcp-go/vendor/golang.org/x/crypto/salsa20/salsa",
+			"path": "golang.org/x/crypto/salsa20/salsa",
+			"revision": "8384a3f4c86b2f356bf526f35e8f446b1caf93d7",
+			"revisionTime": "2018-08-06T20:23:47Z"
+		},
+		{
+			"checksumSHA1": "iQ2rsLr5H+AAHWbDBukuWS4j/m0=",
+			"origin": "github.com/winstonprivacyinc/kcp-go/vendor/golang.org/x/crypto/tea",
+			"path": "golang.org/x/crypto/tea",
+			"revision": "8384a3f4c86b2f356bf526f35e8f446b1caf93d7",
+			"revisionTime": "2018-08-06T20:23:47Z"
+		},
+		{
+			"checksumSHA1": "fgKd/+IO854XgYSrwOQJ5jG8WdI=",
+			"origin": "github.com/winstonprivacyinc/kcp-go/vendor/golang.org/x/crypto/twofish",
+			"path": "golang.org/x/crypto/twofish",
+			"revision": "8384a3f4c86b2f356bf526f35e8f446b1caf93d7",
+			"revisionTime": "2018-08-06T20:23:47Z"
+		},
+		{
+			"checksumSHA1": "kEEDC0IVwku1kk4jKstZjqDjV3Q=",
+			"origin": "github.com/winstonprivacyinc/kcp-go/vendor/golang.org/x/crypto/xtea",
+			"path": "golang.org/x/crypto/xtea",
+			"revision": "8384a3f4c86b2f356bf526f35e8f446b1caf93d7",
+			"revisionTime": "2018-08-06T20:23:47Z"
+		},
+		{
+			"checksumSHA1": "NjyXtXsaf0ulRJn6HQSP1FqGL4A=",
+			"origin": "github.com/winstonprivacyinc/kcp-go/vendor/golang.org/x/net/bpf",
+			"path": "golang.org/x/net/bpf",
+			"revision": "8384a3f4c86b2f356bf526f35e8f446b1caf93d7",
+			"revisionTime": "2018-08-06T20:23:47Z"
+		},
+		{
+			"checksumSHA1": "vqc3a+oTUGX8PmD0TS+qQ7gmN8I=",
+			"origin": "github.com/winstonprivacyinc/go-ethereum/vendor/golang.org/x/net/html",
+			"path": "golang.org/x/net/html",
+			"revision": "5c1866c965891d7ec5b3f15a5171bd49f486b3bb",
+			"revisionTime": "2018-12-03T19:06:40Z"
+		},
+		{
+			"checksumSHA1": "z79z5msRzgU48FCZxSuxfU8b4rs=",
+			"origin": "github.com/winstonprivacyinc/go-ethereum/vendor/golang.org/x/net/html/atom",
+			"path": "golang.org/x/net/html/atom",
+			"revision": "5c1866c965891d7ec5b3f15a5171bd49f486b3bb",
+			"revisionTime": "2018-12-03T19:06:40Z"
+		},
+		{
+			"checksumSHA1": "barUU39reQ7LdgYLA323hQ/UGy4=",
+			"origin": "github.com/winstonprivacyinc/go-ethereum/vendor/golang.org/x/net/html/charset",
+			"path": "golang.org/x/net/html/charset",
+			"revision": "5c1866c965891d7ec5b3f15a5171bd49f486b3bb",
+			"revisionTime": "2018-12-03T19:06:40Z"
+		},
+		{
+			"checksumSHA1": "pCY4YtdNKVBYRbNvODjx8hj0hIs=",
+			"origin": "github.com/winston/vendor/golang.org/x/net/http/httpguts",
+			"path": "golang.org/x/net/http/httpguts",
+			"revision": "61201d8da8475f7146d826839141777094b90396",
+			"revisionTime": "2018-12-02T20:14:19Z"
+		},
+		{
+			"checksumSHA1": "RcrB7tgYS/GMW4QrwVdMOTNqIU8=",
+			"path": "golang.org/x/net/idna",
+			"revision": "4dfa2610cdf3b287375bbba5b8f2a14d3b01d8de",
+			"revisionTime": "2018-09-26T15:41:24Z"
+		},
+		{
+			"checksumSHA1": "8oJoT8rfokzpkJ19eNhRs2JgRxI=",
+			"origin": "github.com/winstonprivacyinc/kcp-go/vendor/golang.org/x/net/internal/iana",
+			"path": "golang.org/x/net/internal/iana",
+			"revision": "8384a3f4c86b2f356bf526f35e8f446b1caf93d7",
+			"revisionTime": "2018-08-06T20:23:47Z"
+		},
+		{
+			"checksumSHA1": "YsXlbexuTtUXHyhSv927ILOkf6A=",
+			"origin": "github.com/winstonprivacyinc/kcp-go/vendor/golang.org/x/net/internal/socket",
+			"path": "golang.org/x/net/internal/socket",
+			"revision": "8384a3f4c86b2f356bf526f35e8f446b1caf93d7",
+			"revisionTime": "2018-08-06T20:23:47Z"
+		},
+		{
+			"checksumSHA1": "K4XNY0c60IPBpv5sO6aiCuB8o/0=",
+			"origin": "github.com/winstonprivacyinc/kcp-go/vendor/golang.org/x/net/ipv4",
+			"path": "golang.org/x/net/ipv4",
+			"revision": "8384a3f4c86b2f356bf526f35e8f446b1caf93d7",
+			"revisionTime": "2018-08-06T20:23:47Z"
+		},
+		{
+			"checksumSHA1": "r6aEFdHvXVXum48wmH6hrEZgqAk=",
+			"path": "golang.org/x/net/publicsuffix",
+			"revision": "4dfa2610cdf3b287375bbba5b8f2a14d3b01d8de",
+			"revisionTime": "2018-09-26T15:41:24Z"
+		},
+		{
+			"checksumSHA1": "Mr4ur60bgQJnQFfJY0dGtwWwMPE=",
+			"origin": "github.com/winstonprivacyinc/go-ethereum/vendor/golang.org/x/text/encoding",
+			"path": "golang.org/x/text/encoding",
+			"revision": "5c1866c965891d7ec5b3f15a5171bd49f486b3bb",
+			"revisionTime": "2018-12-03T19:06:40Z"
+		},
+		{
+			"checksumSHA1": "5daAJDCGdqJfCWu1038p1rbznB0=",
+			"origin": "github.com/winstonprivacyinc/go-ethereum/vendor/golang.org/x/text/encoding/charmap",
+			"path": "golang.org/x/text/encoding/charmap",
+			"revision": "5c1866c965891d7ec5b3f15a5171bd49f486b3bb",
+			"revisionTime": "2018-12-03T19:06:40Z"
+		},
+		{
+			"checksumSHA1": "v1fB9MF1009LXzprVPHlu1DMXQQ=",
+			"origin": "github.com/winstonprivacyinc/go-ethereum/vendor/golang.org/x/text/encoding/htmlindex",
+			"path": "golang.org/x/text/encoding/htmlindex",
+			"revision": "5c1866c965891d7ec5b3f15a5171bd49f486b3bb",
+			"revisionTime": "2018-12-03T19:06:40Z"
+		},
+		{
+			"checksumSHA1": "zeHyHebIZl1tGuwGllIhjfci+wI=",
+			"origin": "github.com/winstonprivacyinc/go-ethereum/vendor/golang.org/x/text/encoding/internal",
+			"path": "golang.org/x/text/encoding/internal",
+			"revision": "5c1866c965891d7ec5b3f15a5171bd49f486b3bb",
+			"revisionTime": "2018-12-03T19:06:40Z"
+		},
+		{
+			"checksumSHA1": "rLbiFh6AsERmRUzXOyPRAZ5qPbA=",
+			"origin": "github.com/winstonprivacyinc/go-ethereum/vendor/golang.org/x/text/encoding/internal/identifier",
+			"path": "golang.org/x/text/encoding/internal/identifier",
+			"revision": "5c1866c965891d7ec5b3f15a5171bd49f486b3bb",
+			"revisionTime": "2018-12-03T19:06:40Z"
+		},
+		{
+			"checksumSHA1": "p2VnzpgkCa/Ns+z5NlSSxVxq9Qo=",
+			"origin": "github.com/winstonprivacyinc/go-ethereum/vendor/golang.org/x/text/encoding/japanese",
+			"path": "golang.org/x/text/encoding/japanese",
+			"revision": "5c1866c965891d7ec5b3f15a5171bd49f486b3bb",
+			"revisionTime": "2018-12-03T19:06:40Z"
+		},
+		{
+			"checksumSHA1": "RXFoEKsWbs02ajffwDJErlf640c=",
+			"origin": "github.com/winstonprivacyinc/go-ethereum/vendor/golang.org/x/text/encoding/korean",
+			"path": "golang.org/x/text/encoding/korean",
+			"revision": "5c1866c965891d7ec5b3f15a5171bd49f486b3bb",
+			"revisionTime": "2018-12-03T19:06:40Z"
+		},
+		{
+			"checksumSHA1": "oAWUs4i864w2uQrG5vjmywxQDSA=",
+			"origin": "github.com/winstonprivacyinc/go-ethereum/vendor/golang.org/x/text/encoding/simplifiedchinese",
+			"path": "golang.org/x/text/encoding/simplifiedchinese",
+			"revision": "5c1866c965891d7ec5b3f15a5171bd49f486b3bb",
+			"revisionTime": "2018-12-03T19:06:40Z"
+		},
+		{
+			"checksumSHA1": "+J0Ljl6mzcLbPskwM90NDB6NS60=",
+			"origin": "github.com/winstonprivacyinc/go-ethereum/vendor/golang.org/x/text/encoding/traditionalchinese",
+			"path": "golang.org/x/text/encoding/traditionalchinese",
+			"revision": "5c1866c965891d7ec5b3f15a5171bd49f486b3bb",
+			"revisionTime": "2018-12-03T19:06:40Z"
+		},
+		{
+			"checksumSHA1": "G9LfJI9gySazd+MyyC6QbTHx4to=",
+			"origin": "github.com/winstonprivacyinc/go-ethereum/vendor/golang.org/x/text/encoding/unicode",
+			"path": "golang.org/x/text/encoding/unicode",
+			"revision": "5c1866c965891d7ec5b3f15a5171bd49f486b3bb",
+			"revisionTime": "2018-12-03T19:06:40Z"
+		},
+		{
+			"checksumSHA1": "hyNCcTwMQnV6/MK8uUW9E5H0J0M=",
+			"origin": "github.com/winstonprivacyinc/go-ethereum/vendor/golang.org/x/text/internal/tag",
+			"path": "golang.org/x/text/internal/tag",
+			"revision": "5c1866c965891d7ec5b3f15a5171bd49f486b3bb",
+			"revisionTime": "2018-12-03T19:06:40Z"
+		},
+		{
+			"checksumSHA1": "Qk7dljcrEK1BJkAEZguxAbG9dSo=",
+			"origin": "github.com/winstonprivacyinc/go-ethereum/vendor/golang.org/x/text/internal/utf8internal",
+			"path": "golang.org/x/text/internal/utf8internal",
+			"revision": "5c1866c965891d7ec5b3f15a5171bd49f486b3bb",
+			"revisionTime": "2018-12-03T19:06:40Z"
+		},
+		{
+			"checksumSHA1": "SsV0B7aXLh8gI+/u5YuGJ1uQrno=",
+			"origin": "github.com/winstonprivacyinc/go-ethereum/vendor/golang.org/x/text/language",
+			"path": "golang.org/x/text/language",
+			"revision": "5c1866c965891d7ec5b3f15a5171bd49f486b3bb",
+			"revisionTime": "2018-12-03T19:06:40Z"
+		},
+		{
+			"checksumSHA1": "IV4MN7KGBSocu/5NR3le3sxup4Y=",
+			"origin": "github.com/winstonprivacyinc/go-ethereum/vendor/golang.org/x/text/runes",
+			"path": "golang.org/x/text/runes",
+			"revision": "5c1866c965891d7ec5b3f15a5171bd49f486b3bb",
+			"revisionTime": "2018-12-03T19:06:40Z"
+		},
+		{
+			"checksumSHA1": "CbpjEkkOeh0fdM/V8xKDdI0AA88=",
+			"path": "golang.org/x/text/secure/bidirule",
+			"revision": "905a57155faa8230500121607930ebb9dd8e139c",
+			"revisionTime": "2018-09-08T17:02:15Z"
+		},
+		{
+			"checksumSHA1": "ziMb9+ANGRJSSIuxYdRbA+cDRBQ=",
+			"path": "golang.org/x/text/transform",
+			"revision": "905a57155faa8230500121607930ebb9dd8e139c",
+			"revisionTime": "2018-09-08T17:02:15Z"
+		},
+		{
+			"checksumSHA1": "UwLPI4qEs8cBU0CNw+/99/F1rN0=",
+			"path": "golang.org/x/text/unicode/bidi",
+			"revision": "905a57155faa8230500121607930ebb9dd8e139c",
+			"revisionTime": "2018-09-08T17:02:15Z"
+		},
+		{
+			"checksumSHA1": "othnvXmmdxkNRyNDxRg5SKwLP8k=",
+			"path": "golang.org/x/text/unicode/norm",
+			"revision": "905a57155faa8230500121607930ebb9dd8e139c",
+			"revisionTime": "2018-09-08T17:02:15Z"
+		}
+	],
+	"rootPath": "github.com/winstonprivacyinc/goproxy"
+}
