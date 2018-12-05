@@ -257,8 +257,11 @@ func (proxy *ProxyHttpServer) ServeHTTP(w http.ResponseWriter, r *http.Request) 
 	//	ctx.PrivateNetwork = false
 	//}
 
+	//if strings.Contains(ctx.host, "mdn") {
+	//	fmt.Printf("[DEBUG] ServeHTTP() called [%s] %+v\n", ctx.host, r.URL)
+	//}
+
 	// Check for websockets request. These need to be tunneled like a CONNECT request.
-	//fmt.Printf("[DEBUG] ServeHTTP() called [%s] %+v\n", ctx.host, r.URL)
 	nonhttpprotocol := false
 	if ctx.Req.Header.Get("Upgrade") != "" {
 		nonhttpprotocol = true
@@ -437,8 +440,6 @@ func (proxy *ProxyHttpServer) ListenAndServeTLS(httpsAddr string) error {
 				return
 			}
 
-			//log.Printf("[DEBUG] ListenAndServeTLS called... %s\n", Host)
-
 			connectReq := &http.Request{
 				Method: "CONNECT",
 				URL: &url.URL{
@@ -485,6 +486,11 @@ func (proxy *ProxyHttpServer) ListenAndServeTLS(httpsAddr string) error {
 			ctx.sniffedTLS = true
 			ctx.sniHost = Host
 
+			if strings.Contains(Host, "mdn") {
+				log.Printf("[DEBUG] ListenAndServeTLS called... %s\n", Host, c.RemoteAddr().String(), c.LocalAddr().String())
+			}
+
+
 			// Create a signature string for the accepted ciphers
 
 			if tlsConn.ClientHelloMsg != nil && len(tlsConn.ClientHelloMsg.CipherSuites) > 0 {
@@ -530,6 +536,10 @@ func (proxy *ProxyHttpServer) ListenAndServeTLS(httpsAddr string) error {
 			//	ctx.SkipRequestHandler = true
 			//	ctx.SkipResponseHandler = true
 			//	ctx.PrivateNetwork = false
+			//}
+
+			//if strings.Contains(Host, "mdn") {
+			//	log.Printf("[DEBUG] ListenAndServeTLS - dispatching connect handlers... %s\n", Host)
 			//}
 
 			proxy.dispatchConnectHandlers(ctx)

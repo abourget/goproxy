@@ -1069,7 +1069,7 @@ func (ctx *ProxyCtx) HijackConnect() net.Conn {
 // This is used to pipe a request directly through to the target site back to the client via MITM.
 // Note that we have to already have a connection to the remote server before calling.
 func (ctx *ProxyCtx) ForwardConnect() error {
-	var dnsbypassctx context.Context
+	dnsbypassctx := ctx.Req.Context()
 
 	//fmt.Println("[DEBUG] ForwardConnect()", ctx.host)
 
@@ -1077,9 +1077,13 @@ func (ctx *ProxyCtx) ForwardConnect() error {
 		//ctx.Logf(1, "  *** ForwardConnect() - Bypassing DNS for whitelisted host [%s]", ctx.host)
 		//fmt.Println("[DEBUG] ForwardConnect() - bypassing DNS for whitelisted host", ctx.host)
 		dnsbypassctx = context.WithValue(ctx.Req.Context(), dns.UpstreamKey, 0)
-	} else if ctx.PrivateNetwork {
+	}
+
+	// When forwarding requests, a connection can be whitelisted (bypassing filtered DNS) but
+	// routed through the private network.
+	if ctx.PrivateNetwork {
 		//fmt.Println("[DEBUG] ForwardConnect() - Using private network", ctx.host)
-		dnsbypassctx = context.WithValue(ctx.Req.Context(), shadownetwork.PrivateNetworkKey, true)
+		dnsbypassctx = context.WithValue(dnsbypassctx, shadownetwork.PrivateNetworkKey, true)
 	}
 
 	targetSiteConn, err := ctx.Proxy.connectDialContext(dnsbypassctx, "tcp", ctx.host)
