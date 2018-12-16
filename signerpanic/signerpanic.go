@@ -1,4 +1,8 @@
-/* Reproduces WINSTON-379 - Hashmap collision panics during TLS handshake.
+/* Instructions: The following code reproduces a real-world test case encountered in a production
+ * Winston unit. Using Go v1.9.7, first install the dependencies and then run the code to reproduce
+ a panic condition. This may take multiple attempts. Please explain to us the *root cause* of the
+ * panic (do not merely describe the symptoms or the error itself) and what you would do to fix it.
+ It is not required to actually code the solution.
  */
 package main
 
@@ -77,7 +81,8 @@ func main() {
 		}
 	}()
 
-	// Goroutine to continually simulate incoming client TLS connections
+	// Goroutine to continually simulate incoming client TLS connections.
+	// The following code frequently panics.
 	var wgmain sync.WaitGroup
 	wgmain.Add(1)
 	go func() {

@@ -431,12 +431,12 @@ func (proxy *ProxyHttpServer) ListenAndServeTLS(httpsAddr string) error {
 
 			if Host == "" {
 				Host = nonSNIHost.String()
-				proxy.Logf(1, "[DEBUG] Non-SNI or non-TLS protocol detected on port 443 - destination: [%s]\n", Host)
+				//log.Printf("[DEBUG] Non-SNI or non-TLS protocol detected on port 443 - destination: [%s]\n", Host)
 			}
 
 			// Check for local host
 			if strings.HasPrefix(Host, "192.168") {
-				log.Printf("[DEBUG] non-SNI attempt at local host. Dropping request: [%s]\n", Host)
+				log.Printf("[DEBUG] non-SNI attempt at local host. Dropping request: [%s]  non-SNI Host: [%s]\n", Host, nonSNIHost)
 				return
 			}
 
@@ -477,6 +477,9 @@ func (proxy *ProxyHttpServer) ListenAndServeTLS(httpsAddr string) error {
 					ctx.host += ":80"
 				} else if connectReq.URL.Scheme == "https" {
 					ctx.host += ":443"
+				} else {
+					ctx.host += ":443"
+					fmt.Println("[DEBUG] No port provided in ListenandServeTLS(). Appending 443.", connectReq.URL.Scheme, ctx.host)
 				}
 			}
 
@@ -486,9 +489,9 @@ func (proxy *ProxyHttpServer) ListenAndServeTLS(httpsAddr string) error {
 			ctx.sniffedTLS = true
 			ctx.sniHost = Host
 
-			if strings.Contains(Host, "mdn") {
-				log.Printf("[DEBUG] ListenAndServeTLS called... %s\n", Host, c.RemoteAddr().String(), c.LocalAddr().String())
-			}
+			//if strings.Contains(Host, "mdn") {
+			//	log.Printf("[DEBUG] ListenAndServeTLS called... %s\n", Host, c.RemoteAddr().String(), c.LocalAddr().String())
+			//}
 
 
 			// Create a signature string for the accepted ciphers
@@ -528,18 +531,6 @@ func (proxy *ProxyHttpServer) ListenAndServeTLS(httpsAddr string) error {
 			// Print out TLS CLIENTHELLO message. Useful for inspecting cipher suites.
 			//if ctx.Trace {
 			//	fmt.Printf("[TRACE] CLIENTHELLO [%s] [Vers=%v] =\n%+v\n\n", ctx.CipherSignature, (*tlsConn.ClientHelloMsg).Vers, *tlsConn.ClientHelloMsg)
-			//}
-
-			// Disable handlers and P2P network. Can be used to more quickly debug website compatibility problems.
-			//if strings.Contains(ctx.host, "scdn")  {
-			//	fmt.Println("[DEBUG] Target HTTPS request - skipping  handlers.")
-			//	ctx.SkipRequestHandler = true
-			//	ctx.SkipResponseHandler = true
-			//	ctx.PrivateNetwork = false
-			//}
-
-			//if strings.Contains(Host, "mdn") {
-			//	log.Printf("[DEBUG] ListenAndServeTLS - dispatching connect handlers... %s\n", Host)
 			//}
 
 			proxy.dispatchConnectHandlers(ctx)
