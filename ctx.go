@@ -28,6 +28,7 @@ import (
 	"net/url"
 	"crypto/rand"
 	//"runtime/debug"
+	"os"
 )
 
 var NonHTTPRequest = "nonhttprequest"
@@ -1071,7 +1072,9 @@ func (ctx *ProxyCtx) HijackConnect() net.Conn {
 func (ctx *ProxyCtx) ForwardConnect() error {
 	dnsbypassctx := ctx.Req.Context()
 
-	//fmt.Println("[DEBUG] ForwardConnect()", ctx.host)
+	//if strings.Contains(ctx.host, "websocket") {
+	//	fmt.Println("[DEBUG] ForwardConnect()", ctx.host, "method", ctx.Method, "whitelisted:", ctx.Whitelisted, "private:", ctx.PrivateNetwork)
+	//}
 
 	if ctx.Whitelisted {
 		//ctx.Logf(1, "  *** ForwardConnect() - Bypassing DNS for whitelisted host [%s]", ctx.host)
@@ -1096,11 +1099,11 @@ func (ctx *ProxyCtx) ForwardConnect() error {
 	// TEST:
 	//fmt.Println("[DEBUG] ForwardConnect(): ctx.Method", ctx.Method)
 	if ctx.Method == "CONNECT" && !ctx.sniffedTLS {
-		//fmt.Println("[DEBUG] ForwardConnect() - Responding with 200 OK")
+		//fmt.Println("[DEBUG] ForwardConnect() - Responding with 200 OK", ctx.host)
 		ctx.Conn.Write([]byte("HTTP/1.0 200 OK\r\n\r\n"))
 	} else if !ctx.sniffedTLS && ctx.IsSecure {
 		// This doesn't appear to be necessary but leaving it in just in case. Never gets triggered.
-		fmt.Println("[TODO] Check HTTP 1.0 response to sender here (5).")
+		fmt.Println("[TODO] Check HTTP 1.0 response to sender here (5).", ctx.host)
 		ctx.Conn.Write([]byte("HTTP/1.0 200 OK\r\n\r\n"))
 	}
 
@@ -1159,17 +1162,17 @@ func (ctx *ProxyCtx) RejectConnect() {
 // This will use the above file to regenerate /etc/ssl/certs
 
 
-// Used for protocols that are "http-like" (ie: websockets).
-// Opens a connection, serializes the original request to it and sets up a tunnel, allowing further
+
+// Used to forward protocols that are "http-like" (ie: websockets). This method forwards the
+// original HTTP request before fusing the connection, allowing further
 // communication to take place (if none, it will close).
 // TODO: Should we add websockets protocol support so we can inspect packets?
 // TODO: Add P2P support
-// TODO: Add Timeouts
 func (ctx *ProxyCtx) ForwardNonHTTPRequest(host string) error {
 	var targetSiteConn net.Conn
 	var err error
 
-	//fmt.Println("ForwardNonHTTPRequest() host:", host)
+	fmt.Println("ForwardNonHTTPRequest() host:", host)
 	 //If the request was whitelisted, then use the upstream DNS.
 	dnsbypassctx := ctx.Req.Context()
 	if ctx.Whitelisted {
@@ -1216,7 +1219,27 @@ func (ctx *ProxyCtx) ForwardNonHTTPRequest(host string) error {
 	}
 
 	// Tunnel the connections together and block until they close.
-	//fmt.Printf("[DEBUG] WSS request to: %s\n", ctx.Host())
+	fmt.Printf("[DEBUG] WSS request to: %s  %+v\n", ctx.Host(), "conn", ctx.Conn)
+
+	// TEST: If ctx.Conn doesn't exist, then the connection wasn't hijacked in OnConnect. Hijack it now.
+	// TODO: Move to dispatchRequestHandlers?
+	if ctx.Conn == nil {
+		hij, ok := ctx.ResponseWriter.(http.Hijacker)
+		if !ok {
+			fmt.Println("[ERROR] Couldn't hijack ctx.ResponseWriter")
+		}
+
+		// This sets up a new connection to the original client
+		conn, _, err := hij.Hijack()
+		if err != nil {
+			fmt.Printf("[DEBUG] ForwardNonHTTPRequest() Hijack error [%s]\n", ctx.host, err)
+		} else {
+			//fmt.Printf("[DEBUG] Successfully hijacked client websocket connection", ctx.Host())
+			ctx.Conn = conn
+		}
+	}
+
+
 	fuse(ctx.Conn, targetSiteConn, ctx.Host())
 	//toClose := make(chan net.Conn)
 	//go ctx.copyAndClose(targetSiteConnIdle, clientConnIdle, toClose)
@@ -1850,6 +1873,25 @@ const serverReadTimeout = 15 * 60	// response timeout in seconds
 const clientReadTimeout = 15 * 60	// Client request timeout in seconds
 const connectionIdleTimeout = 60	// Connections close if idle for this long
 
+// SpyConnection embeds a net.Conn, all reads and writes are output to stderr
+type SpyConnection struct {
+	net.Conn
+}
+
+// Read writes all data read from the underlying connection to stderr
+func (sc *SpyConnection) Read(b []byte) (int, error) {
+	tr := io.TeeReader(sc.Conn, os.Stderr)
+	br, err := tr.Read(b)
+	return br, err
+}
+
+// Write writes all data written to the underlying connection to stderr
+func (sc *SpyConnection) Write(b []byte) (int, error) {
+	mw := io.MultiWriter(sc.Conn, os.Stderr)
+	bw, err := mw.Write(b)
+	return bw, err
+}
+
 // RLS 9/6/2018 - Cleaner method to pipe two conns together.
 // Fuse connections together. Have to take precautions to close connections down in various cases.
 // 9/16/2018 - Requests which are proxied by static.deploy.akamaitechnologies.com and a few other sites hang here forever.
@@ -1860,6 +1902,12 @@ func fuse(client, backend net.Conn, debug string) {
 	//defer p.logConnectionMessage("closed", client, backend)
 	//p.logConnectionMessage("opening", client, backend)
 
+	//trace := false
+	//if strings.Contains(debug, "websocket") {
+	//	fmt.Println("[DEBUG] fuse()", debug)
+	//	trace = true
+	//}
+
 	//start := time.Now()
 
 	defer client.Close()
@@ -1868,26 +1916,30 @@ func fuse(client, backend net.Conn, debug string) {
 	// Pipes data from the remote server to our client
 	backenddie := make(chan struct{})
 	go func() {
-		//backend.SetReadDeadline(time.Now().Add(serverReadTimeout * time.Second))
-		// Wrap the backend connection so that we can enforce an idle timeout.
-		//idleconn := &IdleTimeoutConn{Conn: backend}
-
 		// Wrap the backend connection so that we can enforce an idle timeout (60 seconds)
 		idleconn := &IdleTimeoutConn{Conn: backend, IdleTimeout: connectionIdleTimeout}
 
 		// Connections cannot stay open longer than this period of time (15 minutes)
 		idleconn.SetDeadline(time.Now().Add(time.Duration(serverReadTimeout) * time.Second))
 
+		// TEST: Print out the server response
 
+		//if trace {
+		//	fmt.Println("[DEBUG] fuse() server->client spyconnection", debug)
+		//	spyconnection := &SpyConnection{idleconn}
+		//	copyData(client, spyconnection)
+		//
+		//} else {
 
-		//n, err :=
+			//n, err :=
 			copyData(client, idleconn)
-		//if strings.HasPrefix(debug, "104") {
-		//	fmt.Println("[DEBUG] Fuse remote->client", n, debug, err)
-		//}
-		// These errors are common with streaming sites. Uncomment to see.
-		//if err != nil && !strings.Contains(err.Error(), "closed network connection") {
-		//	fmt.Printf("[ERROR] ctx.go/fuse() error backend->client: %d bytes transferred. [%s] Err=%s\n", n, debug, err)
+			//if strings.HasPrefix(debug, "104") {
+			//	fmt.Println("[DEBUG] Fuse remote->client", n, debug, err)
+			//}
+			// These errors are common with streaming sites. Uncomment to see.
+			//if err != nil && !strings.Contains(err.Error(), "closed network connection") {
+			//	fmt.Printf("[ERROR] ctx.go/fuse() error backend->client: %d bytes transferred. [%s] Err=%s\n", n, debug, err)
+			//}
 		//}
 
 		close(backenddie)
@@ -1911,7 +1963,14 @@ func fuse(client, backend net.Conn, debug string) {
 
 
 		//n, err :=
+		//if trace {
+		//	fmt.Println("[DEBUG] fuse() client->server spyconnection", debug)
+		//	spyconnection := &SpyConnection{idleconn}
+		//	copyData(backend, spyconnection)
+		//} else {
+		//
 			copyData(backend, idleconn)
+		//}
 		//if strings.HasPrefix(debug, "104") {
 		//	fmt.Println("[DEBUG] Fuse client->remote", n, debug, err)
 		//}
@@ -1930,8 +1989,10 @@ func fuse(client, backend net.Conn, debug string) {
 	<-backenddie
 	<-clientdie
 
-	//elapsed := time.Since(start)
-	//fmt.Println("[DEBUG] Fuse() terminated.", debug, elapsed)
+	//if strings.Contains(debug, "websocket") {
+		//elapsed := time.Since(start)
+	//	fmt.Println("[DEBUG] fuse() terminated", debug, elapsed)
+	//}
 
 
 }

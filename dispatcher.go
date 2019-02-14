@@ -211,7 +211,7 @@ func (proxy *ProxyHttpServer) DispatchRequestHandlers(ctx *ProxyCtx) {
 	}
 
 	if ctx.IsNonHttpProtocol {
-		//fmt.Println("[DEBUG] Dispatcher.go:DispatchRequestHandlers() - Forward Non HTTP Request")
+		fmt.Println("[DEBUG] Dispatcher.go:DispatchRequestHandlers() - Forward Non HTTP Request", ctx.Req)
 		// This forwards the request and pipes the response back to the client, similar to ForwardConnect()
 		// We don't process the response in any way (yet).
 		ctx.ForwardNonHTTPRequest(ctx.host)

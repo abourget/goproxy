@@ -264,23 +264,31 @@ func (proxy *ProxyHttpServer) ServeHTTP(w http.ResponseWriter, r *http.Request) 
 	// Check for websockets request. These need to be tunneled like a CONNECT request.
 	nonhttpprotocol := false
 	if ctx.Req.Header.Get("Upgrade") != "" {
+		//fmt.Printf("[DEBUG] Proxy.go::Websocket connection detected. %+v\n", ctx.Req)
 		nonhttpprotocol = true
 		ctx.IsNonHttpProtocol = true
 		//ctx.Req.URL.Scheme = "ws"
 	}
 
 
-	if r.Method == "CONNECT" || nonhttpprotocol {
-		//fmt.Println("[DEBUG] ServeHTTP() -> dispatchConnectHandlers  Method:", r.Method, "  nonhttpprotocol: ", nonhttpprotocol)
+	if r.Method == "CONNECT" && !nonhttpprotocol {
+		if strings.Contains(ctx.host, "websocket") {
+			fmt.Println("[DEBUG] ServeHTTP() -> dispatchConnectHandlers host", ctx.host, " Method:", r.Method, "  nonhttpprotocol: ", nonhttpprotocol)
+		}
 		proxy.dispatchConnectHandlers(ctx)
 	} else {
+		// Important: NonHttpProtocols (websockets) that are initiated over port 80 must route through
+		// the Request handlers. If routed through the Connect Handlers, the original request will
+		// route to ForwardConnect() and be dropped.
 		// Give listener a chance to service the request
 		if proxy.HandleHTTP != nil {
 			if proxy.HandleHTTP(ctx) {
 				return
 			}
 		}
-		//fmt.Println("[DEBUG] ServeHTTP() -> dispatchRequestHandlers  Method:", r.Method, "  nonhttpprotocol: ", nonhttpprotocol)
+		if strings.Contains(ctx.host, "websocket") {
+			fmt.Println("[DEBUG] ServeHTTP() -> dispatchRequestHandlers host", ctx.host, "Method:", r.Method, "  nonhttpprotocol: ", nonhttpprotocol)
+		}
 		proxy.DispatchRequestHandlers(ctx)
 	}
 
