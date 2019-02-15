@@ -1172,7 +1172,7 @@ func (ctx *ProxyCtx) ForwardNonHTTPRequest(host string) error {
 	var targetSiteConn net.Conn
 	var err error
 
-	fmt.Println("ForwardNonHTTPRequest() host:", host)
+	//fmt.Println("ForwardNonHTTPRequest() host:", host)
 	 //If the request was whitelisted, then use the upstream DNS.
 	dnsbypassctx := ctx.Req.Context()
 	if ctx.Whitelisted {
@@ -1219,7 +1219,7 @@ func (ctx *ProxyCtx) ForwardNonHTTPRequest(host string) error {
 	}
 
 	// Tunnel the connections together and block until they close.
-	fmt.Printf("[DEBUG] WSS request to: %s  %+v\n", ctx.Host(), "conn", ctx.Conn)
+	//fmt.Printf("[DEBUG] WSS request to: %s  %+v\n", ctx.Host(), "conn", ctx.Conn)
 
 	// TEST: If ctx.Conn doesn't exist, then the connection wasn't hijacked in OnConnect. Hijack it now.
 	// TODO: Move to dispatchRequestHandlers?

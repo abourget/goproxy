@@ -272,9 +272,9 @@ func (proxy *ProxyHttpServer) ServeHTTP(w http.ResponseWriter, r *http.Request) 
 
 
 	if r.Method == "CONNECT" && !nonhttpprotocol {
-		if strings.Contains(ctx.host, "websocket") {
-			fmt.Println("[DEBUG] ServeHTTP() -> dispatchConnectHandlers host", ctx.host, " Method:", r.Method, "  nonhttpprotocol: ", nonhttpprotocol)
-		}
+		//if strings.Contains(ctx.host, "websocket") {
+		//	fmt.Println("[DEBUG] ServeHTTP() -> dispatchConnectHandlers host", ctx.host, " Method:", r.Method, "  nonhttpprotocol: ", nonhttpprotocol)
+		//}
 		proxy.dispatchConnectHandlers(ctx)
 	} else {
 		// Important: NonHttpProtocols (websockets) that are initiated over port 80 must route through
@@ -286,9 +286,9 @@ func (proxy *ProxyHttpServer) ServeHTTP(w http.ResponseWriter, r *http.Request) 
 				return
 			}
 		}
-		if strings.Contains(ctx.host, "websocket") {
-			fmt.Println("[DEBUG] ServeHTTP() -> dispatchRequestHandlers host", ctx.host, "Method:", r.Method, "  nonhttpprotocol: ", nonhttpprotocol)
-		}
+		//if strings.Contains(ctx.host, "websocket") {
+		//	fmt.Println("[DEBUG] ServeHTTP() -> dispatchRequestHandlers host", ctx.host, "Method:", r.Method, "  nonhttpprotocol: ", nonhttpprotocol)
+		//}
 		proxy.DispatchRequestHandlers(ctx)
 	}
 
