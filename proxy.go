@@ -26,8 +26,9 @@ import (
 	"crypto/tls"
 	"github.com/winston/shadownetwork"
 	//"crypto/x509"
-	"github.com/valyala/fasthttp/fasthttputil"
+	//"github.com/valyala/fasthttp/fasthttputil"
 	"io/ioutil"
+	"io"
 )
 
 // The basic proxy type. Implements http.Handler.
@@ -191,25 +192,155 @@ func (proxy *ProxyHttpServer) SetSignature(signature string) {
 	lastSignature = signature
 }
 
-// Standard net/http function. Shouldn't be used directly, http.Serve will use it.
-func (proxy *ProxyHttpServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	//r.Header["X-Forwarded-For"] = w.RemoteAddr()
-	//fmt.Println("[DEBUG] ServeHTTP() - ctx.host", r.Method, "Scheme", r.URL.Scheme, "Host", r.Host, "Host", r.URL.Host, "URI", r.RequestURI)
+// Experimental version of ListenAndServe which allows us to handle our own request processing.
+// Should only be used for unencrypted (port 80) requests.
+func (proxy *ProxyHttpServer) ListenAndServe(addr string) error {
+	ln, err := net.Listen("tcp", addr)
+
+	if err != nil {
+		log.Fatalf("Error listening for HTTP connections (err 1) - %v", err)
+	}
+	for {
+		c, err := ln.Accept()
+		if err != nil {
+			log.Printf("Error accepting new HTTP connection (err 2) - %v", err)
+			panic("Stopping for analysis...")
+			continue
+		}
+		go func(c net.Conn) {
+			//log.Printf("[INFO] Incoming HTTP request - source: %s / destination: %s", c.RemoteAddr().String(), c.LocalAddr().String())
+
+			// If true, a connection will be opened to the destination and left open until server, client closes (or timeout)
+			// Because this is HTTP, we still have the ability to inspect or modify headers but that is up to the handler.
+			//isnonhttpprotocol := false
+
+			var buf bytes.Buffer
+			tee := io.TeeReader(c, &buf)
+			connteereader := bufio.NewReader(tee)
+
+			var req *http.Request
+			req, err = http.ReadRequest(connteereader)
+
+			if (err != nil) {
+				// TODO: Try to recover as much information from the original request as possible
+				// so that we can act on headers that might actually be there (especially referrer
+				// and user agent)
+				req = &http.Request{
+					Method:     "",
+					//URL:	&url.URL{
+						//Host: net.JoinHostPort(Host, "80"),
+					//},
+					Proto:      "unknown",
+					ProtoMajor: 0,
+					ProtoMinor: 0,
+					Header:     make(http.Header),
+					Body:       nil,
+					Host:       "",
+					//RequestURI: Host,
+				}
+				//isnonhttpprotocol = true
+
+			}
+
+			// To print any local responses (errors) to stdout, uncomment SpyConnection.
+			// This will not print out anything related to forwarded connections.
+			//resp := notsodumbResponseWriter{Conn: &SpyConnection{c}, ResponseHeader: &req.Header}
+			resp := notsodumbResponseWriter{Conn: c, ResponseHeader: &req.Header}
+
+
+			// Failover Host detection - if we couldn't read the host from the HTTP headers, check the
+			// conntrack table to get the original destination.
+			fmt.Printf("[DEBUG] ServeHTTP() - req: %+v\n", req)
+			if req.Host == "" {
+				//fmt.Println("[DEBUG] No HTTP host specified. Attempting experimental conntrack method to determine original host", r.Host)
+
+				var nonSNIHost net.IP
+				connections, connerr := conntrack.Flows()
+				if connerr != nil {
+					log.Printf("[ERROR] non-SNI client detected but couldn't read connection table. Dropping connection request. [%+v]\n", connerr)
+					return
+				}
+
+				// Get the source port
+				sourcePort := 0
+				portIndex := strings.IndexRune(c.RemoteAddr().String(), ':')
+
+				if portIndex == -1 {
+					fmt.Println("[ERROR] non-SNI client detected but there was no source port on the request. Dropping connection request.")
+				} else {
+					sourcePort, _ = strconv.Atoi(c.RemoteAddr().String()[(portIndex + 1):])
+				}
+
+				if sourcePort == 0 {
+					log.Println("[ERROR] non-SNI client detected but couldn't parse source port on the request. Dropping connection request.")
+				} else {
+
+					for _, flow := range connections {
+						if flow.Original.SPort == sourcePort {
+							nonSNIHost = flow.Original.Destination
+						}
+					}
+
+					req.Host = nonSNIHost.String()
+					fmt.Printf("[DEBUG] HTTP Conntrack read succeeded. Forwarding request to host: %s  %+v\n", nonSNIHost, req)
+				}
+			}
+
+			proxy.HandleHTTPConnection(c, req, &resp, &buf)
+		}(c)
+	}
+}
+
+
+// Expects a parsed request object, connection and a response writer. Will forward the connection to the original
+// destination (found in r.Host). If CONNECT, it will simply open a connection and the client must
+// negotiate it. Otherwise, it will replay the original request to the upstream server and pipe
+// the response back without modification. This is a major design change from the original implementation
+// which parsed (and potentially modified) the response. We no longer do this within the proxy.
+//
+// The response writer is needed in case we need to return our own response (ie: an error message) back to the caller.
+//
+// Important: Handlers will only be called once on the initial connection to a particular host. Because we
+// are tunneling HTTP requests, subsequent requests will not be visible to us unless a new TCP connection is
+// established. This is mitigated in practice because devices with the browser extension installed handle their
+// own logging.
+func (proxy *ProxyHttpServer) HandleHTTPConnection(c net.Conn, r *http.Request, w http.ResponseWriter, originalrequest *bytes.Buffer) {
 	ctx := &ProxyCtx{
-		Method:         r.Method,
-		SourceIP:       r.RemoteAddr, // pick it from somewhere else ? have a plugin to override this ?
-		Req:            r,
-		ResponseWriter: w,
-		UserData:       make(map[string]string),
-		UserObjects:    make(map[string]interface{}),
-		Session:        atomic.AddInt64(&proxy.sess, 1),
-		Proxy:          proxy,
-		MITMCertConfig: proxy.MITMCertConfig,
-		Tlsfailure:	proxy.Tlsfailure,
-		VerbosityLevel: proxy.VerbosityLevel,
-		DeviceType: -1,
-		//Trace:		false,
-		RequestTime:	time.Now(),
+		Method:         	r.Method,
+		SourceIP:       	r.RemoteAddr, // pick it from somewhere else ? have a plugin to override this ?
+		Req:            	r,
+		ResponseWriter: 	w,
+		UserData:       	make(map[string]string),
+		UserObjects:    	make(map[string]interface{}),
+		Session:        	atomic.AddInt64(&proxy.sess, 1),
+		Proxy:          	proxy,
+		MITMCertConfig: 	proxy.MITMCertConfig,
+		Tlsfailure:		proxy.Tlsfailure,
+		VerbosityLevel: 	proxy.VerbosityLevel,
+		DeviceType: 		-1,
+		RequestTime:		time.Now(),
+		TunnelRequest: 	true,	// Forces request through verbatim.
+		Conn: 			c,
+	}
+
+	if originalrequest != nil {
+		ctx.NonHTTPRequest = originalrequest.Bytes()
+	}
+
+	// Set up host and port
+	ctx.host = r.Host
+	if ctx.host == "" {
+		// Fail safe. Should we ever get here?
+		ctx.host = r.URL.Host
+		fmt.Println("[WARN] Did not have a host in ServeHTTP(). Failed over to r.URL.Host", ctx.host)
+	}
+
+	// TODO: Do we need to do this? Makes our requests very conspicuous.
+	// Convert relative URL to absolute
+	if r.Method != "CONNECT" && !r.URL.IsAbs() {
+		//fmt.Println("[DEBUG] ServeHTTP() - converting relative URL to absolute. r.URL:", r.URL, "r.URL.Host", r.URL.Host)
+		r.URL.Scheme = "http"
+		r.URL.Host = r.Host //net.JoinHostPort(r.Host, "80")
 	}
 
 	// Set up request trace
@@ -227,18 +358,8 @@ func (proxy *ProxyHttpServer) ServeHTTP(w http.ResponseWriter, r *http.Request) 
 		}
 	}
 
-	// Need a better way to detect WSS. Should try to read the headers?
 	//fmt.Println("[DEBUG] ServeHTTP() - ctx.host", r.Method, "Scheme", r.URL.Scheme, "Host", r.Host, "Host", r.URL.Host, "URI", r.RequestURI)
 
-	// Convert relative URL to absolute
-	if r.Method != "CONNECT" && !r.URL.IsAbs() {
-		//fmt.Println("[DEBUG] r.URL:", r.URL, "r.URL.Host", r.URL.Host)
-		r.URL.Scheme = "http"
-		r.URL.Host = r.Host //net.JoinHostPort(r.Host, "80")
-	}
-
-	// Set up host and port
-	ctx.host = r.URL.Host
 
 	// If no port was provided, guess it based on the scheme.
 	if strings.IndexRune(ctx.host, ':') == -1 {
@@ -249,31 +370,18 @@ func (proxy *ProxyHttpServer) ServeHTTP(w http.ResponseWriter, r *http.Request) 
 		}
 	}
 
-	// Disable handlers and P2P network. Can be used to more quickly debug website compatibility problems.
-	//if strings.Contains(ctx.host, "scdn.co")  {
-	//	fmt.Println("[DEBUG] Target HTTPS request - skipping handlers.")
-	//	ctx.SkipRequestHandler = true
-	//	ctx.SkipResponseHandler = true
-	//	ctx.PrivateNetwork = false
-	//}
-
-	//if strings.Contains(ctx.host, "mdn") {
-	//	fmt.Printf("[DEBUG] ServeHTTP() called [%s] %+v\n", ctx.host, r.URL)
-	//}
-
-	// Check for websockets request. These need to be tunneled like a CONNECT request.
-	nonhttpprotocol := false
+	// Check for websockets request. Forward without intercepting the response.
 	if ctx.Req.Header.Get("Upgrade") != "" {
 		//fmt.Printf("[DEBUG] Proxy.go::Websocket connection detected. %+v\n", ctx.Req)
-		nonhttpprotocol = true
-		ctx.IsNonHttpProtocol = true
+		ctx.TunnelRequest = true
 		//ctx.Req.URL.Scheme = "ws"
 	}
 
-
-	if r.Method == "CONNECT" && !nonhttpprotocol {
+	// RLS 2/19/2019 - Anything which is not a CONNECT request will go to DispatchRequestHandlers.
+	// This will now forward the original request without modifying it.
+	if r.Method == "CONNECT" {
 		//if strings.Contains(ctx.host, "websocket") {
-		//	fmt.Println("[DEBUG] ServeHTTP() -> dispatchConnectHandlers host", ctx.host, " Method:", r.Method, "  nonhttpprotocol: ", nonhttpprotocol)
+			fmt.Println("[DEBUG] ServeHTTP() -> dispatchConnectHandlers host", ctx.host, " Method:", r.Method)
 		//}
 		proxy.dispatchConnectHandlers(ctx)
 	} else {
@@ -286,9 +394,9 @@ func (proxy *ProxyHttpServer) ServeHTTP(w http.ResponseWriter, r *http.Request) 
 				return
 			}
 		}
-		//if strings.Contains(ctx.host, "websocket") {
-		//	fmt.Println("[DEBUG] ServeHTTP() -> dispatchRequestHandlers host", ctx.host, "Method:", r.Method, "  nonhttpprotocol: ", nonhttpprotocol)
-		//}
+		//fmt.Printf("[DEBUG] ServeHTTP() -> dispatchRequestHandlers - original request:\n%s\n", ctx.NonHTTPRequest)
+
+		//fmt.Println("[DEBUG] ServeHTTP() -> dispatchRequestHandlers host", ctx.host, "Method:", r.Method, "  ctx.IsNonHttpProtocol: ", ctx.IsNonHttpProtocol)
 		proxy.DispatchRequestHandlers(ctx)
 	}
 
@@ -298,8 +406,9 @@ func (proxy *ProxyHttpServer) ServeHTTP(w http.ResponseWriter, r *http.Request) 
 	}
 
 	// Duplicate the request but skip the request and response handling
-	if ctx.Trace.Unmodified {
-		// TODO: Use channel instead of sleeping
+	// Removed - we are not modifying the request any longer.
+	/*if ctx.Trace.Unmodified {
+		// TODO: Refactor this. Consider using a channel instead of sleeping.
 		time.Sleep(10 * time.Second)
 		// Duplicate the request and send it through as whitelisted. This will show us the original
 		// information without any modification.
@@ -343,25 +452,50 @@ func (proxy *ProxyHttpServer) ServeHTTP(w http.ResponseWriter, r *http.Request) 
 		writeTrace(ctxOrig)
 
 	}
-
+*/
 }
 
+// formatRequest generates ascii representation of a request. Useful when debugging.
+func formatRequest(r *http.Request) string {
+	// Create return string
+	var request []string
+
+	// Add the request string
+	url := fmt.Sprintf("%v %v %v", r.Method, r.URL, r.Proto)
+	request = append(request, url)
+
+	// Add the host
+	request = append(request, fmt.Sprintf("Host: %v", r.Host))
+
+	// Loop through headers
+	for name, headers := range r.Header {
+		name = strings.ToLower(name)
+		for _, h := range headers {
+			request = append(request, fmt.Sprintf("%v: %v", name, h))
+		}
+	}
+
+	// If this is a POST, add post data
+	if r.Method == "POST" {
+	r.ParseForm()
+	request = append(request, "\n")
+	request = append(request, r.Form.Encode())
+	}
+
+	// Return the request as a string
+	return strings.Join(request, "\n")
+}
 
 // ListenAndServe launches all the servers required and listens. Use this method
 // if you want to start listeners for transparent proxying.
-func (proxy *ProxyHttpServer) ListenAndServe(addr string) error {
-	return http.ListenAndServe(addr, proxy)
-}
+//func (proxy *ProxyHttpServer) ListenAndServe(addr string) error {
+//	return http.ListenAndServe(addr, proxy)
+//}
 
-// This function listens for TCP requests on the specified port.
+// This function listens for TLS requests on the specified port.
 // It should be called within a goroutine, otherwise it will block forever.
-
 func (proxy *ProxyHttpServer) ListenAndServeTLS(httpsAddr string) error {
 	ln, err := net.Listen("tcp", httpsAddr)
-
-	// Alternate socket based listener which can receive requests from packets marked with
-	// IP addresses not belonging to this server. Slow but may be useful.
-	//ln, err := tproxy.TcpListen(httpsAddr)
 
 	if err != nil {
 		log.Fatalf("Error listening for https connections (err 1) - %v", err)
@@ -379,25 +513,14 @@ func (proxy *ProxyHttpServer) ListenAndServeTLS(httpsAddr string) error {
 
 			forwardwithoutintercept := false
 			if err != nil {
-				// The Honeywell Lynx 5100 (and possibly other devices) send a non-TLS protocol over port 443.
-				// For now, we'll let these connect. TODO: Should we expose these to the user?
-
-				//log.Printf("[ERROR] Error accepting new connection (err 3) - %v", err)
+				// Honeywell Lynx 5100 (and possibly other devices) send a non-TLS protocol over port 443.
 				//log.Println("[WARN] Non-TLS protocol detected on port 443.")
-
 				forwardwithoutintercept = true
-
-				// Read the first 10 bytes off and see if they match
-				//p := make([]byte, 10)
-				//n, err := tlsConn.Read(p)
-				//fmt.Printf("[DEBUG] Read %d bytes. Err=%v\n%v\n", n, err, p)
-
-				//return
 			}
-
 
 			// Non-SNI request handling routine
 			var nonSNIHost net.IP
+			//fmt.Println("[DEBUG] ListenAndServeTLS() - ClientHELLO server name/host:", tlsConn.Host())
 			if tlsConn.Host() == "" {
 				//log.Printf("[DEBUG] non-SNI client detected - source: %s / destination: %s", c.RemoteAddr().String(), c.LocalAddr().String())
 
@@ -448,11 +571,17 @@ func (proxy *ProxyHttpServer) ListenAndServeTLS(httpsAddr string) error {
 				return
 			}
 
+			// If we weren't provided with a port, assume 443
+			var hostwithport = Host
+			if strings.IndexRune(Host, ':') == -1 {
+				hostwithport += ":443"
+			}
+
 			connectReq := &http.Request{
 				Method: "CONNECT",
 				URL: &url.URL{
 					Opaque: Host,
-					Host:   net.JoinHostPort(Host, "443"),
+					Host:   hostwithport,
 				},
 				Host:   Host,
 				Header: make(http.Header),
@@ -475,22 +604,27 @@ func (proxy *ProxyHttpServer) ListenAndServeTLS(httpsAddr string) error {
 				VerbosityLevel: 	proxy.VerbosityLevel,
 				DeviceType: 		-1,
 				RequestTime:		time.Now(),
-				IsNonHttpProtocol:	forwardwithoutintercept,
+				TunnelRequest:		forwardwithoutintercept,
 			}
 
 
-			ctx.host = connectReq.URL.Host
-			if strings.IndexRune(ctx.host, ':') == -1 {
-				if connectReq.URL.Scheme == "http" {
-					ctx.host += ":80"
-				} else if connectReq.URL.Scheme == "https" {
-					ctx.host += ":443"
-				} else {
-					ctx.host += ":443"
-					fmt.Println("[DEBUG] No port provided in ListenandServeTLS(). Appending 443.", connectReq.URL.Scheme, ctx.host)
-				}
-			}
+			//fmt.Println("[DEBUG] ListenAndServeTLS() - ClientHELLO server name/host:", ctx.host)
 
+			//ctx.host = connectReq.URL.Host
+			//fmt.Println("[DEBUG] ListenAndServeTLS() - URL.Host:", ctx.host)
+			//if strings.IndexRune(ctx.host, ':') == -1 {
+			//	if connectReq.URL.Scheme == "http" {
+			//		ctx.host += ":80"
+			//	} else if connectReq.URL.Scheme == "https" {
+			//		ctx.host += ":443"
+			//	} else {
+			//		ctx.host += ":443"
+			//		fmt.Println("[DEBUG] No port provided in ListenandServeTLS(). Appending 443.", connectReq.URL.Scheme, ctx.host)
+			//	}
+			//}
+			ctx.host = hostwithport
+
+			//fmt.Println("[DEBUG] ListenAndServeTLS() - ctx.Host:", ctx.host)
 
 			// We've sniffed the SNI record already through the vlshost muxer.
 			// This just sets the flags to avoid throwing warnings.
@@ -502,8 +636,8 @@ func (proxy *ProxyHttpServer) ListenAndServeTLS(httpsAddr string) error {
 			//}
 
 
+			// TODO: Move this to OnRequest/OnConnect?
 			// Create a signature string for the accepted ciphers
-
 			if tlsConn.ClientHelloMsg != nil && len(tlsConn.ClientHelloMsg.CipherSuites) > 0 {
 				// RLS 10/10/2017 - Expanded signature
 				// Generate a fingerprint for the client. This enables us to whitelist
@@ -544,7 +678,7 @@ func (proxy *ProxyHttpServer) ListenAndServeTLS(httpsAddr string) error {
 			proxy.dispatchConnectHandlers(ctx)
 
 			// If tracing, run the same request but skip any filtering.
-			if ctx.Trace.Unmodified {
+			/*if ctx.Trace.Unmodified {
 
 				// Wait a little while for the original request to complete
 				// TODO: Use a channel for this. Also send back original request body???
@@ -653,7 +787,7 @@ func (proxy *ProxyHttpServer) ListenAndServeTLS(httpsAddr string) error {
 
 
 				}
-			}
+			}*/
 
 		}(c)
 	}

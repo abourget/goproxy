@@ -152,6 +152,7 @@ func (proxy *ProxyHttpServer) dispatchConnectHandlers(ctx *ProxyCtx) {
 
 // RLS 5/22/2018 - exported so that we can use it for unit testing
 func (proxy *ProxyHttpServer) DispatchRequestHandlers(ctx *ProxyCtx) {
+	//fmt.Println("[DEBUG] Dispatcher.go:DispatchRequestHandlers()", ctx.host)
 	var then Next
 	for _, handler := range proxy.requestHandlers {
 		then = handler.Handle(ctx)
@@ -167,6 +168,7 @@ func (proxy *ProxyHttpServer) DispatchRequestHandlers(ctx *ProxyCtx) {
 		case FORWARD:
 			if ctx.Resp != nil {
 				// We've got a Resp already, so short circuit the ResponseHandlers.
+				//fmt.Println("[DEBUG] Dispatcher.go:DispatchRequestHandlers() - Already have response. Forwarding.", ctx.host)
 				ctx.ForwardResponse(ctx.Resp)
 				return
 			}
@@ -210,8 +212,8 @@ func (proxy *ProxyHttpServer) DispatchRequestHandlers(ctx *ProxyCtx) {
 		}
 	}
 
-	if ctx.IsNonHttpProtocol {
-		//fmt.Println("[DEBUG] Dispatcher.go:DispatchRequestHandlers() - Forward Non HTTP Request", ctx.Req)
+	if ctx.TunnelRequest {
+		fmt.Println("[DEBUG] Dispatcher.go:DispatchRequestHandlers() - Forward Non HTTP Request", ctx.host)
 		// This forwards the request and pipes the response back to the client, similar to ForwardConnect()
 		// We don't process the response in any way (yet).
 		ctx.ForwardNonHTTPRequest(ctx.host)
@@ -226,7 +228,7 @@ func (proxy *ProxyHttpServer) DispatchRequestHandlers(ctx *ProxyCtx) {
 			}
 		}
 
-		//fmt.Println("[DEBUG] Dispatcher.go:DispatchRequestHandlers() - Forward Request")
+		//fmt.Println("[DEBUG] Dispatcher.go:DispatchRequestHandlers() - Forward HTTP Request", ctx.host)
 		ctx.ForwardRequest(ctx.host)
 		ctx.DispatchResponseHandlers()
 	}

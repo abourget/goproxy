@@ -5,103 +5,487 @@ package goproxy_test
 import (
 	//"bufio"
 	//"bytes"
-	//"crypto/tls"
+	"crypto/tls"
 	//"image"
-	//"io"
-	//"io/ioutil"
+	"io"
+	"io/ioutil"
 	//"net"
-	//"net/http"
-	//"net/http/httptest"
-	//"net/url"
+	"net/http"
+	"net/http/httptest"
+	"net/url"
 	"os"
 	//"os/exec"
-	//"strings"
+	"strings"
 	"testing"
 
-	//"github.com/abourget/goproxy"
+	"github.com/winstonprivacyinc/goproxy"
 	//"github.com/abourget/goproxy/ext/image"
+	"fmt"
+	. "github.com/smartystreets/goconvey/convey"
+	//"net/http/httptrace"
+	"time"
+	"net"
+	"bufio"
+	"net/textproto"
+	"bytes"
 )
 
-/*
+
 var acceptAllCerts = &tls.Config{InsecureSkipVerify: true}
 
-var noProxyClient = &http.Client{Transport: &http.Transport{TLSClientConfig: acceptAllCerts}}
+//var noProxyClient = &http.Client{Transport: &http.Transport{TLSClientConfig: acceptAllCerts}}
 
-var https = httptest.NewTLSServer(nil)
+var srvhttps = httptest.NewTLSServer(ConstantHandler("bobo"))
 var srv = httptest.NewServer(nil)
-var fs = httptest.NewServer(http.FileServer(http.Dir(".")))
+//var fs = httptest.NewServer(http.FileServer(http.Dir(".")))
 
-type QueryHandler struct{}
 
-func (QueryHandler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
-	if err := req.ParseForm(); err != nil {
-		panic(err)
-	}
-	io.WriteString(w, req.Form.Get("result"))
-}
 
-func init() {
-	http.DefaultServeMux.Handle("/bobo", ConstantHandler("bobo"))
-	http.DefaultServeMux.Handle("/query", QueryHandler{})
-}
 
-type ConstantHandler string
-
-func (h ConstantHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	io.WriteString(w, string(h))
-}
-
-func get(url string, client *http.Client) ([]byte, error) {
-	resp, err := client.Get(url)
-	if err != nil {
-		return nil, err
-	}
-	txt, err := ioutil.ReadAll(resp.Body)
-	defer resp.Body.Close()
-	if err != nil {
-		return nil, err
-	}
-	return txt, nil
-}
-
-func getOrFail(url string, client *http.Client, t *testing.T) []byte {
-	txt, err := get(url, client)
-	if err != nil {
-		t.Fatal("Can't fetch url", url, err)
-	}
-	return txt
-}
-
+/*
 func localFile(url string) string { return fs.URL + "/" + url }
 func localTls(url string) string  { return https.URL + url }
+*/
 
-func TestSimpleHttpReqWithProxy(t *testing.T) {
-	proxy := goproxy.NewProxyHttpServer()
-	proxy.Verbose = true
-	client, s := oneShotProxy(proxy, t)
-	defer s.Close()
+// Given an unencrypted connection, parses the headers and returns true if we got 200 OK back
+func parseResponse(conn net.Conn) (bool, string) {
+	// Read each line until we get to two line feeds
+	foundOK := false
+	var response []byte
 
-	if r := string(getOrFail(srv.URL+"/bobo", client, t)); r != "bobo" {
-		t.Error("proxy server does not serve constant handlers", r)
-	}
-	if r := string(getOrFail(srv.URL+"/bobo", client, t)); r != "bobo" {
-		t.Error("proxy server does not serve constant handlers", r)
+	reader := bufio.NewReader(conn)
+	tp := textproto.NewReader(reader)
+	for {
+		line, _ := tp.ReadLine()
+		fmt.Println("[TEST] Header", line)
+		if line == "" {
+			break
+		}
+		if strings.Contains(string(line), "200 OK") {
+			foundOK = true
+		}
+
 	}
 
-	// NOTE: This issues a CONNECT call, because it doesn't default to port 80 ??
-	if string(getOrFail(https.URL+"/bobo", client, t)) != "bobo" {
-		t.Error("TLS server does not serve constant handlers, when proxy is used")
+	// We'll only read one line. Sufficient for testing.
+	if foundOK {
+		fmt.Println("[TEST] Reading body")
+
+		var buf bytes.Buffer
+		io.Copy(&buf, conn)
+		response = buf.Bytes()
+
+		//response, _ = ioutil.ReadAll(reader)
+		fmt.Println("[TEST] Body was:", string(response))
 	}
+
+	return foundOK, string(response)
 }
 
-func oneShotProxy(proxy *goproxy.ProxyHttpServer, t *testing.T) (client *http.Client, s *httptest.Server) {
-	s = httptest.NewServer(proxy)
+func TestConnectReqWithProxy(t *testing.T) {
+	// Confirms that we can connect using the normal methods to the destination in the next test.
+	Convey("Can make ordinary local TLS connection to Google", t, func() {
 
-	proxyUrl, _ := url.Parse(s.URL)
-	tr := &http.Transport{TLSClientConfig: acceptAllCerts, Proxy: http.ProxyURL(proxyUrl)}
-	client = &http.Client{Transport: tr}
-	return
+		conn, err := net.Dial("tcp", "www.google.com:443")
+		So(err, ShouldEqual, nil)
+
+		//tlsConfig := http.DefaultTransport.(*http.Transport).TLSClientConfig
+		//(*tlsConfig).InsecureSkipVerify = true
+
+		// Send a request directly to the tunnel.
+		tlsConn := tls.Client(conn, &tls.Config{
+			InsecureSkipVerify: true,
+		},)
+
+		timeoutDuration := 10 * time.Second
+		conn.SetReadDeadline(time.Now().Add(timeoutDuration))
+		conn.SetWriteDeadline(time.Now().Add(timeoutDuration))
+
+		err = tlsConn.Handshake()
+		So(err, ShouldEqual, nil)
+
+		//state := tlsConn.ConnectionState()
+		//fmt.Println("SSL ServerName : " + state.ServerName)
+		//fmt.Println("SSL Handshake : ", state.HandshakeComplete)
+		//fmt.Println("SSL Mutual : ", state.NegotiatedProtocolIsMutual)
+
+
+		request, err := http.NewRequest("GET", "https://www.google.com", nil)
+		request.Header.Set("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_11_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/56.0.2924.87 Safari/537.36")
+
+
+		//fmt.Println("[TEST] Sending ordinary TLS request.")
+
+		request.Write(tlsConn)
+
+		foundOK, _ := parseResponse(tlsConn)
+
+		So(foundOK, ShouldEqual, true)
+
+		conn.Close()
+
+	})
+
+	Convey("Can perform a CONNECT request to explicitly proxy to another server", t, func() {
+
+		fmt.Println()
+		fmt.Println("[TEST] Starting CONNECT request via proxy test")
+		proxy := goproxy.NewProxyHttpServer()
+		proxy.Verbose = true
+
+		calledConnectHandler := false
+		calledRequestHandler := false
+		calledResponseHandler := false
+		proxy.HandleConnectFunc(func(ctx *goproxy.ProxyCtx) goproxy.Next {
+			//fmt.Printf("[TEST] HandleConnectFunc() called\n")
+			calledConnectHandler = true
+			return goproxy.NEXT
+		})
+
+		// Hook the proxy request handler
+		proxy.HandleRequestFunc(func(ctx *goproxy.ProxyCtx) goproxy.Next {
+			calledRequestHandler = true
+			//fmt.Printf("[TEST] HandleRequestFunc() - Request function triggered: %s\n", ctx.Req.URL)
+			return goproxy.NEXT
+		})
+
+		proxy.HandleResponseFunc(func(ctx *goproxy.ProxyCtx) goproxy.Next {
+			//fmt.Printf("[TEST] HandleResponseFunc() - Response received: %s\n", ctx.Req.URL)
+			calledResponseHandler = true
+			return goproxy.NEXT
+		})
+
+		_, err := oneShotProxy(proxy, "9006")
+		So(err, ShouldEqual, nil)
+
+		// We cannot use our local server because our proxy does not allow forwarding
+		// to IP addresses
+		conn, err := connectraw("127.0.0.1:9006", "google.com:443")
+
+		So(err, ShouldEqual, nil)
+		So(conn, ShouldNotEqual, nil)
+
+
+		So(calledRequestHandler, ShouldEqual, false)
+		So(calledResponseHandler, ShouldEqual, false)
+		So(calledConnectHandler, ShouldEqual, true)
+
+		fmt.Println("[TEST] Tunnelled to destination. Sending TLS request.")
+		// Send a request directly to the tunnel.
+		tlsConn := tls.Client(conn, &tls.Config{
+			InsecureSkipVerify: true,
+		},)
+
+		timeoutDuration := 10 * time.Second
+		conn.SetReadDeadline(time.Now().Add(timeoutDuration))
+		conn.SetWriteDeadline(time.Now().Add(timeoutDuration))
+
+		err = tlsConn.Handshake()
+		So(err, ShouldEqual, nil)
+
+		request, err := http.NewRequest("GET", "https://www.google.com", nil)
+		request.Header.Set("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_11_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/56.0.2924.87 Safari/537.36")
+		request.Write(tlsConn)
+
+		fmt.Println("[TEST] Sent request. Parsing response.")
+
+		foundOK, _ := parseResponse(tlsConn)
+		So(foundOK, ShouldEqual, true)
+
+		conn.Close()
+	})
 }
+
+func TestHttpGetReqWithProxy(t *testing.T) {
+	Convey("Can proxy HTTP request", t, func() {
+		proxy := goproxy.NewProxyHttpServer()
+		proxy.Verbose = true
+
+		calledConnectHandler := false
+		calledRequestHandler := false
+		calledResponseHandler := false
+		proxy.HandleConnectFunc(func(ctx *goproxy.ProxyCtx) goproxy.Next {
+			//fmt.Printf("[TEST] HandleConnectFunc() called\n")
+			calledConnectHandler = true
+			return goproxy.NEXT
+		})
+
+		// Hook the proxy request handler
+		proxy.HandleRequestFunc(func(ctx *goproxy.ProxyCtx) goproxy.Next {
+			calledRequestHandler = true
+			//fmt.Printf("[TEST] HandleRequestFunc() - Request function triggered: %s\n", ctx.Req.URL)
+			return goproxy.NEXT
+		})
+
+		proxy.HandleResponseFunc(func(ctx *goproxy.ProxyCtx) goproxy.Next {
+			//fmt.Printf("[TEST] HandleResponseFunc() - Response received: %s\n", ctx.Req.URL)
+			calledResponseHandler = true
+			return goproxy.NEXT
+		})
+
+		client, err := oneShotProxy(proxy, "9001")
+		So(err, ShouldEqual, nil)
+
+		r := string(getOrFail(srv.URL + "/bobo", client, t))
+		So(r, ShouldEqual, "bobo")
+		So(calledRequestHandler, ShouldEqual, true)
+		So(calledResponseHandler, ShouldEqual, false)
+		So(calledConnectHandler, ShouldEqual, false)
+
+		calledRequestHandler = false
+		r = string(getOrFail(srv.URL + "/bobo", client, t))
+		So(r, ShouldEqual, "bobo")
+
+		// The request handler should not be called a second time because the TCP connection was re-used.
+		So(calledRequestHandler, ShouldEqual, false)
+
+
+
+	})
+}
+
+func TestHTTPSGetReqWithProxy(t *testing.T) {
+	// Confirms that we can connect using the normal methods to the destination in the next test.
+	Convey("Can proxy HTTPS request", t, func() {
+		proxy := goproxy.NewProxyHttpServer()
+		proxy.Verbose = true
+
+		calledConnectHandler := false
+		calledRequestHandler := false
+		calledResponseHandler := false
+		proxy.HandleConnectFunc(func(ctx *goproxy.ProxyCtx) goproxy.Next {
+			//fmt.Printf("[TEST] HandleConnectFunc() called\n")
+			calledConnectHandler = true
+			return goproxy.NEXT
+		})
+
+		// Hook the proxy request handler
+		proxy.HandleRequestFunc(func(ctx *goproxy.ProxyCtx) goproxy.Next {
+			calledRequestHandler = true
+			//fmt.Printf("[TEST] HandleRequestFunc() - Request function triggered: %s\n", ctx.Req.URL)
+			return goproxy.NEXT
+		})
+
+		proxy.HandleResponseFunc(func(ctx *goproxy.ProxyCtx) goproxy.Next {
+			//fmt.Printf("[TEST] HandleResponseFunc() - Response received: %s\n", ctx.Req.URL)
+			calledResponseHandler = true
+			return goproxy.NEXT
+		})
+
+		port := "9017"
+
+		_, err := oneShotTLSProxy(proxy, port)
+		So(err, ShouldEqual, nil)
+
+
+		// TLS server is working. Open a TLS tunnel to the proxy and send a request for the resource.
+		// We can't use the native Golang client for this because it will explicitly proxy the request
+		// via CONNECT instead of doing a transparent intercept.
+
+		// Dial proxy directly. This simulates a transparent intercept.
+		proxyname := "127.0.0.1:" + port
+
+		fmt.Println("[TEST] Dialing test server", proxyname)
+		conn, err := net.Dial("tcp", proxyname)
+
+		So(err, ShouldEqual, nil)
+		So(conn, ShouldNotEqual, nil)
+
+		ix := strings.LastIndex(srvhttps.URL, ":")
+		serverport := srvhttps.URL[ix+1:]
+		servername := "127.0.0.1:" + serverport
+
+
+		// Handshake - the server name determines the destination
+		tlsConn := tls.Client(conn, &tls.Config{
+			InsecureSkipVerify: true,
+			ServerName: servername,
+		})
+
+		//timeoutDuration := 10 * time.Second
+		//conn.SetReadDeadline(time.Now().Add(timeoutDuration))
+		//conn.SetWriteDeadline(time.Now().Add(timeoutDuration))
+
+		fmt.Println("[TEST] Starting TLS handshake")
+		err = tlsConn.Handshake()
+		So(err, ShouldEqual, nil)
+
+
+		// TODO: Our HTTPS response takes 60 seconds to return
+		now := time.Now()
+
+		// Send request to original website
+		request, err := http.NewRequest("GET", srvhttps.URL + "/bobo", nil)
+		request.Write(tlsConn)
+
+		// Read response
+		_, body := parseResponse(tlsConn)
+
+		fmt.Println("[TEST] Elapsed time for response", time.Since(now))
+
+		So(body, ShouldContainSubstring, "bobo")
+		So(calledConnectHandler, ShouldEqual, true)
+		So(calledRequestHandler, ShouldEqual, false)
+		So(calledResponseHandler, ShouldEqual, false)
+
+
+
+
+
+
+	})
+
+}
+
+func TestErrorWithProxy(t *testing.T) {
+	Convey("Goproxy returns an error page when a request is rejected.", t, func() {
+		proxy := goproxy.NewProxyHttpServer()
+		proxy.Verbose = true
+
+		calledConnectHandler := false
+		calledRequestHandler := false
+		calledResponseHandler := false
+		proxy.HandleConnectFunc(func(ctx *goproxy.ProxyCtx) goproxy.Next {
+			//fmt.Printf("[TEST] HandleConnectFunc() called\n")
+			calledConnectHandler = true
+			return goproxy.NEXT
+		})
+
+		// Hook the proxy request handler
+		proxy.HandleRequestFunc(func(ctx *goproxy.ProxyCtx) goproxy.Next {
+			calledRequestHandler = true
+			//fmt.Printf("[TEST] HandleRequestFunc() - Request function triggered: %s\n", ctx.Req.URL)
+			return goproxy.REJECT
+		})
+
+		proxy.HandleResponseFunc(func(ctx *goproxy.ProxyCtx) goproxy.Next {
+			//fmt.Printf("[TEST] HandleResponseFunc() - Response received: %s\n", ctx.Req.URL)
+			calledResponseHandler = true
+			return goproxy.NEXT
+		})
+
+		client, err := oneShotProxy(proxy, "9002")
+		So(err, ShouldEqual, nil)
+
+		r := string(getOrFail(srv.URL + "/bobo", client, t))
+		//fmt.Printf("[TEST] getOrFail returned body:\n%s\n", r)
+		So(r, ShouldContainSubstring, "blocked by Winston")
+		So(calledRequestHandler, ShouldEqual, true)
+		So(calledResponseHandler, ShouldEqual, false)
+		So(calledConnectHandler, ShouldEqual, false)
+	})
+}
+
+func TestMissingHostHeader(t *testing.T) {
+	Convey("Goproxy does not add a host header if it wasn't provided.", t, func() {
+		proxy := goproxy.NewProxyHttpServer()
+		proxy.Verbose = true
+
+		calledConnectHandler := false
+		calledRequestHandler := false
+		calledResponseHandler := false
+		proxy.HandleConnectFunc(func(ctx *goproxy.ProxyCtx) goproxy.Next {
+			//fmt.Printf("[TEST] HandleConnectFunc() called\n")
+			calledConnectHandler = true
+			return goproxy.NEXT
+		})
+
+		// Hook the proxy request handler
+		proxy.HandleRequestFunc(func(ctx *goproxy.ProxyCtx) goproxy.Next {
+			calledRequestHandler = true
+			fmt.Printf("[TEST] HandleRequestFunc() - Original Request: \n%s\n", string(ctx.NonHTTPRequest))
+			return goproxy.NEXT
+		})
+
+		proxy.HandleResponseFunc(func(ctx *goproxy.ProxyCtx) goproxy.Next {
+			//fmt.Printf("[TEST] HandleResponseFunc() - Response received: %s\n", ctx.Req.URL)
+			calledResponseHandler = true
+			return goproxy.NEXT
+		})
+
+		//client
+		_, err := oneShotProxy(proxy, "9004")
+		So(err, ShouldEqual, nil)
+
+		//fmt.Println("[TEST] Starting low level HTTP request")
+		// Send the next request directly on the wire to avoid adding a host header.
+		b, err := getraw("127.0.0.1:9004", srv.URL + "/header?header=Host", "User-Agent: None\r\n")
+
+		So(err, ShouldEqual, nil)
+		body := string(b)
+		So(len(b), ShouldNotEqual, 0)
+		So(body, ShouldNotContainSubstring, "Host")
+		So(body, ShouldContainSubstring, "Content-Length")
+
+		So(calledRequestHandler, ShouldEqual, true)
+
+		// Send the request again but get the user agent back
+		b, err = getraw("127.0.0.1:9004", srv.URL + "/header?header=User-Agent", "User-Agent: None\r\n")
+		fmt.Printf("[TEST] Server's HTTP response was\n%s\n", string(b))
+		body = string(b)
+		So(len(b), ShouldNotEqual, 0)
+		So(body, ShouldNotContainSubstring, "Host")
+		So(body, ShouldContainSubstring, "None")
+
+		// Request handler won't be called the second time because a connection is already open.
+		So(calledRequestHandler, ShouldEqual, false)
+		So(calledResponseHandler, ShouldEqual, false)
+		So(calledConnectHandler, ShouldEqual, false)
+	})
+}
+
+// Confirms that the API can listen and respond to requests
+func TestAPIHook(t *testing.T) {
+	Convey("Requests can be intercepted by a custom handler", t, func() {
+		proxy := goproxy.NewProxyHttpServer()
+		proxy.Verbose = true
+
+		calledConnectHandler := false
+		calledRequestHandler := false
+		calledResponseHandler := false
+		proxy.HandleConnectFunc(func(ctx *goproxy.ProxyCtx) goproxy.Next {
+			//fmt.Printf("[TEST] HandleConnectFunc() called\n")
+			calledConnectHandler = true
+			return goproxy.NEXT
+		})
+
+		// Hook the proxy request handler
+		proxy.HandleRequestFunc(func(ctx *goproxy.ProxyCtx) goproxy.Next {
+			calledRequestHandler = true
+			//fmt.Printf("[TEST] HandleRequestFunc() - Request function triggered: %s\n", ctx.Req.URL)
+			return goproxy.NEXT
+		})
+
+		proxy.HandleResponseFunc(func(ctx *goproxy.ProxyCtx) goproxy.Next {
+			//fmt.Printf("[TEST] HandleResponseFunc() - Response received: %s\n", ctx.Req.URL)
+			calledResponseHandler = true
+			return goproxy.NEXT
+		})
+
+		client, err := oneShotProxy(proxy, "9001")
+		So(err, ShouldEqual, nil)
+
+		r := string(getOrFail(srv.URL + "/bobo", client, t))
+		So(r, ShouldEqual, "bobo")
+		So(calledRequestHandler, ShouldEqual, true)
+		So(calledResponseHandler, ShouldEqual, false)
+		So(calledConnectHandler, ShouldEqual, false)
+
+		calledRequestHandler = false
+		r = string(getOrFail(srv.URL + "/bobo", client, t))
+		So(r, ShouldEqual, "bobo")
+
+		// The request handler should not be called a second time because the TCP connection was re-used.
+		So(calledRequestHandler, ShouldEqual, false)
+
+
+
+	})
+}
+
+
+
+/*
 
 func TestSimpleConditionalHook(t *testing.T) {
 	proxy := goproxy.NewProxyHttpServer()
@@ -826,4 +1210,170 @@ func panicOnErr(err error, msg string) {
 		println(err.Error() + ":-" + msg)
 		os.Exit(-1)
 	}
+}
+
+
+// Returns the requested header if it exists
+type HeaderHandler struct{}
+
+func (HeaderHandler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
+	if err := req.ParseForm(); err != nil {
+		panic(err)
+	}
+	//fmt.Println("[TEST] Header Handler called. Headers:", req)
+
+	head := req.FormValue("header")
+	if head == "" {
+		panic("[ERROR] Form did not contain a header value")
+	}
+
+	//fmt.Println("[TEST] Header requested:", head)
+	io.WriteString(w, req.Header.Get(head))
+}
+
+type QueryHandler struct{}
+
+func (QueryHandler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
+	if err := req.ParseForm(); err != nil {
+		panic(err)
+	}
+	io.WriteString(w, req.Form.Get("result"))
+}
+
+func init() {
+	http.DefaultServeMux.Handle("/bobo", ConstantHandler("bobo"))
+	http.DefaultServeMux.Handle("/query", QueryHandler{})
+	http.DefaultServeMux.Handle("/header", HeaderHandler{})
+}
+
+type ConstantHandler string
+
+func (h ConstantHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	fmt.Println("[TEST] Constant Handler received message. Returning", string(h))
+	io.WriteString(w, string(h))
+}
+
+// Performs a simple HTTP/1.0 request directly over a connection. Calls proxy address
+// but sends url via a GET header.
+// headers must be properly formatted as key:value\r\n
+func getraw(proxy string, url string, headers string) ([]byte, error) {
+	// Make a connection to a whitelisted site
+	conn, err := net.Dial("tcp", proxy)
+	if err != nil {
+		return nil, fmt.Errorf("Error dialing proxy [ERROR]: %s\n", err)
+	}
+
+	// Send as HTTP/1.0 so the host header isn't required
+	fmt.Fprintf(conn, "GET " + url + " HTTP/1.0\r\n")
+	fmt.Fprintf(conn, headers)
+	fmt.Fprintf(conn, "\r\n")
+	//_, err = bufio.NewReader(conn).ReadString('\n')
+	response, err := ioutil.ReadAll(conn)
+	if err != nil {
+		return nil, fmt.Errorf("Error reading http stream from slack.com [ERROR]: %s\n", err)
+	}
+	conn.Close()
+	return response, nil
+}
+
+// Sends a CONNECT request to a proxy. If successful returns the underlying conn back to the caller.
+func connectraw(proxy string, host string) (net.Conn, error) {
+	// Open a TCP connection to the proxy
+	conn, err := net.Dial("tcp", proxy)
+	if err != nil {
+		return nil, fmt.Errorf("Error dialing proxy [ERROR]: %s\n", err)
+	}
+
+	// We're connecting as HTTP/1.1 so Host is required.
+	fmt.Fprintf(conn, "CONNECT " + host + " HTTP/1.1\r\n")
+	fmt.Fprintf(conn, "Host: " + host + "\r\n")
+	fmt.Fprintf(conn, "\r\n")
+
+	// Read each line until we get to two line feeds
+	//firstcrlf := false
+	foundOK := false
+
+	reader := bufio.NewReader(conn)
+	tp := textproto.NewReader(reader)
+	for {
+		line, _ := tp.ReadLine()
+		fmt.Println("[TEST] connectraw - line:", line)
+		if line == "" {
+			//if firstcrlf {
+				break
+			//}
+			//firstcrlf = true
+		}
+		if strings.Contains(string(line), "200 OK") {
+			foundOK = true
+		}
+
+	}
+	fmt.Println("[TEST] connectraw - reached EOF");
+	//response, err := ioutil.ReadAll(conn)
+
+	if err != nil {
+		return nil, fmt.Errorf("Error reading http stream from slack.com [ERROR]: %s\n", err)
+	}
+	if foundOK {
+		return conn, nil
+	}
+	return nil, fmt.Errorf("Received bad status code while connecting")
+}
+
+
+
+func get(url string, client *http.Client) ([]byte, error) {
+	request, err := http.NewRequest("GET", url, nil)
+
+	resp, err := client.Do(request)
+	if err != nil {
+		return nil, err
+	}
+	txt, err := ioutil.ReadAll(resp.Body)
+	defer resp.Body.Close()
+	if err != nil {
+		return nil, err
+	}
+	return txt, nil
+}
+
+
+func getOrFail(url string, client *http.Client, t *testing.T) []byte {
+	//fmt.Println("[TEST] getOrFail", url)
+	txt, err := get(url, client)
+	if err != nil {
+		//fmt.Println("[ERROR] getOrFail error", err)
+		t.Fatal("[ERROR] Can't fetch url", url, err)
+	}
+	//fmt.Println("[TEST] getOrFail returned", txt)
+	return txt
+}
+
+func oneShotProxy(proxy *goproxy.ProxyHttpServer, port string) (client *http.Client, err error) {
+	listenaddr := "127.0.0.1:" + port
+	go proxy.ListenAndServe(listenaddr)
+	time.Sleep(250 * time.Millisecond)
+	proxyUrl, err := url.Parse("http://" + listenaddr)
+	if err != nil {
+		return
+	}
+	//fmt.Println("[TEST] oneShotProxy. Setting proxy transport to", proxyUrl)
+	tr := &http.Transport{Proxy: http.ProxyURL(proxyUrl), TLSClientConfig: acceptAllCerts}
+	client = &http.Client{Transport: tr}
+	return
+}
+
+func oneShotTLSProxy(proxy *goproxy.ProxyHttpServer, port string) (client *http.Client, err error) {
+	listenaddr := "127.0.0.1:" + port
+	go proxy.ListenAndServeTLS(listenaddr)
+	time.Sleep(250 * time.Millisecond)
+	proxyUrl, err := url.Parse("http://" + listenaddr)
+	if err != nil {
+		return
+	}
+	//fmt.Println("[TEST] oneShotProxy. Setting proxy transport to", proxyUrl)
+	tr := &http.Transport{Proxy: http.ProxyURL(proxyUrl), TLSClientConfig: acceptAllCerts}
+	client = &http.Client{Transport: tr}
+	return
 }
