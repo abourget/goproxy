@@ -393,6 +393,7 @@ func validIP4(ipAddress string) bool {
 // originated.
 func (ctx *ProxyCtx) ManInTheMiddleHTTPS() error {
 	fmt.Printf("[ERROR] ManInTheMiddleHTTPS() called. We no longer support MITM. %+v\n", ctx)
+	panic("Stopping for analysis.")
 	return fmt.Errorf("MITM no longer supported")
 	/*
 	// Attempt to recover gracefully from a nested panic not caught by the later defer recover.
@@ -1115,8 +1116,9 @@ func (ctx *ProxyCtx) ForwardConnect() error {
 	fmt.Println("[DEBUG] ForwardConnect() - Fusing client connection to host", ctx.host)
 
 	fuse(ctx.Conn, targetSiteConn, ctx.Host())
+	//Fuse2(ctx.Conn, targetSiteConn)
 
-	//fmt.Println("[DEBUG] ForwardConnect() completed.")
+	fmt.Println("[DEBUG] ForwardConnect() completed.")
 	return nil
 }
 
@@ -1886,10 +1888,10 @@ func fuse(client, backend net.Conn, debug string) {
 	//p.logConnectionMessage("opening", client, backend)
 
 	trace := false
-	if strings.Contains(debug, "208.73") {
-		fmt.Println("[DEBUG] fuse()", debug)
-		trace = true
-	}
+	//if strings.Contains(debug, "208.73") {
+	//	fmt.Println("[DEBUG] fuse()", debug)
+	//	trace = true
+	//}
 
 	//start := time.Now()
 
@@ -1899,13 +1901,14 @@ func fuse(client, backend net.Conn, debug string) {
 	// Pipes data from the remote server to our client
 	backenddie := make(chan struct{})
 	go func() {
+		// TODO: Idle connection should only fire if both connections are idle. If one side is
+		// sending data, then perhaps we shouldn't close it?
+
 		// Wrap the backend connection so that we can enforce an idle timeout (60 seconds)
 		idleconn := &IdleTimeoutConn{Conn: backend, IdleTimeout: connectionIdleTimeout}
 
 		// Connections cannot stay open longer than this period of time (15 minutes)
 		idleconn.SetDeadline(time.Now().Add(time.Duration(serverReadTimeout) * time.Second))
-
-		// TEST: Print out the server response
 
 		if trace {
 			fmt.Println("[DEBUG] fuse() server->client spyconnection", debug)
@@ -1913,11 +1916,11 @@ func fuse(client, backend net.Conn, debug string) {
 			copyData(client, spyconnection)
 
 		} else {
-
 			//n, err :=
 			copyData(client, idleconn)
+			//copyDataDebug(client, idleconn)
 			//if strings.HasPrefix(debug, "104") {
-			//	fmt.Println("[DEBUG] Fuse remote->client", n, debug, err)
+			//	fmt.Printf("[DEBUG] Fuse(). Finished copy from remote->client. %T\n", backend)
 			//}
 			// These errors are common with streaming sites. Uncomment to see.
 			//if err != nil && !strings.Contains(err.Error(), "closed network connection") {
@@ -1953,6 +1956,7 @@ func fuse(client, backend net.Conn, debug string) {
 		//} else {
 		//
 			copyData(backend, idleconn)
+		 	//copyDataDebug(backend, idleconn)
 		//}
 		//if strings.HasPrefix(debug, "104") {
 		//	fmt.Println("[DEBUG] Fuse client->remote", n, debug, err)
@@ -1993,9 +1997,76 @@ func copyData(dst net.Conn, src net.Conn) (int64, error) {
 	//}
 
 	return n, err
-
 }
 
+// Copy data in small chunks, outputting to stdout.
+func copyDataDebug(dst net.Conn, src net.Conn) (int, error) {
+	defer dst.Close()
+	defer src.Close()
+
+	tmp := make([]byte, 2)     // using small tmo buffer for demonstrating
+	var total int
+	for {
+		n, err := src.Read(tmp)
+		if err != nil {
+			if err != io.EOF {
+				fmt.Println("read error:", err)
+			}
+			break
+		}
+		total += n
+		fmt.Printf("%s", string(tmp[:n]))
+		dst.Write(tmp[:n])
+	}
+	return total, nil
+}
+
+// Experimental method to weld two connections together
+func Fuse2(conn1 net.Conn, conn2 net.Conn) {
+	chan1 := chanFromConn(conn1)
+	chan2 := chanFromConn(conn2)
+
+	for {
+		select {
+		case b1 := <-chan1:
+			if b1 == nil {
+				return
+			} else {
+				conn2.Write(b1)
+			}
+		case b2 := <-chan2:
+			if b2 == nil {
+				return
+			} else {
+				conn1.Write(b2)
+			}
+		}
+	}
+}
+
+func chanFromConn(conn net.Conn) chan []byte {
+	c := make(chan []byte)
+
+	go func() {
+		b := make([]byte, 1024)
+
+		for {
+			n, err := conn.Read(b)
+			if n > 0 {
+				res := make([]byte, n)
+				// Copy the buffer so it doesn't get changed while read by the recipient.
+				copy(res, b[:n])
+				c <- res
+			}
+			if err != nil {
+				c <- nil
+				break
+			}
+		}
+	}()
+
+	return c
+}
 
 
 var charsetFinder = regexp.MustCompile("charset=([^ ;]*)")

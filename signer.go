@@ -125,6 +125,7 @@ func NewConfigServer(filename string, ca *x509.Certificate, privateKey interface
 
 	if needcert {
 		fmt.Println("[INFO] Generating new private key")
+		panic("Stopping here")
 		priv, err = rsa.GenerateKey(rand.Reader, 2048)
 	}
 

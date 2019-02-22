@@ -23,7 +23,7 @@ import (
 	"encoding/hex"
 	"crypto/md5"
 	"context"
-	"crypto/tls"
+	//"crypto/tls"
 	"github.com/winston/shadownetwork"
 	//"crypto/x509"
 	//"github.com/valyala/fasthttp/fasthttputil"
@@ -129,7 +129,7 @@ func NewProxyHttpServer() *ProxyHttpServer {
 		// This transport is responsible for the outgoing connections to downstream websites.
 		// FIX WINSTON 3-14 - Running out of open file descriptors. To avoid, set IdleConnTimeout.
 		Transport: &http.Transport{
-			TLSClientConfig: tlsClientSkipVerify,
+			//TLSClientConfig: tlsClientSkipVerify,
 			Proxy:           http.ProxyFromEnvironment,
 			TLSHandshakeTimeout: 10 * time.Second,
 			ResponseHeaderTimeout: 30 * time.Second,
@@ -143,18 +143,18 @@ func NewProxyHttpServer() *ProxyHttpServer {
 			//	DualStack: true,
 			//}).DialContext,
 		},
-		MITMCertConfig:  GoproxyCaConfig,
+		//MITMCertConfig:  GoproxyCaConfig,
 		harLog:          har.New(),
 		harLogEntryCh:   make(chan harReqAndResp, 10),
 		harFlushRequest: make(chan string, 10),
 		NonHTTPRoundTripper: &NonHTTPRoundTripper{
-			TLSClientConfig: tlsClientSkipVerify,
+			//TLSClientConfig: tlsClientSkipVerify,
 		},
 	}
 
 	// RLS 3/18/2018 - Add session ticket support
 	// Setting a relatively low number will force tickets out more quickly, helping to prevent against snooping attacks.
-	proxy.Transport.TLSClientConfig.ClientSessionCache = tls.NewLRUClientSessionCache(25)
+	//proxy.Transport.TLSClientConfig.ClientSessionCache = tls.NewLRUClientSessionCache(25)
 
 	// RLS 7/30/2018 - Adds support for non-http protocols
 	proxy.Transport.RegisterProtocol("nonhttp", proxy.NonHTTPRoundTripper)
@@ -486,11 +486,6 @@ func formatRequest(r *http.Request) string {
 	return strings.Join(request, "\n")
 }
 
-// ListenAndServe launches all the servers required and listens. Use this method
-// if you want to start listeners for transparent proxying.
-//func (proxy *ProxyHttpServer) ListenAndServe(addr string) error {
-//	return http.ListenAndServe(addr, proxy)
-//}
 
 // This function listens for TLS requests on the specified port.
 // It should be called within a goroutine, otherwise it will block forever.
@@ -608,7 +603,7 @@ func (proxy *ProxyHttpServer) ListenAndServeTLS(httpsAddr string) error {
 			}
 
 
-			//fmt.Println("[DEBUG] ListenAndServeTLS() - ClientHELLO server name/host:", ctx.host)
+			//fmt.Println("[DEBUG] ListenAndServeTLS() - request host:", ctx.host)
 
 			//ctx.host = connectReq.URL.Host
 			//fmt.Println("[DEBUG] ListenAndServeTLS() - URL.Host:", ctx.host)

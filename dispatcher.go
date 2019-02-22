@@ -99,23 +99,24 @@ func (proxy *ProxyHttpServer) dispatchConnectHandlers(ctx *ProxyCtx) {
 		case NEXT:
 			continue
 
-		case FORWARD:
+		case FORWARD, MITM:
+			// RLS 2/22/2019 - We no longer allow MITM. Treat it as a FORWARD.
 			// Don't update allowed metrics for whitelisted sites
 			if trace {
 				fmt.Printf("[DEBUG] dispatchConnectHandlers() - FORWARD. [%s]\n", ctx.host)
 			}
 			break
 
-		case MITM:
-			if trace {
-				fmt.Printf("[DEBUG] dispatchConnectHandlers() - MITM. [%s]\n", ctx.host)
-			}
-			err := ctx.ManInTheMiddle()
-			if err != nil {
-				ctx.Logf(1, "ERROR: Couldn't MITM: %s", err)
-			}
-
-			return
+		//case MITM:
+			//if trace {
+			//	fmt.Printf("[DEBUG] dispatchConnectHandlers() - MITM. [%s]\n", ctx.host)
+			//}
+			//err := ctx.ManInTheMiddle()
+			//if err != nil {
+			//	ctx.Logf(1, "ERROR: Couldn't MITM: %s", err)
+			//}
+			//
+			//return
 
 		case REJECT:
 			if trace {
