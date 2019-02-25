@@ -225,12 +225,14 @@ func (proxy *ProxyHttpServer) ListenAndServe(addr string) error {
 				// TODO: Try to recover as much information from the original request as possible
 				// so that we can act on headers that might actually be there (especially referrer
 				// and user agent)
+				fmt.Printf("[DEBUG] ServeHTTP() - Couldn't parse request: %s\n%sOriginal Request:\n%s\n", err.Error(), string(buf.Bytes()))
+
 				req = &http.Request{
 					Method:     "",
 					//URL:	&url.URL{
 						//Host: net.JoinHostPort(Host, "80"),
 					//},
-					Proto:      "unknown",
+					Proto:      "http",	// assume http, but it's probably not.
 					ProtoMajor: 0,
 					ProtoMinor: 0,
 					Header:     make(http.Header),
@@ -250,7 +252,7 @@ func (proxy *ProxyHttpServer) ListenAndServe(addr string) error {
 
 			// Failover Host detection - if we couldn't read the host from the HTTP headers, check the
 			// conntrack table to get the original destination.
-			fmt.Printf("[DEBUG] ServeHTTP() - req: %+v\n", req)
+			//fmt.Printf("[DEBUG] ServeHTTP() - req: %+v\n", req)
 			if req.Host == "" {
 				//fmt.Println("[DEBUG] No HTTP host specified. Attempting experimental conntrack method to determine original host", r.Host)
 
@@ -282,10 +284,14 @@ func (proxy *ProxyHttpServer) ListenAndServe(addr string) error {
 					}
 
 					req.Host = nonSNIHost.String()
-					fmt.Printf("[DEBUG] HTTP Conntrack read succeeded. Forwarding request to host: %s  %+v\n", nonSNIHost, req)
+					fmt.Printf("[DEBUG] HTTP Conntrack read succeeded. Forwarding request to host: %s  %+v\nRequest Length: %d\n%s\n", nonSNIHost, req, len(buf.Bytes()), string(buf.Bytes()))
 				}
 			}
 
+			if buf.Len() == 0 {
+				fmt.Printf("[ERROR] Received zero length request to host: %s. Dropping request.\n", req.Host)
+				return
+			}
 			proxy.HandleHTTPConnection(c, req, &resp, &buf)
 		}(c)
 	}
@@ -332,15 +338,19 @@ func (proxy *ProxyHttpServer) HandleHTTPConnection(c net.Conn, r *http.Request, 
 	if ctx.host == "" {
 		// Fail safe. Should we ever get here?
 		ctx.host = r.URL.Host
-		fmt.Println("[WARN] Did not have a host in ServeHTTP(). Failed over to r.URL.Host", ctx.host)
+		fmt.Println("[WARN] Did not have a host in HandleHTTPConnection(). Failed over to r.URL.Host", ctx.host)
 	}
 
-	// TODO: Do we need to do this? Makes our requests very conspicuous.
-	// Convert relative URL to absolute
+	// For any non-CONNECT request, we must guarantee the following before calling the handlers.
+	// ctx.host is set to the actual host of the request (ie: www.example.com)
+	// r.URL.Host is set to domain+port (ie: www.example.com:80)
+	// r.URL.Scheme is set to http
+	// TODO: This could be cleaner. It's messy because we've tacked on a lot of code at different times.
 	if r.Method != "CONNECT" && !r.URL.IsAbs() {
-		//fmt.Println("[DEBUG] ServeHTTP() - converting relative URL to absolute. r.URL:", r.URL, "r.URL.Host", r.URL.Host)
+		fmt.Println("[DEBUG] HandleHTTPConnection() - converting relative URL to absolute. r.URL:", r.URL, "r.URL.Host", r.URL.Host)
 		r.URL.Scheme = "http"
-		r.URL.Host = r.Host //net.JoinHostPort(r.Host, "80")
+		r.URL.Host = net.JoinHostPort(ctx.host, "80")
+		fmt.Printf("[DEBUG] HandleHTTPConnection() - r.URL now: %+v\n", r.URL)
 	}
 
 	// Set up request trace
@@ -358,7 +368,7 @@ func (proxy *ProxyHttpServer) HandleHTTPConnection(c net.Conn, r *http.Request, 
 		}
 	}
 
-	//fmt.Println("[DEBUG] ServeHTTP() - ctx.host", r.Method, "Scheme", r.URL.Scheme, "Host", r.Host, "Host", r.URL.Host, "URI", r.RequestURI)
+	fmt.Println("[DEBUG] HandleHTTPConnection() - ctx.host", r.Method, "Scheme:", r.URL.Scheme, "Host:", r.Host, "URL Host", r.URL.Host, "URI:", r.RequestURI)
 
 
 	// If no port was provided, guess it based on the scheme.
@@ -381,7 +391,7 @@ func (proxy *ProxyHttpServer) HandleHTTPConnection(c net.Conn, r *http.Request, 
 	// This will now forward the original request without modifying it.
 	if r.Method == "CONNECT" {
 		//if strings.Contains(ctx.host, "websocket") {
-			fmt.Println("[DEBUG] ServeHTTP() -> dispatchConnectHandlers host", ctx.host, " Method:", r.Method)
+		//	fmt.Println("[DEBUG] HandleHTTPConnection() -> dispatchConnectHandlers host", ctx.host, " Method:", r.Method)
 		//}
 		proxy.dispatchConnectHandlers(ctx)
 	} else {
@@ -600,6 +610,7 @@ func (proxy *ProxyHttpServer) ListenAndServeTLS(httpsAddr string) error {
 				DeviceType: 		-1,
 				RequestTime:		time.Now(),
 				TunnelRequest:		forwardwithoutintercept,
+				IsSecure: 		true,
 			}
 
 
@@ -669,6 +680,8 @@ func (proxy *ProxyHttpServer) ListenAndServeTLS(httpsAddr string) error {
 			//if ctx.Trace {
 			//	fmt.Printf("[TRACE] CLIENTHELLO [%s] [Vers=%v] =\n%+v\n\n", ctx.CipherSignature, (*tlsConn.ClientHelloMsg).Vers, *tlsConn.ClientHelloMsg)
 			//}
+
+			//fmt.Println("[DEBUG] ListenAndServeTLS() - request host:", ctx.host, ctx.IsSecure)
 
 			proxy.dispatchConnectHandlers(ctx)
 

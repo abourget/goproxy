@@ -1092,7 +1092,7 @@ func (ctx *ProxyCtx) ForwardConnect() error {
 		dnsbypassctx = context.WithValue(dnsbypassctx, shadownetwork.PrivateNetworkKey, true)
 	}
 
-	fmt.Println("[DEBUG] ForwardConnect(): ctx.Method", ctx.Method, "host", ctx.host)
+	//fmt.Println("[DEBUG] ForwardConnect(): ctx.Method", ctx.Method, "host", ctx.host)
 
 
 	targetSiteConn, err := ctx.Proxy.connectDialContext(dnsbypassctx, "tcp", ctx.host)
@@ -1103,22 +1103,26 @@ func (ctx *ProxyCtx) ForwardConnect() error {
 	}
 
 	// TEST:
-	fmt.Println("[DEBUG] ForwardConnect() - Making connect decision", ctx.host)
-	if ctx.Method == "CONNECT" && !ctx.sniffedTLS {
-		fmt.Println("[DEBUG] ForwardConnect() - Responding with 200 OK", ctx.host)
+	//fmt.Println("[DEBUG] ForwardConnect() - Making connect decision", ctx.host, ctx.IsSecure)
+	if ctx.Method == "CONNECT" && !ctx.IsSecure {
+		// CONNECT header can only be sent through HTTP (HTTPS connections do not expose
+		// the underlying request). Therefore, never send back an OK response to a TLS client.
+		// HTTP CONNECT requests *must* reply with 200 OK before opening a tunnel.
+		//fmt.Println("[DEBUG] ForwardConnect() - Responding to client with 200 OK", ctx.host)
 		ctx.Conn.Write([]byte("HTTP/1.1 200 OK\r\n\r\n"))
-	} else if !ctx.sniffedTLS && ctx.IsSecure {
-		// This doesn't appear to be necessary but leaving it in just in case. Never gets triggered.
-		fmt.Println("[TODO] Check HTTP 1.0 response to sender here (5).", ctx.host)
-		ctx.Conn.Write([]byte("HTTP/1.0 200 OK\r\n\r\n"))
 	}
+	//else if !ctx.sniffedTLS && ctx.IsSecure {
+	//	// This doesn't appear to be necessary but leaving it in just in case. Never gets triggered.
+	//	fmt.Println("[TODO] Check HTTP 1.0 response to sender here (5).", ctx.host)
+	//	ctx.Conn.Write([]byte("HTTP/1.0 200 OK\r\n\r\n"))
+	//}
 
-	fmt.Println("[DEBUG] ForwardConnect() - Fusing client connection to host", ctx.host)
+	//fmt.Println("[DEBUG] ForwardConnect() - Fusing client connection to host", ctx.host)
 
 	fuse(ctx.Conn, targetSiteConn, ctx.Host())
 	//Fuse2(ctx.Conn, targetSiteConn)
 
-	fmt.Println("[DEBUG] ForwardConnect() completed.")
+	//fmt.Println("[DEBUG] ForwardConnect() completed.")
 	return nil
 }
 
@@ -1170,13 +1174,13 @@ func (ctx *ProxyCtx) ForwardNonHTTPRequest(host string) error {
 	var targetSiteConn net.Conn
 	var err error
 
-	fmt.Println("ForwardNonHTTPRequest() host:", host)
+	//fmt.Println("ForwardNonHTTPRequest() host:", host)
 	 //If the request was whitelisted, then use the upstream DNS.
 	dnsbypassctx := ctx.Req.Context()
 	if ctx.Whitelisted {
 		dnsbypassctx = context.WithValue(ctx.Req.Context(), dns.UpstreamKey, 0)
 	} else if ctx.PrivateNetwork {
-		fmt.Println("[DEBUG] ForwardNonHTTPRequest() - Using private network", ctx.host)
+		//fmt.Println("[DEBUG] ForwardNonHTTPRequest() - Using private network", ctx.host)
 		dnsbypassctx = context.WithValue(dnsbypassctx, shadownetwork.PrivateNetworkKey, true)
 	}
 
@@ -1195,6 +1199,7 @@ func (ctx *ProxyCtx) ForwardNonHTTPRequest(host string) error {
 		}
 	} else {
 		// Set up a TLS connection to the downstream site
+		// TODO: Is this going through private network?
 		fmt.Println("ForwardNonHTTPRequest() HTTPS:", host)
 		// unit testing: Ignore verification with self-signed certificates coming from localhost
 		skipverification := false
@@ -1212,7 +1217,7 @@ func (ctx *ProxyCtx) ForwardNonHTTPRequest(host string) error {
 	//fmt.Printf("[DEBUG] Non-HTTP request to: %s  Conn: %+v\n", ctx.Host(), ctx.Conn)
 
 	if ctx.Conn == nil {
-		fmt.Println("[ERROR] ForwardNonHTTPRequest() - ctx.Conn was nil! This should never happen. Please investigate.");
+		//fmt.Println("[ERROR] ForwardNonHTTPRequest() - ctx.Conn was nil! This should never happen. Please investigate.");
 		return fmt.Errorf("[ERROR] ForwardNonHTTPRequest() - ctx.Conn was nil! Cannot continue.")
 	}
 
@@ -1221,7 +1226,7 @@ func (ctx *ProxyCtx) ForwardNonHTTPRequest(host string) error {
 	//spyconnection := &SpyConnection{targetSiteConn}
 	//err = ctx.Req.Write(spyconnection)
 
-	fmt.Printf("[DEBUG] The original request was...\n%s\n\n%Connection: %+v\n", ctx.NonHTTPRequest, targetSiteConn)
+	//fmt.Printf("[DEBUG] The original request was...\n%s\n\n%Connection: %+v\n", ctx.NonHTTPRequest, targetSiteConn)
 	_, err = fmt.Fprintf(targetSiteConn, string(ctx.NonHTTPRequest))
 	//err = ctx.Req.Write(targetSiteConn)
 
