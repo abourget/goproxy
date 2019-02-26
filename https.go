@@ -11,7 +11,7 @@ import (
 	"net/url"
 	"os"
 	"strings"
-	//"fmt"
+	"fmt"
 	"context"
 	"github.com/winston/shadownetwork"
 )
@@ -66,7 +66,8 @@ func (proxy *ProxyHttpServer) TestConnectDialContext(ctx context.Context, networ
 }
 
 func (proxy *ProxyHttpServer) connectDialContext(ctx context.Context, network, addr string) (c net.Conn, err error) {
-
+	//fmt.Println("[DEBUG] connectDialContext()")
+	//panic("stack trace")
 	if proxy.ConnectDialContext == nil {
 		// This is the default for https connections
 		return proxy.dialContext(ctx, network, addr)
@@ -77,6 +78,7 @@ func (proxy *ProxyHttpServer) connectDialContext(ctx context.Context, network, a
 		ctx = context.Background()
 	}
 
+	fmt.Println("[DEBUG] connectDialContext() 2")
 	// This would be hit if we defined a custom dialer (we don't)
 	return proxy.ConnectDialContext(ctx, network, addr)
 }

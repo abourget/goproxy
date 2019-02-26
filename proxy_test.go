@@ -27,7 +27,9 @@ import (
 	"net"
 	"bufio"
 	"net/textproto"
-	"bytes"
+	//"bytes"
+	"github.com/gorilla/websocket"
+	"crypto/x509"
 )
 
 
@@ -84,7 +86,7 @@ func TestConnectReqWithProxy(t *testing.T) {
 
 		request.Write(tlsConn)
 
-		foundOK, _ := parseResponse(tlsConn)
+		foundOK := parseResponse(tlsConn)
 
 		So(foundOK, ShouldEqual, true)
 
@@ -94,8 +96,8 @@ func TestConnectReqWithProxy(t *testing.T) {
 
 	Convey("Can perform a CONNECT request to explicitly proxy to another server", t, func() {
 
-		fmt.Println()
-		fmt.Println("[TEST] Starting CONNECT request via proxy test")
+		//fmt.Println()
+		//fmt.Println("[TEST] Starting CONNECT request via proxy test")
 		proxy := goproxy.NewProxyHttpServer()
 		proxy.Verbose = true
 
@@ -136,7 +138,7 @@ func TestConnectReqWithProxy(t *testing.T) {
 		So(calledResponseHandler, ShouldEqual, false)
 		So(calledConnectHandler, ShouldEqual, true)
 
-		fmt.Println("[TEST] Tunnelled to destination. Sending TLS request.")
+		//fmt.Println("[TEST] Tunnelled to destination. Sending TLS request.")
 		// Send a request directly to the tunnel.
 		tlsConn := tls.Client(conn, &tls.Config{
 			InsecureSkipVerify: true,
@@ -153,16 +155,15 @@ func TestConnectReqWithProxy(t *testing.T) {
 		request.Header.Set("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_11_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/56.0.2924.87 Safari/537.36")
 		request.Write(tlsConn)
 
-		fmt.Println("[TEST] Sent request. Parsing response.")
+		//fmt.Println("[TEST] Sent request. Parsing response.")
 
-		foundOK, _ := parseResponse(tlsConn)
+		foundOK := parseResponse(tlsConn)
 		So(foundOK, ShouldEqual, true)
 
 		conn.Close()
 	})
 }
 
-// v1.0.5 - Fails
 func TestHttpGetReqWithProxy(t *testing.T) {
 	Convey("Can proxy HTTP request", t, func() {
 		proxy := goproxy.NewProxyHttpServer()
@@ -211,8 +212,6 @@ func TestHttpGetReqWithProxy(t *testing.T) {
 	})
 }
 
-// v1.0.5 - Fails. Old GoProxy parses host incorrectly if port is provided.
-// Changed to hit google.com and exhibits same connection problem as v1.0.6 (60 sec timeout)
 func TestHttpsGetReqWithProxy(t *testing.T) {
 	// Confirms that we can connect using the normal methods to the destination in the next test.
 	Convey("Can proxy HTTPS request", t, func() {
@@ -246,6 +245,19 @@ func TestHttpsGetReqWithProxy(t *testing.T) {
 		_, err := oneShotTLSProxy(proxy, port)
 		So(err, ShouldEqual, nil)
 
+		// Run the request without a proxy to make sure it's working
+		//fmt.Println("[TEST] Calling HTTPS server without proxy.")
+		request, err := http.NewRequest("GET", srvhttps.URL + "/bobo", nil)
+		tr := &http.Transport{TLSClientConfig: acceptAllCerts}
+		directclient := &http.Client{Transport: tr}
+
+		resp, err := directclient.Do(request)
+		So(err, ShouldEqual, nil)
+		resptxt, err := ioutil.ReadAll(resp.Body)
+		So(err, ShouldEqual, nil)
+		So(string(resptxt), ShouldContainSubstring, "bobo")
+		resp.Body.Close()
+		//fmt.Println("[TEST] Direct HTTPS server request succeeded.")
 
 		// TLS server is working. Open a TLS tunnel to the proxy and send a request for the resource.
 		// We can't use the native Golang client for this because it will explicitly proxy the request
@@ -254,15 +266,15 @@ func TestHttpsGetReqWithProxy(t *testing.T) {
 		// Dial proxy directly. This simulates a transparent intercept.
 		proxyname := "127.0.0.1:" + port
 
-		fmt.Println("[TEST] Dialing test server", proxyname)
+		//fmt.Println("[TEST] Dialing test server", proxyname)
 		conn, err := net.Dial("tcp", proxyname)
 
 		So(err, ShouldEqual, nil)
 		So(conn, ShouldNotEqual, nil)
 
-		//ix := strings.LastIndex(srvhttps.URL, ":")
-		//serverport := srvhttps.URL[ix+1:]
-		servername := "www.google.com"
+		ix := strings.LastIndex(srvhttps.URL, ":")
+		serverport := srvhttps.URL[ix+1:]
+		servername := "127.0.0.1:" + serverport
 
 
 		// Handshake - the server name determines the destination
@@ -275,32 +287,26 @@ func TestHttpsGetReqWithProxy(t *testing.T) {
 		//conn.SetReadDeadline(time.Now().Add(timeoutDuration))
 		//conn.SetWriteDeadline(time.Now().Add(timeoutDuration))
 
-		fmt.Println("[TEST] Starting TLS handshake")
+		//fmt.Println("[TEST] Starting TLS handshake")
 		err = tlsConn.Handshake()
 		So(err, ShouldEqual, nil)
 
 
-		// TODO: Our HTTPS response takes 60 seconds to return
-		now := time.Now()
+		//now := time.Now()
 
 		// Send request to original website
-		request, err := http.NewRequest("GET", "https://www.google.com", nil)
+		request, err = http.NewRequest("GET", srvhttps.URL + "/bobo", nil)
 		request.Write(tlsConn)
 
 		// Read response
-		_, body := parseResponse(tlsConn)
+		body := parseResponseBody(tlsConn)
 
-		fmt.Println("[TEST] Elapsed time for response", time.Since(now))
+		//fmt.Println("[TEST] Elapsed time for response", time.Since(now))
 
-		So(body, ShouldContainSubstring, "google")
+		So(body, ShouldContainSubstring, "bobo")
 		So(calledConnectHandler, ShouldEqual, true)
 		So(calledRequestHandler, ShouldEqual, false)
 		So(calledResponseHandler, ShouldEqual, false)
-
-
-
-
-
 
 	})
 
@@ -345,7 +351,6 @@ func TestErrorWithProxy(t *testing.T) {
 	})
 }
 
-// v1.0.5 - This test fails because the host header is added.
 func TestMissingHostHeader(t *testing.T) {
 	Convey("Goproxy does not add a host header if it wasn't provided.", t, func() {
 		proxy := goproxy.NewProxyHttpServer()
@@ -388,6 +393,7 @@ func TestMissingHostHeader(t *testing.T) {
 		So(body, ShouldContainSubstring, "Content-Length")
 
 		So(calledRequestHandler, ShouldEqual, true)
+		calledRequestHandler = false
 
 		// Send the request again but get the user agent back
 		b, err = getraw("127.0.0.1:9004", srv.URL + "/header?header=User-Agent", "User-Agent: None\r\n")
@@ -404,8 +410,292 @@ func TestMissingHostHeader(t *testing.T) {
 	})
 }
 
+func TestWebsockets(t *testing.T) {
+	Convey("Test HTTP websocket functionality", t, func() {
+		// Create test server with the echo handler.
+		listener := make(chan string, 100)
+		lastmsg := ""
+		msgcount := 0
+		go func() {
+			for {
+				msg := <-listener
+				lastmsg = msg
+				msgcount++
+				//fmt.Println("Test websocket server received message", msg)
+			}
+		}()
+
+		loggedecho := func(w http.ResponseWriter, r *http.Request) {
+			echo(w, r, listener)
+		}
+
+		s := httptest.NewServer(http.HandlerFunc(loggedecho))
+		defer s.Close()
+
+		fmt.Println()
+		fmt.Println("Starting HTTP websocket test")
+		fmt.Println()
+
+		// Convert http://127.0.0.1 to ws://127.0.0.1
+		u := "ws" + strings.TrimPrefix(s.URL, "http")
+
+		fmt.Printf("server listening on %+v\n", u)
+
+		// Connect to the server
+		ws, _, err := websocket.DefaultDialer.Dial(u, nil)
+		if err != nil {
+			t.Fatalf("%v", err)
+		}
+		defer ws.Close()
+
+		// Send message to server, read response and check to see if it's what we expect.
+		for i := 0; i < 10; i++ {
+			err := ws.WriteMessage(websocket.TextMessage, []byte("hello"))
+			So(err, ShouldEqual, nil)
+
+			_, p, err := ws.ReadMessage()
+			So(err, ShouldEqual, nil)
+			So(string(p), ShouldEqual, "hello")
+		}
+
+
+
+		// The websockets server is working. Set up a local proxy and connect to it indirectly.
+		// Start a local proxy
+		//goproxy.LoadDefaultConfig()
+		proxy := goproxy.NewProxyHttpServer()
+		So(proxy, ShouldNotEqual, nil)
+
+		calledConnectHandler := false
+		calledRequestHandler := false
+		calledResponseHandler := false
+
+		// FIX: In production, ws:// requests should not go through the connect handler
+		// because this will route it to ForwardConnect(), dropping the original websocket
+		// headers.
+		proxy.HandleConnectFunc(func(ctx *goproxy.ProxyCtx) goproxy.Next {
+			fmt.Printf("[TEST] HandleConnectFunc() called\n")
+			ctx.PrivateNetwork = false
+			calledConnectHandler = true
+			return goproxy.FORWARD
+		})
+
+		// Hook the proxy request handler
+		proxy.HandleRequestFunc(func(ctx *goproxy.ProxyCtx) goproxy.Next {
+			calledRequestHandler = true
+			fmt.Printf("[TEST] HandleRequestFunc() - Request function triggered: %s  session:%d\n", ctx.Req.URL, ctx.Session)
+			ctx.PrivateNetwork = false
+			return goproxy.FORWARD
+		})
+
+		proxy.HandleResponseFunc(func(ctx *goproxy.ProxyCtx) goproxy.Next {
+			fmt.Printf("[TEST] HandleResponseFunc() - Response received: %s  session:%d\n", ctx.Req.URL, ctx.Session)
+			calledResponseHandler = true
+			return goproxy.NEXT
+		})
+
+		// Start the proxy listener
+		proxyport := "127.0.0.1:9133"
+		go proxy.ListenAndServe(proxyport)
+
+		// Wait a little bit for the network to start up
+		time.Sleep(1 * time.Second)
+
+		fmt.Println("[TEST] Proxy server started", proxyport)
+
+		// Repeat the websockets test queries using a proxy
+		d := websocket.Dialer{
+			NetDial: func(network, addr string) (net.Conn, error) {
+				return net.Dial("tcp", proxyport)
+			},
+			// Note: don't use this because it's an explicit proxy. We don't support this.
+			//Proxy: http.ProxyURL(&url.URL{
+			//	Scheme: "http", // or "https" depending on your proxy
+			//	Host: proxyport ,
+			//	Path: "/",
+			//}),
+		}
+
+		wsproxy, _, err := d.Dial(u, nil)
+		So(err, ShouldEqual, nil)
+		defer wsproxy.Close()
+
+		So(calledConnectHandler, ShouldEqual, false)
+		So(calledResponseHandler, ShouldEqual, false)
+		So(calledRequestHandler, ShouldEqual, true)
+
+		msgcount = 0
+		lastmsg = ""
+
+		// Send message to server, read response and check to see if it's what we expect.
+		for i := 0; i < 10; i++ {
+			err := wsproxy.WriteMessage(websocket.TextMessage, []byte("realhello"))
+			So(err, ShouldEqual, nil)
+
+			_, p, err := wsproxy.ReadMessage()
+			So(err, ShouldEqual, nil)
+			So(string(p), ShouldEqual, "realhello")
+		}
+
+		So(msgcount, ShouldEqual, 10)
+		So(lastmsg, ShouldEqual, "realhello")
+		fmt.Println("[TEST] Finished HTTP websocket test")
+
+	})
+
+	Convey("Test HTTPS websocket functionality", t, func() {
+		fmt.Println()
+		fmt.Println("Starting HTTPS websocket test")
+		fmt.Println()
+
+		// Create test server with the echo handler.
+		listener := make(chan string, 100)
+		lastmsg := ""
+		msgcount := 0
+		go func() {
+			for {
+				msg := <-listener
+				lastmsg = msg
+				msgcount++
+				//fmt.Println("Test websocket server received message", msg)
+			}
+		}()
+
+		loggedecho := func(w http.ResponseWriter, r *http.Request) {
+			echo(w, r, listener)
+		}
+
+		s := httptest.NewTLSServer(http.HandlerFunc(loggedecho))
+		defer s.Close()
+
+		cert, err := x509.ParseCertificate(s.TLS.Certificates[0].Certificate[0])
+		So(err, ShouldEqual, nil)
+
+		certpool := x509.NewCertPool()
+		certpool.AddCert(cert)
+
+		// Convert http://127.0.0.1 to ws://127.0.0.1
+		u := "wss" + strings.TrimPrefix(s.URL, "https")
+
+		fmt.Printf("server listening on %+v\n", u)
+
+		// Connect to the server. We don't care about verifying a certificate.
+		cstDialer := websocket.DefaultDialer
+		cstDialer.TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
+		ws, _, err := cstDialer.Dial(u, nil)
+		if err != nil {
+			t.Fatalf("%v", err)
+		}
+		defer ws.Close()
+
+		// Send message to server, read response and check to see if it's what we expect.
+		for i := 0; i < 10; i++ {
+			err := ws.WriteMessage(websocket.TextMessage, []byte("hello"))
+			So(err, ShouldEqual, nil)
+
+			_, p, err := ws.ReadMessage()
+			So(err, ShouldEqual, nil)
+			So(string(p), ShouldEqual, "hello")
+		}
+
+		fmt.Println("[TEST] TLS websockets server is working.")
+
+		// The websockets server is working. Set up a local proxy and connect to it indirectly.
+		// Start a local proxy
+		//goproxy.LoadDefaultConfig()
+		proxy := goproxy.NewProxyHttpServer()
+		So(proxy, ShouldNotEqual, nil)
+
+		calledConnectHandler := false
+		calledRequestHandler := false
+		calledResponseHandler := false
+
+		proxy.HandleConnectFunc(func(ctx *goproxy.ProxyCtx) goproxy.Next {
+			fmt.Printf("[TEST] HandleConnectFunc() called\n")
+			calledConnectHandler = true
+			return goproxy.FORWARD
+		})
+
+		// Hook the proxy request handler
+		proxy.HandleRequestFunc(func(ctx *goproxy.ProxyCtx) goproxy.Next {
+			calledRequestHandler = true
+			fmt.Printf("[TEST] HandleRequestFunc() - Request function triggered: %s  session:%d\n", ctx.Req.URL, ctx.Session)
+
+			// Force all requests to go through the private network.
+			ctx.PrivateNetwork = false
+			return goproxy.FORWARD
+		})
+
+		proxy.HandleResponseFunc(func(ctx *goproxy.ProxyCtx) goproxy.Next {
+			fmt.Printf("[TEST] HandleResponseFunc() - Response received: %s  session:%d\n", ctx.Req.URL, ctx.Session)
+
+			// This should never be hit with a non-http protocol
+			calledResponseHandler = true
+			return goproxy.NEXT
+		})
+
+		// Start the proxy listener
+		proxyport := "127.0.0.1:9104"
+		go proxy.ListenAndServeTLS(proxyport)
+
+		// Wait a little bit for the network to start up
+		time.Sleep(1 * time.Second)
+
+		fmt.Println("[TEST] TLS Proxy server started", proxyport)
+
+
+		// Repeat the websockets test queries using a proxy
+		// Note: We have to send in the server name explicitly so that the proxy server can route it to the right place.
+		// This simulates a transparent intercept. If we don't do this, it will re-route it to 127.0.0.1:443.
+		ix := strings.LastIndex(s.URL, ":")
+		serverport := s.URL[ix+1:]
+		servername := "127.0.0.1:" + serverport
+
+		fmt.Println("[TEST] Simulating transparent intercept to", u, "->", servername)
+		d := websocket.Dialer{
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: true, ServerName: servername},	// , RootCAs: certpool
+			NetDial: func(network, addr string) (net.Conn, error) {
+				return net.Dial("tcp", proxyport)
+			},
+			// Note: don't use this because it's an explicit proxy. We don't support this.
+			//Proxy: http.ProxyURL(&url.URL{
+			//	Scheme: "http", // or "https" depending on your proxy
+			//	Host: proxyport ,
+			//	Path: "/",
+			//}),
+		}
+
+		wsproxy, _, err := d.Dial(u, nil)
+		So(err, ShouldEqual, nil)
+		defer wsproxy.Close()
+
+		// TLS connections always go through the Connect handler now. The connection is encrypted
+		// so it's not possible for the Request handler to do anything with it.
+		So(calledConnectHandler, ShouldEqual, true)
+		So(calledResponseHandler, ShouldEqual, false)
+		So(calledRequestHandler, ShouldEqual, false)
+
+		msgcount = 0
+		lastmsg = ""
+
+		// Send message to server, read response and check to see if it's what we expect.
+		for i := 0; i < 10; i++ {
+			err := wsproxy.WriteMessage(websocket.TextMessage, []byte("realhello"))
+			So(err, ShouldEqual, nil)
+
+			_, p, err := wsproxy.ReadMessage()
+			So(err, ShouldEqual, nil)
+			So(string(p), ShouldEqual, "realhello")
+		}
+
+		So(msgcount, ShouldEqual, 10)
+		So(lastmsg, ShouldEqual, "realhello")
+		fmt.Println("[TEST] Finished HTTP websocket test")
+
+	})
+}
+
 // Confirms that the API can listen and respond to requests
-// v1.0.5 - Fails
 func TestAPIHook(t *testing.T) {
 	Convey("Requests can be intercepted by a custom handler", t, func() {
 		proxy := goproxy.NewProxyHttpServer()
@@ -433,7 +723,7 @@ func TestAPIHook(t *testing.T) {
 			return goproxy.NEXT
 		})
 
-		client, err := oneShotProxy(proxy, "9001")
+		client, err := oneShotProxy(proxy, "11301")
 		So(err, ShouldEqual, nil)
 
 		r := string(getOrFail(srv.URL + "/bobo", client, t))
@@ -453,6 +743,29 @@ func TestAPIHook(t *testing.T) {
 
 	})
 }
+
+var upgrader = websocket.Upgrader{}
+
+// Caller should send a listener to eavesdrop on requests
+func echo(w http.ResponseWriter, r *http.Request, listener chan string) {
+	c, err := upgrader.Upgrade(w, r, nil)
+	if err != nil {
+		return
+	}
+	defer c.Close()
+	for {
+		mt, message, err := c.ReadMessage()
+		listener <- string(message)
+		if err != nil {
+			break
+		}
+		err = c.WriteMessage(mt, message)
+		if err != nil {
+			break
+		}
+	}
+}
+
 
 
 
@@ -1350,10 +1663,10 @@ func oneShotTLSProxy(proxy *goproxy.ProxyHttpServer, port string) (client *http.
 }
 
 // Given an unencrypted connection, parses the headers and returns true if we got 200 OK back
-func parseResponse(conn net.Conn) (bool, string) {
+func parseResponse(conn net.Conn) (bool) {
 	// Read each line until we get to two line feeds
 	foundOK := false
-	var response []byte
+	//var response []byte
 
 	reader := bufio.NewReader(conn)
 	tp := textproto.NewReader(reader)
@@ -1369,17 +1682,35 @@ func parseResponse(conn net.Conn) (bool, string) {
 
 	}
 
-	// We'll only read one line. Sufficient for testing.
-	if foundOK {
-		fmt.Println("[TEST] Reading body")
+	return foundOK
+}
 
-		var buf bytes.Buffer
-		io.Copy(&buf, conn)
-		response = buf.Bytes()
+func parseResponseBody(conn net.Conn) (string) {
+	// Read each line until we get to two line feeds
+	var response []byte
 
-		//response, _ = ioutil.ReadAll(reader)
-		fmt.Println("[TEST] Body was:", string(response))
-	}
 
-	return foundOK, string(response)
+	reader := bufio.NewReader(conn)
+	resp, _ := http.ReadResponse(reader, nil)
+
+	response, _ = ioutil.ReadAll(resp.Body)
+	resp.Body.Close()
+
+	// Attempt 2 - read until EOF
+	//buf := make([]byte, 0, 4096) // big buffer
+	//tmp := make([]byte, 2)     // using small tmo buffer for demonstrating
+	//for {
+	//	n, err := conn.Read(tmp)
+	//	if err != nil {
+	//		if err != io.EOF {
+	//			fmt.Println("read error:", err)
+	//		}
+	//		break
+	//	}
+	//	fmt.Println("got", n, "bytes.")
+	//	buf = append(buf, tmp[:n]...)
+	//
+	//}
+
+	return string(response)
 }

@@ -1,5 +1,8 @@
 package goproxy
 
+// RLS 2/22/2019 - Removed all MITM functionality
+
+/*
 import (
 	"testing"
 	"fmt"
@@ -20,6 +23,7 @@ import (
 	"net"
 	"io"
 )
+*/
 
 
 /* This is a sample benchmark to measure the effect of locking on the certificate store.
@@ -38,6 +42,7 @@ import (
    	go test -run=nothing -bench=. -race
 
  */
+/*
 
 // 10/16/2018 - Original code with mutex around metadata store in signer.go
 // 	DNS Precached: 4.6, 4.8, 3.8, 4.7, 6.1 => average: 4.8 sec
@@ -85,9 +90,11 @@ func BenchmarkCertificateSigner(b *testing.B) {
 					if err != nil || tlsconfig == nil {
 						fmt.Printf("[ERROR] Certificate fetch failed: %s\n", domains[j])
 						//os.Exit(1)
-					} /*else {
+					} */
+/*else {
 						fmt.Printf("[SUCCESS] Certificate fetch succeeded. : %s\n", domains[j])
-					}*/
+					}*//*
+
 				}
 			}()
 		}
@@ -247,9 +254,11 @@ func simulateHttpsRequest(host string) (bool, bool, bool, []byte) {
 			// Give it some time to complete or we may close the connection before the body can be read.
 			time.Sleep(500 * time.Millisecond)
 
-		} /*else {
+		} */
+/*else {
 				fmt.Printf("[TEST] Handshake failed: %v\n", err)
-			}*/
+			}*//*
+
 
 		tlsConnClient.Close()
 		rawClientTls.Close()
@@ -315,7 +324,8 @@ func TestSigner(t *testing.T) {
 
 		})
 
-		/*Convey("FlushCert removes related domains from certificate cache", t, func() {
+		*/
+/*Convey("FlushCert removes related domains from certificate cache", t, func() {
 			// Microsoft.com cert contains SAN for *.microsoftitacademy.com as of 10/19/2018
 			// Note that it does not contain microsoftitacademy.com so this ensures we don't
 			// fall back on an exact match.
@@ -343,9 +353,11 @@ func TestSigner(t *testing.T) {
 			So(len(GoproxyCaConfig.Host), ShouldEqual, 0)
 
 
-		})*/
+		})*//*
 
-		/*Convey("TLD+1 matches wildcard SAN", t, func() {
+
+		*/
+/*Convey("TLD+1 matches wildcard SAN", t, func() {
 			// Microsoft.com cert contains SAN for *.microsoftitacademy.com as of 10/19/2018
 			// Note that it does not contain microsoftitacademy.com so this ensures we don't
 			// fall back on an exact match.
@@ -398,9 +410,11 @@ func TestSigner(t *testing.T) {
 
 			So(serial, ShouldEqual, serialSAN)
 
-		})*/
+		})*//*
 
-		/*Convey("subdomain matches wildcard SAN", t, func() {
+
+		*/
+/*Convey("subdomain matches wildcard SAN", t, func() {
 			// Microsoft.com cert contains SAN for *.microsoftitacademy.com as of 10/19/2018
 			// Note that it does not contain microsoftitacademy.com so this ensures we don't
 			// fall back on an exact match.
@@ -453,9 +467,11 @@ func TestSigner(t *testing.T) {
 
 			So(serial, ShouldEqual, serialSAN)
 
-		})*/
+		})*//*
 
-		/*Convey("Two level subdomain matches wildcard SAN", t, func() {
+
+		*/
+/*Convey("Two level subdomain matches wildcard SAN", t, func() {
 			// Microsoft.com cert contains SAN for *.microsoftitacademy.com as of 10/19/2018
 			// Note that it does not contain microsoftitacademy.com so this ensures we don't
 			// fall back on an exact match.
@@ -508,9 +524,11 @@ func TestSigner(t *testing.T) {
 
 			So(serial, ShouldEqual, serialSAN)
 
-		})*/
+		})*//*
 
-		/*Convey("Can establish TLS tunnel for wildcard domains listed in SAN extension", t, func() {
+
+		*/
+/*Convey("Can establish TLS tunnel for wildcard domains listed in SAN extension", t, func() {
 			// Microsoft.com cert contains SAN for xbox.com as of 10/19/2018
 			host := "microsoft.com"
 			SANhost := "somedomain.microsoftitacademy.com"
@@ -635,9 +653,11 @@ func TestSigner(t *testing.T) {
 			So(handshakesucceeded, ShouldEqual, true)
 			So(readbody, ShouldEqual, true)
 
-		})*/
+		})*//*
 
-		/*Convey("Can establish TLS tunnel for domains listed in SAN extension", t, func() {
+
+		*/
+/*Convey("Can establish TLS tunnel for domains listed in SAN extension", t, func() {
 			// Microsoft.com cert contains SAN for xbox.com as of 10/19/2018
 			host := "microsoft.com"
 			SANhost := "myservice.xbox.com"
@@ -761,9 +781,11 @@ func TestSigner(t *testing.T) {
 			So(handshakesucceeded, ShouldEqual, true)
 			So(readbody, ShouldEqual, true)
 
-		})*/
+		})*//*
 
-		/*Convey("Cannot establish TLS tunnel for domains not listed in SAN extension", t, func() {
+
+		*/
+/*Convey("Cannot establish TLS tunnel for domains not listed in SAN extension", t, func() {
 			// Microsoft.com cert contains SAN for xbox.com as of 10/19/2018
 			host := "microsoft.com"
 			SANhost := "myservice.xbox.com"
@@ -845,9 +867,13 @@ func TestSigner(t *testing.T) {
 					// Give it some time to complete or we may close the connection before the body can be read.
 					time.Sleep(500 * time.Millisecond)
 
-				} *//*else {
+				} *//*
+*/
+/*else {
 				fmt.Printf("[TEST] Handshake failed: %v\n", err)
 			}*//*
+*/
+/*
 
 				tlsConnClient.Close()
 				rawClientTls.Close()
@@ -888,7 +914,8 @@ func TestSigner(t *testing.T) {
 			So(handshakesucceeded, ShouldEqual, false)
 			So(readbody, ShouldEqual, false)
 
-		})*/
+		})*//*
+
 
 
 		Convey("Can retrieve valid certificate", t, func() {
@@ -1047,3 +1074,4 @@ func TestSigner(t *testing.T) {
 
 
 }
+*/

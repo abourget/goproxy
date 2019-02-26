@@ -1,5 +1,6 @@
 package goproxy
 
+/*
 import (
 	"crypto/tls"
 	"crypto/x509"
@@ -53,12 +54,19 @@ func rootCAs(c *rootcerts.Config) *tls.Config {
 
 // Used for unit testing
 func LoadDefaultConfig() error {
+	// RLS 2/22/2019 - We no longer support MITM. Disabling.
+	return nil
+
+	*/
+/*
 	config, err := LoadCAConfig("", CA_CERT, CA_KEY)
 	if err != nil {
 		return fmt.Errorf("Error parsing builtin CA: %s", err.Error())
 	}
 	GoproxyCaConfig = config
 	return err
+	*//*
+
 }
 
 
@@ -66,6 +74,7 @@ func LoadDefaultConfig() error {
 // the proxy with `proxy.SetMITMCertConfig. If filename is non-nil, will attempt to load from disk.
 func LoadCAConfig(filename string, caCert, caKey []byte) (*GoproxyConfigServer, error) {
 
+	panic("LoadCAConfig() called. Stopping for analysis.")
 	ca, err := tls.X509KeyPair(caCert, caKey)
 
 	if err != nil {
@@ -114,3 +123,4 @@ ZEKuhO0uruI9FvYLNS9QLBlOdx/NguyPU4956N9PcatOcyfP+gUGiaYUNb/h4qX2
 dSbGe4S68XMli1kejnkCQFNo6CZx31jiy57J5rjJZE6LM7OtSTBtSYJ3aE1ZUPnk
 6fjNzFMU+APTWib1YsZQF/mrVh9q52CkA5Nnwpxfkjc=
 -----END RSA PRIVATE KEY-----`)
+*/
