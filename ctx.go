@@ -1075,7 +1075,7 @@ func (ctx *ProxyCtx) HijackConnect() net.Conn {
 func (ctx *ProxyCtx) ForwardConnect() error {
 	dnsbypassctx := ctx.Req.Context()
 
-	//if strings.Contains(ctx.host, "websocket") {
+	//if strings.Contains(ctx.host, "ice") {
 	//	fmt.Println("[DEBUG] ForwardConnect()", ctx.host, "method", ctx.Method, "whitelisted:", ctx.Whitelisted, "private:", ctx.PrivateNetwork)
 	//}
 
@@ -1174,7 +1174,9 @@ func (ctx *ProxyCtx) ForwardNonHTTPRequest(host string) error {
 	var targetSiteConn net.Conn
 	var err error
 
-	//fmt.Println("ForwardNonHTTPRequest() host:", host)
+	//if strings.Contains(host, "ice") {
+	//	fmt.Println("ForwardNonHTTPRequest() host:", host)
+	//}
 	 //If the request was whitelisted, then use the upstream DNS.
 	dnsbypassctx := ctx.Req.Context()
 	if ctx.Whitelisted {
@@ -1237,7 +1239,9 @@ func (ctx *ProxyCtx) ForwardNonHTTPRequest(host string) error {
 
 	// Tunnel the connections together and block until they close.
 	//fuse(ctx.Conn, spyconnection, ctx.Host())
+
 	fuse(ctx.Conn, targetSiteConn, ctx.Host())
+
 
 	return nil
 }
@@ -1893,10 +1897,10 @@ func fuse(client, backend net.Conn, debug string) {
 	//p.logConnectionMessage("opening", client, backend)
 
 	trace := false
-	//if strings.Contains(debug, "208.73") {
-	//	fmt.Println("[DEBUG] fuse()", debug)
-	//	trace = true
-	//}
+	if strings.Contains(debug, ".somafm.com") {
+		fmt.Println("[DEBUG] Starting fuse()", debug)
+		trace = true
+	}
 
 	//start := time.Now()
 
@@ -1917,9 +1921,11 @@ func fuse(client, backend net.Conn, debug string) {
 
 		if trace {
 			fmt.Println("[DEBUG] fuse() server->client spyconnection", debug)
-			spyconnection := &SpyConnection{idleconn}
-			copyData(client, spyconnection)
+			//spyconnection := &SpyConnection{idleconn}
+			//copyData(client, spyconnection)
 
+			n, err := copyData(client, idleconn)
+			fmt.Println("[DEBUG] fuse() server->client n", n, "err", err)
 		} else {
 			//n, err :=
 			copyData(client, idleconn)
@@ -1947,22 +1953,28 @@ func fuse(client, backend net.Conn, debug string) {
 		// Wrap the backend connection so that we can enforce an idle timeout.
 		//idleconn := &IdleTimeoutConn{Conn: client}
 
+
+		// TEST: streaming requests will break in 60 seconds with an idle timeout if the client
+		// doesn't occasionally ping.
 		idleconn := &IdleTimeoutConn{
 			Conn: client,
-			IdleTimeout: connectionIdleTimeout,
+			IdleTimeout: connectionIdleTimeout * 2,
 			Deadline: time.Now().Add(time.Duration(clientReadTimeout) * time.Second)}
 
 
 		//n, err :=
-		//if trace {
-		//	fmt.Println("[DEBUG] fuse() client->server spyconnection", debug)
+		if trace {
+			fmt.Println("[DEBUG] fuse() client->server spyconnection", debug)
 		//	spyconnection := &SpyConnection{idleconn}
 		//	copyData(backend, spyconnection)
-		//} else {
+
+			n, err := copyData(backend, idleconn)
+			fmt.Println("[DEBUG] fuse() client->server n", n, "err", err)
+		} else {
 		//
 			copyData(backend, idleconn)
 		 	//copyDataDebug(backend, idleconn)
-		//}
+		}
 		//if strings.HasPrefix(debug, "104") {
 		//	fmt.Println("[DEBUG] Fuse client->remote", n, debug, err)
 		//}

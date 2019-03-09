@@ -115,6 +115,25 @@ type ProxyHttpServer struct {
 
 }
 
+// Performs sanity checking against a domain name. Is not intended to be a full blown
+// domain name validator nor perform DNS lookup to confirm the host exists.
+//
+// TODO: Blink returns *.immedia-semi.com. Would be interesting to see if we could
+// remove the leading invalid characters and use that as the host, but it is likely
+// to be a brittle solution.
+func checkDomain(host string) (bool) {
+	if len(host) == 0 {
+		return false
+	}
+
+	// For now, just check the first character. Some devices prefix with invalid characters.
+	b := host[0]
+	if !(b >= 'a' && b <= 'z' || b >= '0' && b <= '9' || b == '-' || b >= 'A' && b <= 'Z') {
+		return false
+	}
+	return true
+}
+
 // New proxy server, logs to StdErr by default
 func NewProxyHttpServer() *ProxyHttpServer {
 	proxy := ProxyHttpServer{
@@ -225,7 +244,7 @@ func (proxy *ProxyHttpServer) ListenAndServe(addr string) error {
 				// TODO: Try to recover as much information from the original request as possible
 				// so that we can act on headers that might actually be there (especially referrer
 				// and user agent)
-				fmt.Printf("[DEBUG] ServeHTTP() - Couldn't parse request: %s\n%sOriginal Request:\n%s\n", err.Error(), string(buf.Bytes()))
+				fmt.Printf("[DEBUG] ServeHTTP() - Couldn't parse request: %s\nOriginal Request:\n%s\n", err.Error(), string(buf.Bytes()))
 
 				req = &http.Request{
 					Method:     "",
@@ -252,14 +271,15 @@ func (proxy *ProxyHttpServer) ListenAndServe(addr string) error {
 
 			// Failover Host detection - if we couldn't read the host from the HTTP headers, check the
 			// conntrack table to get the original destination.
-			//fmt.Printf("[DEBUG] ServeHTTP() - req: %+v\n", req)
-			if req.Host == "" {
-				//fmt.Println("[DEBUG] No HTTP host specified. Attempting experimental conntrack method to determine original host", r.Host)
+			//fmt.Printf("[DEBUG] ServeHTTP() - req: %+v\n", req.Host)
+			if !checkDomain(req.Host) {
+				fmt.Println("[DEBUG] Invalid HTTP host specified. Determine original destination through conntrak,", req.Host)
 
 				var nonSNIHost net.IP
 				connections, connerr := conntrack.Flows()
 				if connerr != nil {
 					log.Printf("[ERROR] non-SNI client detected but couldn't read connection table. Dropping connection request. [%+v]\n", connerr)
+					c.Close()
 					return
 				}
 
@@ -284,14 +304,18 @@ func (proxy *ProxyHttpServer) ListenAndServe(addr string) error {
 					}
 
 					req.Host = nonSNIHost.String()
-					fmt.Printf("[DEBUG] HTTP Conntrack read succeeded. Forwarding request to host: %s  %+v\nRequest Length: %d\n%s\n", nonSNIHost, req, len(buf.Bytes()), string(buf.Bytes()))
+
+					//fmt.Printf("[DEBUG] HTTP Conntrack read succeeded. Forwarding request to host: %s  %+v\nRequest Length: %d\n%s\n", nonSNIHost, req, len(buf.Bytes()), string(buf.Bytes()))
 				}
 			}
 
+			// Empty buffer / no request - drop it.
 			if buf.Len() == 0 {
-				fmt.Printf("[ERROR] Received zero length request to host: %s. Dropping request.\n", req.Host)
+				//fmt.Printf("[ERROR] Received zero length request to host: %s. Dropping request.\n", req.Host)
+				c.Close()
 				return
 			}
+
 			proxy.HandleHTTPConnection(c, req, &resp, &buf)
 		}(c)
 	}
@@ -346,11 +370,11 @@ func (proxy *ProxyHttpServer) HandleHTTPConnection(c net.Conn, r *http.Request, 
 	// r.URL.Host is set to domain+port (ie: www.example.com:80)
 	// r.URL.Scheme is set to http
 	// TODO: This could be cleaner. It's messy because we've tacked on a lot of code at different times.
-	if r.Method != "CONNECT" && !r.URL.IsAbs() {
-		fmt.Println("[DEBUG] HandleHTTPConnection() - converting relative URL to absolute. r.URL:", r.URL, "r.URL.Host", r.URL.Host)
+	if r != nil && r.URL != nil && r.Method != "CONNECT" && !r.URL.IsAbs() {
+		//fmt.Println("[DEBUG] HandleHTTPConnection() - converting relative URL to absolute. r.URL:", r.URL, "r.URL.Host", r.URL.Host)
 		r.URL.Scheme = "http"
 		r.URL.Host = net.JoinHostPort(ctx.host, "80")
-		fmt.Printf("[DEBUG] HandleHTTPConnection() - r.URL now: %+v\n", r.URL)
+		//fmt.Printf("[DEBUG] HandleHTTPConnection() - r.URL now: %+v\n", r.URL)
 	}
 
 	// Set up request trace
@@ -368,7 +392,7 @@ func (proxy *ProxyHttpServer) HandleHTTPConnection(c net.Conn, r *http.Request, 
 		}
 	}
 
-	fmt.Println("[DEBUG] HandleHTTPConnection() - ctx.host", r.Method, "Scheme:", r.URL.Scheme, "Host:", r.Host, "URL Host", r.URL.Host, "URI:", r.RequestURI)
+	//fmt.Println("[DEBUG] HandleHTTPConnection() - ctx.host", r.Method, "Scheme:", r.URL.Scheme, "Host:", r.Host, "URL Host", r.URL.Host, "URI:", r.RequestURI)
 
 
 	// If no port was provided, guess it based on the scheme.
@@ -523,11 +547,13 @@ func (proxy *ProxyHttpServer) ListenAndServeTLS(httpsAddr string) error {
 				forwardwithoutintercept = true
 			}
 
+			var Host = tlsConn.Host()
+
 			// Non-SNI request handling routine
 			var nonSNIHost net.IP
 			//fmt.Println("[DEBUG] ListenAndServeTLS() - ClientHELLO server name/host:", tlsConn.Host())
-			if tlsConn.Host() == "" {
-				//log.Printf("[DEBUG] non-SNI client detected - source: %s / destination: %s", c.RemoteAddr().String(), c.LocalAddr().String())
+			if !checkDomain(tlsConn.Host()) {
+				//log.Printf("[DEBUG] Invalid host or non-SNI client detected - host: %s\n", tlsConn.Host())
 
 				// Some devices (Smarthome devices and especially anything by Amazon) do not
 				// send the hostname in the SNI extension. To get around this, we will query
@@ -561,18 +587,15 @@ func (proxy *ProxyHttpServer) ListenAndServeTLS(httpsAddr string) error {
 					}
 				}
 
-			}
-
-			var Host = tlsConn.Host()
-
-			if Host == "" {
 				Host = nonSNIHost.String()
-				//log.Printf("[DEBUG] Non-SNI or non-TLS protocol detected on port 443 - destination: [%s]\n", Host)
+				log.Printf("[DEBUG] Invalid host or Non-SNI request detected on port 443 - conntrak resolved to destination: [%s]->[%s]\n", tlsConn.Host(), Host)
+
+
 			}
 
 			// Check for local host
 			if strings.HasPrefix(Host, "192.168") {
-				log.Printf("[DEBUG] non-SNI attempt at local host. Dropping request: [%s]  non-SNI Host: [%s]\n", Host, nonSNIHost)
+				//log.Printf("[DEBUG] non-SNI attempt at local host. Dropping request: [%s]  non-SNI Host: [%s]\n", Host, nonSNIHost)
 				return
 			}
 
