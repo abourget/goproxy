@@ -276,10 +276,10 @@ func (proxy *ProxyHttpServer) ListenAndServe(addr string) error {
 
 			// Failover Host detection - if we couldn't read the host from the HTTP headers, check the
 			// conntrack table to get the original destination.
-			fmt.Printf("[DEBUG] ServeHTTP() - req: %+v\n", req.Host)
+			//fmt.Printf("[DEBUG] ServeHTTP() - req: %+v\n", req.Host)
 			if !checkDomain(req.Host) {
 				destination := proxy.DestinationResolver(c)
-				fmt.Println("[DEBUG] Invalid HTTP host specified. Determining original destination through conntrak,", req.Host, "->", destination)
+				//fmt.Println("[DEBUG] Invalid HTTP host specified. Determining original destination through conntrak:", req.Host, "->", destination)
 				req.Host = destination
 			}
 
