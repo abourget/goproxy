@@ -358,7 +358,6 @@ func TestMissingHostHeader(t *testing.T) {
 
 		calledConnectHandler := false
 		calledRequestHandler := false
-		calledResponseHandler := false
 		proxy.HandleConnectFunc(func(ctx *goproxy.ProxyCtx) goproxy.Next {
 			//fmt.Printf("[TEST] HandleConnectFunc() called\n")
 			calledConnectHandler = true
@@ -369,12 +368,6 @@ func TestMissingHostHeader(t *testing.T) {
 		proxy.HandleRequestFunc(func(ctx *goproxy.ProxyCtx) goproxy.Next {
 			calledRequestHandler = true
 			fmt.Printf("[TEST] HandleRequestFunc() - Original Request: \n%s\n", string(ctx.NonHTTPRequest))
-			return goproxy.NEXT
-		})
-
-		proxy.HandleResponseFunc(func(ctx *goproxy.ProxyCtx) goproxy.Next {
-			//fmt.Printf("[TEST] HandleResponseFunc() - Response received: %s\n", ctx.Req.URL)
-			calledResponseHandler = true
 			return goproxy.NEXT
 		})
 
@@ -403,9 +396,7 @@ func TestMissingHostHeader(t *testing.T) {
 		So(body, ShouldNotContainSubstring, "Host")
 		So(body, ShouldContainSubstring, "None")
 
-		// Request handler won't be called the second time because a connection is already open.
-		So(calledRequestHandler, ShouldEqual, false)
-		So(calledResponseHandler, ShouldEqual, false)
+		So(calledRequestHandler, ShouldEqual, true)
 		So(calledConnectHandler, ShouldEqual, false)
 	})
 }
@@ -693,6 +684,88 @@ func TestWebsockets(t *testing.T) {
 		fmt.Println("[TEST] Finished HTTP websocket test")
 
 	})
+}
+
+// FIX WINSTON-883 - Blink cameras send a bad SNI field in the CLIENTHELLO message (*.domain.com).
+// This ensures that Goproxy fails over to the conntrak destination resolver routine if it can't parse
+// a valid hostname.
+func TestHttpsBadSNI(t *testing.T) {
+	// Confirms that we can connect using the normal methods to the destination in the next test.
+	Convey("Correctly routes HTTPS requests with bad SNI field", t, func() {
+		proxy := goproxy.NewProxyHttpServer()
+		proxy.Verbose = true
+
+		calledConnectHandler := false
+		calledRequestHandler := false
+		proxy.HandleConnectFunc(func(ctx *goproxy.ProxyCtx) goproxy.Next {
+			fmt.Printf("[TEST] HandleConnectFunc() called\n")
+			calledConnectHandler = true
+			return goproxy.NEXT
+		})
+
+		// Hook the proxy request handler
+		proxy.HandleRequestFunc(func(ctx *goproxy.ProxyCtx) goproxy.Next {
+			calledRequestHandler = true
+			fmt.Printf("[TEST] HandleRequestFunc() - Request function triggered: %s\n", ctx.Req.URL)
+			return goproxy.NEXT
+		})
+
+		// Hijack the destination resolver because we don't have access to conntrak
+		// within the scope of unit tests.
+		ix := strings.LastIndex(srvhttps.URL, ":")
+		serverport := srvhttps.URL[ix+1:]
+		servername := "127.0.0.1:" + serverport
+		proxy.DestinationResolver = func(c net.Conn) (string) {
+			return servername
+		}
+
+		port := "9217"
+
+		_, err := oneShotTLSProxy(proxy, port)
+		So(err, ShouldEqual, nil)
+
+		// Run the request with a bad SNI field
+		//fmt.Println("[TEST] Calling HTTPS server without proxy.")
+		// Dial proxy directly. This simulates a transparent intercept.
+		proxyname := "127.0.0.1:" + port
+
+		//fmt.Println("[TEST] Dialing test server", proxyname)
+		conn, err := net.Dial("tcp", proxyname)
+
+		So(err, ShouldEqual, nil)
+		So(conn, ShouldNotEqual, nil)
+
+		// Bad SNI field sent in. This doesn't point to anything valid.
+		tlsConn := tls.Client(conn, &tls.Config{
+			InsecureSkipVerify: true,
+			ServerName: "*.badsni.com",
+		})
+
+		//fmt.Println("[TEST] Starting TLS handshake")
+		err = tlsConn.Handshake()
+		So(err, ShouldEqual, nil)
+
+
+		//now := time.Now()
+
+		// Send request to original website
+		request, err := http.NewRequest("GET", srvhttps.URL + "/bobo", nil)
+		request.Write(tlsConn)
+
+		// Read response
+		body := parseResponseBody(tlsConn)
+
+		//fmt.Println("[TEST] Elapsed time for response", time.Since(now))
+
+		So(body, ShouldContainSubstring, "bobo")
+		So(calledConnectHandler, ShouldEqual, true)
+		So(calledRequestHandler, ShouldEqual, false)
+
+		//fmt.Println("[TEST] Direct HTTPS server request succeeded.")
+
+
+	})
+
 }
 
 // Confirms that the API can listen and respond to requests

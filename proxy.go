@@ -112,6 +112,9 @@ type ProxyHttpServer struct {
 	UpdateBlockedCounter func(string, string, string, int, bool)
 	UpdateWhitelistedCounter func(string, string, string, int)
 
+	// Defaults to a conntrak lookup but callers may substitute their own function (intended
+	// primarily for unit testing). The connection must not be used or closed.
+	DestinationResolver func(c net.Conn) (string)
 
 }
 
@@ -185,6 +188,8 @@ func NewProxyHttpServer() *ProxyHttpServer {
 	// We don't use this but it's left in case we ever need to daisy chain proxies.
 	proxy.ConnectDial = dialerFromEnv(&proxy)
 	proxy.ConnectDialContext = dialerFromEnvContext(&proxy)
+
+	proxy.DestinationResolver = resolveconntrackdestination
 
 	return &proxy
 }
@@ -271,42 +276,18 @@ func (proxy *ProxyHttpServer) ListenAndServe(addr string) error {
 
 			// Failover Host detection - if we couldn't read the host from the HTTP headers, check the
 			// conntrack table to get the original destination.
-			//fmt.Printf("[DEBUG] ServeHTTP() - req: %+v\n", req.Host)
+			fmt.Printf("[DEBUG] ServeHTTP() - req: %+v\n", req.Host)
 			if !checkDomain(req.Host) {
-				fmt.Println("[DEBUG] Invalid HTTP host specified. Determine original destination through conntrak,", req.Host)
+				destination := proxy.DestinationResolver(c)
+				fmt.Println("[DEBUG] Invalid HTTP host specified. Determining original destination through conntrak,", req.Host, "->", destination)
+				req.Host = destination
+			}
 
-				var nonSNIHost net.IP
-				connections, connerr := conntrack.Flows()
-				if connerr != nil {
-					log.Printf("[ERROR] non-SNI client detected but couldn't read connection table. Dropping connection request. [%+v]\n", connerr)
-					c.Close()
-					return
-				}
-
-				// Get the source port
-				sourcePort := 0
-				portIndex := strings.IndexRune(c.RemoteAddr().String(), ':')
-
-				if portIndex == -1 {
-					fmt.Println("[ERROR] non-SNI client detected but there was no source port on the request. Dropping connection request.")
-				} else {
-					sourcePort, _ = strconv.Atoi(c.RemoteAddr().String()[(portIndex + 1):])
-				}
-
-				if sourcePort == 0 {
-					log.Println("[ERROR] non-SNI client detected but couldn't parse source port on the request. Dropping connection request.")
-				} else {
-
-					for _, flow := range connections {
-						if flow.Original.SPort == sourcePort {
-							nonSNIHost = flow.Original.Destination
-						}
-					}
-
-					req.Host = nonSNIHost.String()
-
-					//fmt.Printf("[DEBUG] HTTP Conntrack read succeeded. Forwarding request to host: %s  %+v\nRequest Length: %d\n%s\n", nonSNIHost, req, len(buf.Bytes()), string(buf.Bytes()))
-				}
+			// If still invalid, we couldn't resolve it. Drop the request.
+			if !checkDomain(req.Host) {
+				fmt.Printf("[ERROR] Failed to determine original destination: %s. Dropping request.\n", req.Host)
+				c.Close()
+				return
 			}
 
 			// Empty buffer / no request - drop it.
@@ -397,7 +378,7 @@ func (proxy *ProxyHttpServer) HandleHTTPConnection(c net.Conn, r *http.Request, 
 
 	// If no port was provided, guess it based on the scheme.
 	if strings.IndexRune(ctx.host, ':') == -1 {
-		if r.URL.Scheme == "http" || r.URL.Scheme == "ws" {
+		if r.URL == nil || r.URL.Scheme == "http" || r.URL.Scheme == "ws" {
 			ctx.host += ":80"
 		} else if r.URL.Scheme == "https" || r.URL.Scheme == "wss" {
 			ctx.host += ":443"
@@ -520,6 +501,42 @@ func formatRequest(r *http.Request) string {
 	return strings.Join(request, "\n")
 }
 
+// Given a connection, resolves its original destination by looking it up in the conntrak tables.
+// This is required for non-TLS protocols or for connections initiated by devices which do not
+// send a valid SNI field in the CLIENTHELLO message.
+func resolveconntrackdestination(c net.Conn) (string) {
+	connections, connerr := conntrack.Flows()
+	if connerr != nil {
+		log.Println("[ERROR] non-SNI client detected but couldn't read connection table. Dropping connection request. [%v]", connerr)
+		return ""
+	}
+
+	var nonSNIHost net.IP
+
+	// Get the source port
+	sourcePort := 0
+	portIndex := strings.IndexRune(c.RemoteAddr().String(), ':')
+
+	if portIndex == -1 {
+		log.Println("[ERROR] non-SNI client detected but there was no source port on the request. Dropping connection request.")
+		return ""
+	} else {
+		sourcePort, _ = strconv.Atoi(c.RemoteAddr().String()[(portIndex+1):])
+	}
+
+	if sourcePort == 0 {
+		log.Println("[ERROR] non-SNI client detected but couldn't parse source port on the request. Dropping connection request.")
+		return ""
+	}
+
+	for _, flow := range connections {
+		if flow.Original.SPort == sourcePort {
+			nonSNIHost = flow.Original.Destination
+		}
+	}
+
+	return nonSNIHost.String()
+}
 
 // This function listens for TLS requests on the specified port.
 // It should be called within a goroutine, otherwise it will block forever.
@@ -537,7 +554,7 @@ func (proxy *ProxyHttpServer) ListenAndServeTLS(httpsAddr string) error {
 			continue
 		}
 		go func(c net.Conn) {
-			//log.Printf(" *** INCOMING TLS CONNECTION - source: %s / destination: %s", c.RemoteAddr().String(), c.LocalAddr().String())
+			//log.Printf("[INFO] INCOMING TLS CONNECTION - source: %s / destination: %s", c.RemoteAddr().String(), c.LocalAddr().String())
 			tlsConn, err := vhost.TLS(c)
 
 			forwardwithoutintercept := false
@@ -549,53 +566,25 @@ func (proxy *ProxyHttpServer) ListenAndServeTLS(httpsAddr string) error {
 
 			var Host = tlsConn.Host()
 
-			// Non-SNI request handling routine
-			var nonSNIHost net.IP
 			//fmt.Println("[DEBUG] ListenAndServeTLS() - ClientHELLO server name/host:", tlsConn.Host())
-			if !checkDomain(tlsConn.Host()) {
+			if !checkDomain(Host) {
+				// Non-SNI request handling routine
 				//log.Printf("[DEBUG] Invalid host or non-SNI client detected - host: %s\n", tlsConn.Host())
+				Host = proxy.DestinationResolver(c)
+			}
 
-				// Some devices (Smarthome devices and especially anything by Amazon) do not
-				// send the hostname in the SNI extension. To get around this, we will query
-				// the Linux ip_conntrack tables to get the original IP address. Any non-local
-				// addresses will be tunnelled through to their original destination.
-				connections, connerr := conntrack.Flows()
-				if connerr != nil {
-					log.Println("[ERROR] non-SNI client detected but couldn't read connection table. Dropping connection request. [%v]", connerr)
-					return
-				}
-
-				// Get the source port
-				sourcePort := 0
-				portIndex := strings.IndexRune(c.RemoteAddr().String(), ':')
-
-				if portIndex == -1 {
-					log.Println("[ERROR] non-SNI client detected but there was no source port on the request. Dropping connection request.")
-					return
-				} else {
-					sourcePort, _ = strconv.Atoi(c.RemoteAddr().String()[(portIndex+1):])
-				}
-
-				if sourcePort == 0 {
-					log.Println("[ERROR] non-SNI client detected but couldn't parse source port on the request. Dropping connection request.")
-					return
-				}
-
-				for _, flow := range connections {
-					if flow.Original.SPort == sourcePort {
-						nonSNIHost = flow.Original.Destination
-					}
-				}
-
-				Host = nonSNIHost.String()
-				log.Printf("[DEBUG] Invalid host or Non-SNI request detected on port 443 - conntrak resolved to destination: [%s]->[%s]\n", tlsConn.Host(), Host)
-
-
+			// If still invalid, we couldn't resolve it. Drop the request.
+			if !checkDomain(Host) {
+				fmt.Printf("[ERROR] Failed to parse original HTTP host: %s. Dropping request.\n", Host)
+				tlsConn.Close()
+				return
 			}
 
 			// Check for local host
-			if strings.HasPrefix(Host, "192.168") {
+			// TODO: Determine Winston IP address dynamically. For now, we reserve 192.168.102.* for ourselves.
+			if strings.HasPrefix(Host, "192.168.102.") {
 				//log.Printf("[DEBUG] non-SNI attempt at local host. Dropping request: [%s]  non-SNI Host: [%s]\n", Host, nonSNIHost)
+				tlsConn.Close()
 				return
 			}
 
@@ -636,21 +625,6 @@ func (proxy *ProxyHttpServer) ListenAndServeTLS(httpsAddr string) error {
 				IsSecure: 		true,
 			}
 
-
-			//fmt.Println("[DEBUG] ListenAndServeTLS() - request host:", ctx.host)
-
-			//ctx.host = connectReq.URL.Host
-			//fmt.Println("[DEBUG] ListenAndServeTLS() - URL.Host:", ctx.host)
-			//if strings.IndexRune(ctx.host, ':') == -1 {
-			//	if connectReq.URL.Scheme == "http" {
-			//		ctx.host += ":80"
-			//	} else if connectReq.URL.Scheme == "https" {
-			//		ctx.host += ":443"
-			//	} else {
-			//		ctx.host += ":443"
-			//		fmt.Println("[DEBUG] No port provided in ListenandServeTLS(). Appending 443.", connectReq.URL.Scheme, ctx.host)
-			//	}
-			//}
 			ctx.host = hostwithport
 
 			//fmt.Println("[DEBUG] ListenAndServeTLS() - ctx.Host:", ctx.host)
@@ -660,25 +634,13 @@ func (proxy *ProxyHttpServer) ListenAndServeTLS(httpsAddr string) error {
 			ctx.sniffedTLS = true
 			ctx.sniHost = Host
 
-			//if strings.Contains(Host, "mdn") {
-			//	log.Printf("[DEBUG] ListenAndServeTLS called... %s\n", Host, c.RemoteAddr().String(), c.LocalAddr().String())
-			//}
-
-
-			// TODO: Move this to OnRequest/OnConnect?
+			// TODO: Should caller handle this or should we?
 			// Create a signature string for the accepted ciphers
 			if tlsConn.ClientHelloMsg != nil && len(tlsConn.ClientHelloMsg.CipherSuites) > 0 {
 				// RLS 10/10/2017 - Expanded signature
 				// Generate a fingerprint for the client. This enables us to whitelist
 				// failed TLS queries on a per-client basis.
 				ctx.CipherSignature = GenerateSignature(tlsConn.ClientHelloMsg, false)
-
-				// Use for debugging
-				//if ctx.CipherSignature == "77cee627cc693c391194300c24b16295" {
-				//	GenerateSignature(tlsConn.ClientHelloMsg, true)
-				//}
-
-				//ctx.Logf(2, "  *** cipher signature: %s", ctx.CipherSignature)
 			} else {
 				ctx.CipherSignature = ""
 			}
