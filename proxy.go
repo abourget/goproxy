@@ -666,7 +666,7 @@ func (proxy *ProxyHttpServer) ListenAndServeTLS(httpsAddr string) error {
 			//	fmt.Printf("[TRACE] CLIENTHELLO [%s] [Vers=%v] =\n%+v\n\n", ctx.CipherSignature, (*tlsConn.ClientHelloMsg).Vers, *tlsConn.ClientHelloMsg)
 			//}
 
-			//fmt.Println("[DEBUG] ListenAndServeTLS() - request host:", ctx.host, ctx.IsSecure)
+			fmt.Println("[DEBUG] ListenAndServeTLS() - request host:", ctx.host, ctx.IsSecure)
 
 			proxy.dispatchConnectHandlers(ctx)
 

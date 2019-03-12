@@ -1075,8 +1075,8 @@ func (ctx *ProxyCtx) HijackConnect() net.Conn {
 func (ctx *ProxyCtx) ForwardConnect() error {
 	dnsbypassctx := ctx.Req.Context()
 
-	//if strings.Contains(ctx.host, "ice") {
-	//	fmt.Println("[DEBUG] ForwardConnect()", ctx.host, "method", ctx.Method, "whitelisted:", ctx.Whitelisted, "private:", ctx.PrivateNetwork)
+	//if strings.Contains(ctx.host, "dallas5") {
+		fmt.Println("[DEBUG] ForwardConnect()", ctx.host, "method", ctx.Method, "whitelisted:", ctx.Whitelisted, "private:", ctx.PrivateNetwork)
 	//}
 
 	if ctx.Whitelisted {
@@ -1117,12 +1117,17 @@ func (ctx *ProxyCtx) ForwardConnect() error {
 	//	ctx.Conn.Write([]byte("HTTP/1.0 200 OK\r\n\r\n"))
 	//}
 
-	//fmt.Println("[DEBUG] ForwardConnect() - Fusing client connection to host", ctx.host)
+	start := time.Now()
+	//if strings.Contains(ctx.host, "dallas5") {
+		fmt.Println("[DEBUG] ForwardConnect() - Fusing client connection to host", ctx.host)
+	//}
 
 	fuse(ctx.Conn, targetSiteConn, ctx.Host())
 	//Fuse2(ctx.Conn, targetSiteConn)
 
-	//fmt.Println("[DEBUG] ForwardConnect() completed.")
+	//if strings.Contains(ctx.host, "dallas5") {
+		fmt.Println("[DEBUG] ForwardConnect() completed.", time.Since(start))
+	//}
 	return nil
 }
 
@@ -1175,7 +1180,7 @@ func (ctx *ProxyCtx) ForwardNonHTTPRequest(host string) error {
 	var err error
 
 	//if strings.Contains(host, "ice") {
-	//	fmt.Println("ForwardNonHTTPRequest() host:", host)
+		fmt.Println("ForwardNonHTTPRequest() host:", host)
 	//}
 	 //If the request was whitelisted, then use the upstream DNS.
 	dnsbypassctx := ctx.Req.Context()
@@ -1886,6 +1891,12 @@ func (sc *SpyConnection) Write(b []byte) (int, error) {
 	return bw, err
 }
 
+// RLS 3/12/2019 - Attempt to use io.pipe to eliminate memory allocations and buffering.
+// This causes slow uploads.
+//func pipe(client, backend net.Conn, debug string) {
+//	pr, pw := io.Pipe()
+//}
+
 // RLS 9/6/2018 - Cleaner method to pipe two conns together.
 // Fuse connections together. Have to take precautions to close connections down in various cases.
 // 9/16/2018 - Requests which are proxied by static.deploy.akamaitechnologies.com and a few other sites hang here forever.
@@ -1896,11 +1907,11 @@ func fuse(client, backend net.Conn, debug string) {
 	//defer p.logConnectionMessage("closed", client, backend)
 	//p.logConnectionMessage("opening", client, backend)
 
-	trace := false
-	if strings.Contains(debug, ".somafm.com") {
-		fmt.Println("[DEBUG] Starting fuse()", debug)
-		trace = true
-	}
+	//trace := false
+	//if strings.Contains(debug, ".somafm.com") {
+	//	fmt.Println("[DEBUG] Starting fuse()", debug)
+	//	trace = true
+	//}
 
 	//start := time.Now()
 
@@ -1919,15 +1930,15 @@ func fuse(client, backend net.Conn, debug string) {
 		// Connections cannot stay open longer than this period of time (15 minutes)
 		idleconn.SetDeadline(time.Now().Add(time.Duration(serverReadTimeout) * time.Second))
 
-		if trace {
-			fmt.Println("[DEBUG] fuse() server->client spyconnection", debug)
+		//if trace {
+		//	fmt.Println("[DEBUG] fuse() server->client spyconnection", debug)
 			//spyconnection := &SpyConnection{idleconn}
 			//copyData(client, spyconnection)
 
-			n, err := copyData(client, idleconn)
-			fmt.Println("[DEBUG] fuse() server->client n", n, "err", err)
-		} else {
-			//n, err :=
+			//n, err := copyData(client, idleconn)
+			//fmt.Println("[DEBUG] fuse() server->client n", n, "err", err)
+		//} else {
+		//	n, err :=
 			copyData(client, idleconn)
 			//copyDataDebug(client, idleconn)
 			//if strings.HasPrefix(debug, "104") {
@@ -1937,7 +1948,7 @@ func fuse(client, backend net.Conn, debug string) {
 			//if err != nil && !strings.Contains(err.Error(), "closed network connection") {
 			//	fmt.Printf("[ERROR] ctx.go/fuse() error backend->client: %d bytes transferred. [%s] Err=%s\n", n, debug, err)
 			//}
-		}
+		//}
 
 		close(backenddie)
 	}()
@@ -1963,18 +1974,18 @@ func fuse(client, backend net.Conn, debug string) {
 
 
 		//n, err :=
-		if trace {
-			fmt.Println("[DEBUG] fuse() client->server spyconnection", debug)
+		//if trace {
+		//	fmt.Println("[DEBUG] fuse() client->server spyconnection", debug)
 		//	spyconnection := &SpyConnection{idleconn}
 		//	copyData(backend, spyconnection)
 
-			n, err := copyData(backend, idleconn)
-			fmt.Println("[DEBUG] fuse() client->server n", n, "err", err)
-		} else {
+			//n, err := copyData(backend, idleconn)
+			//fmt.Println("[DEBUG] fuse() client->server n", n, "err", err)
+		//} else {
 		//
-			copyData(backend, idleconn)
+			n, err := copyData(backend, idleconn)
 		 	//copyDataDebug(backend, idleconn)
-		}
+		//}
 		//if strings.HasPrefix(debug, "104") {
 		//	fmt.Println("[DEBUG] Fuse client->remote", n, debug, err)
 		//}
@@ -1982,7 +1993,7 @@ func fuse(client, backend net.Conn, debug string) {
 		// Timeouts and connection reset errors are very common, especially with Netflix.
 		// Uncomment to see these... not particularly helpful in most cases though.
 		//if err != nil && !strings.Contains(err.Error(), "timeout") {
-		//	fmt.Printf("[ERROR] ctx.go/fuse() error client->backend: %d bytes transferred. [%s] Err=%s\n", n, debug, err)
+			fmt.Printf("[INFO] ctx.go/fuse() client->backend: %d bytes transferred. [%s] Err=%s\n", n, debug, err)
 		//}
 
 		close(clientdie)
@@ -2008,11 +2019,7 @@ func copyData(dst net.Conn, src net.Conn) (int64, error) {
 	defer src.Close()
 
 	n, err := io.Copy(dst, src)
-
-	//if err != nil {
-	//	fmt.Printf("fuse error: %d bytes copied.\n", n)
-	//}
-
+	fmt.Printf("[DEBUG] Copied %d bytes\n", n)
 	return n, err
 }
 
