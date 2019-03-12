@@ -1,5 +1,6 @@
 package goproxy_test
 
+/*
 import (
 	"bytes"
 	"crypto/rsa"
@@ -97,3 +98,4 @@ func TestCounterEncStreamHistogram(t *testing.T) {
 		t.Errorf("stddev of ref histogram different than regular PRNG: %v %v", refstddev, stddev)
 	}
 }
+*/

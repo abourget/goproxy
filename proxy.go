@@ -507,7 +507,7 @@ func formatRequest(r *http.Request) string {
 func resolveconntrackdestination(c net.Conn) (string) {
 	connections, connerr := conntrack.Flows()
 	if connerr != nil {
-		log.Println("[ERROR] non-SNI client detected but couldn't read connection table. Dropping connection request. [%v]", connerr)
+		log.Printf("[ERROR] non-SNI client detected but couldn't read connection table. Dropping connection request. [%v]\n", connerr)
 		return ""
 	}
 

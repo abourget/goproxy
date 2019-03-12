@@ -81,7 +81,7 @@ func (proxy *ProxyHttpServer) dispatchConnectHandlers(ctx *ProxyCtx) {
 	// This sets up a new connection to the original client
 	conn, _, err := hij.Hijack()
 	if err != nil {
-		fmt.Printf("[DEBUG] dispatchConnectHandlers() Hijack error [%s]\n", ctx.host, err)
+		fmt.Printf("[DEBUG] dispatchConnectHandlers() Hijack error [%s]: %s\n", ctx.host, err)
 		panic("cannot hijack connection " + err.Error())
 	}
 
@@ -144,7 +144,7 @@ func (proxy *ProxyHttpServer) dispatchConnectHandlers(ctx *ProxyCtx) {
 
 	if err := ctx.ForwardConnect(); err != nil {
 		if trace {
-			fmt.Printf("[DEBUG] dispatchConnectHandlers() - err from ForwardConnect(). [%s]\n", ctx.host, err)
+			fmt.Printf("[DEBUG] dispatchConnectHandlers() - err from ForwardConnect(). [%s]: %s\n", ctx.host, err)
 		}
 		ctx.Logf(1, "ERROR: Failed forwarding in fallback clause: %s", err)
 	}
