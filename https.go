@@ -2,8 +2,11 @@ package goproxy
 
 import (
 	"bufio"
+	"context"
 	"crypto/tls"
 	"errors"
+	"fmt"
+	"github.com/winstonprivacyinc/winston/shadownetwork"
 	"io"
 	"io/ioutil"
 	"net"
@@ -11,9 +14,6 @@ import (
 	"net/url"
 	"os"
 	"strings"
-	"fmt"
-	"context"
-	"github.com/winston/shadownetwork"
 )
 
 // returns only the hostname
@@ -24,7 +24,6 @@ func stripPort(s string) string {
 	}
 	return s[:ix]
 }
-
 
 // RLS 2/15/2018 - New DialContext routines. Preferred because these allow the transport
 // to cancel dials as soon as they are no longer needed.
@@ -45,9 +44,8 @@ func (proxy *ProxyHttpServer) dialContext(ctx context.Context, network, addr str
 			return shadowtr.Transport.(*shadownetwork.KCPTransport).DialContext(ctx2, network, addr)
 		}
 	} //else {
-		//fmt.Printf("[DEBUG] https.go/dialContext() -> Local network [%s]\n", addr)
+	//fmt.Printf("[DEBUG] https.go/dialContext() -> Local network [%s]\n", addr)
 	//}
-
 
 	if proxy.Transport.DialContext != nil {
 		//fmt.Printf("[DEBUG] https.go/dialContext() -> Custom DialContext [%s] %v\n", addr, ctx)
@@ -182,7 +180,6 @@ func (proxy *ProxyHttpServer) dial(network, addr string) (c net.Conn, err error)
 	// This is the default dialer
 	return net.Dial(network, addr)
 }
-
 
 func (proxy *ProxyHttpServer) connectDial(network, addr string) (c net.Conn, err error) {
 
