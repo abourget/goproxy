@@ -1,7 +1,5 @@
 package goproxy_test
 
-
-
 import (
 	//"bufio"
 	//"bytes"
@@ -18,21 +16,20 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/winstonprivacyinc/goproxy"
+	"github.com/winstonprivacyinc/winston/goproxy"
 	//"github.com/abourget/goproxy/ext/image"
 	"fmt"
 	. "github.com/smartystreets/goconvey/convey"
 	//"net/http/httptrace"
-	"time"
-	"net"
 	"bufio"
-	"net/textproto"
 	"bytes"
-	"github.com/gorilla/websocket"
 	"crypto/x509"
+	"github.com/gorilla/websocket"
 	"math/rand"
+	"net"
+	"net/textproto"
+	"time"
 )
-
 
 var acceptAllCerts = &tls.Config{InsecureSkipVerify: true}
 
@@ -40,10 +37,8 @@ var acceptAllCerts = &tls.Config{InsecureSkipVerify: true}
 
 var srvhttps = httptest.NewTLSServer(ConstantHandler("bobo"))
 var srv = httptest.NewServer(nil)
+
 //var fs = httptest.NewServer(http.FileServer(http.Dir(".")))
-
-
-
 
 /*
 func localFile(url string) string { return fs.URL + "/" + url }
@@ -79,8 +74,7 @@ func TestLargeUpload(t *testing.T) {
 
 		//fmt.Println("[TEST] writing request body", b)
 		fmt.Printf("[TEST] writing bb %x", bb.Bytes())
-		request, err := http.NewRequest("GET", srvhttps.URL + "/bobo", bb)
-
+		request, err := http.NewRequest("GET", srvhttps.URL+"/bobo", bb)
 
 		proxyname := "127.0.0.1:" + port
 
@@ -94,11 +88,10 @@ func TestLargeUpload(t *testing.T) {
 		serverport := srvhttps.URL[ix+1:]
 		servername := "127.0.0.1:" + serverport
 
-
 		// Handshake - the server name determines the destination
 		tlsConn := tls.Client(conn, &tls.Config{
 			InsecureSkipVerify: true,
-			ServerName: servername,
+			ServerName:         servername,
 		})
 
 		//timeoutDuration := 10 * time.Second
@@ -110,7 +103,7 @@ func TestLargeUpload(t *testing.T) {
 		So(err, ShouldEqual, nil)
 
 		// Send request to original website
-		request, err = http.NewRequest("GET", srvhttps.URL + "/bobo", nil)
+		request, err = http.NewRequest("GET", srvhttps.URL+"/bobo", nil)
 		request.Write(tlsConn)
 
 		// Read response
@@ -122,7 +115,6 @@ func TestLargeUpload(t *testing.T) {
 
 		tlsConn.Close()
 		time.Sleep(2 * time.Second)
-
 
 	})
 }
@@ -140,7 +132,7 @@ func TestConnectReqWithProxy(t *testing.T) {
 		// Send a request directly to the tunnel.
 		tlsConn := tls.Client(conn, &tls.Config{
 			InsecureSkipVerify: true,
-		},)
+		})
 
 		timeoutDuration := 10 * time.Second
 		conn.SetReadDeadline(time.Now().Add(timeoutDuration))
@@ -154,10 +146,8 @@ func TestConnectReqWithProxy(t *testing.T) {
 		//fmt.Println("SSL Handshake : ", state.HandshakeComplete)
 		//fmt.Println("SSL Mutual : ", state.NegotiatedProtocolIsMutual)
 
-
 		request, err := http.NewRequest("GET", "https://www.google.com", nil)
 		request.Header.Set("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_11_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/56.0.2924.87 Safari/537.36")
-
 
 		//fmt.Println("[TEST] Sending ordinary TLS request.")
 
@@ -210,7 +200,6 @@ func TestConnectReqWithProxy(t *testing.T) {
 		So(err, ShouldEqual, nil)
 		So(conn, ShouldNotEqual, nil)
 
-
 		So(calledRequestHandler, ShouldEqual, false)
 		So(calledResponseHandler, ShouldEqual, false)
 		So(calledConnectHandler, ShouldEqual, true)
@@ -219,7 +208,7 @@ func TestConnectReqWithProxy(t *testing.T) {
 		// Send a request directly to the tunnel.
 		tlsConn := tls.Client(conn, &tls.Config{
 			InsecureSkipVerify: true,
-		},)
+		})
 
 		timeoutDuration := 10 * time.Second
 		conn.SetReadDeadline(time.Now().Add(timeoutDuration))
@@ -271,20 +260,18 @@ func TestHttpGetReqWithProxy(t *testing.T) {
 		client, err := oneShotProxy(proxy, "9001")
 		So(err, ShouldEqual, nil)
 
-		r := string(getOrFail(srv.URL + "/bobo", client, t))
+		r := string(getOrFail(srv.URL+"/bobo", client, t))
 		So(r, ShouldEqual, "bobo")
 		So(calledRequestHandler, ShouldEqual, true)
 		So(calledResponseHandler, ShouldEqual, false)
 		So(calledConnectHandler, ShouldEqual, false)
 
 		calledRequestHandler = false
-		r = string(getOrFail(srv.URL + "/bobo", client, t))
+		r = string(getOrFail(srv.URL+"/bobo", client, t))
 		So(r, ShouldEqual, "bobo")
 
 		// The request handler should not be called a second time because the TCP connection was re-used.
 		So(calledRequestHandler, ShouldEqual, false)
-
-
 
 	})
 }
@@ -324,7 +311,7 @@ func TestHttpsGetReqWithProxy(t *testing.T) {
 
 		// Run the request without a proxy to make sure it's working
 		//fmt.Println("[TEST] Calling HTTPS server without proxy.")
-		request, err := http.NewRequest("GET", srvhttps.URL + "/bobo", nil)
+		request, err := http.NewRequest("GET", srvhttps.URL+"/bobo", nil)
 		tr := &http.Transport{TLSClientConfig: acceptAllCerts}
 		directclient := &http.Client{Transport: tr}
 
@@ -353,11 +340,10 @@ func TestHttpsGetReqWithProxy(t *testing.T) {
 		serverport := srvhttps.URL[ix+1:]
 		servername := "127.0.0.1:" + serverport
 
-
 		// Handshake - the server name determines the destination
 		tlsConn := tls.Client(conn, &tls.Config{
 			InsecureSkipVerify: true,
-			ServerName: servername,
+			ServerName:         servername,
 		})
 
 		//timeoutDuration := 10 * time.Second
@@ -368,11 +354,10 @@ func TestHttpsGetReqWithProxy(t *testing.T) {
 		err = tlsConn.Handshake()
 		So(err, ShouldEqual, nil)
 
-
 		//now := time.Now()
 
 		// Send request to original website
-		request, err = http.NewRequest("GET", srvhttps.URL + "/bobo", nil)
+		request, err = http.NewRequest("GET", srvhttps.URL+"/bobo", nil)
 		request.Write(tlsConn)
 
 		// Read response
@@ -419,7 +404,7 @@ func TestErrorWithProxy(t *testing.T) {
 		client, err := oneShotProxy(proxy, "9002")
 		So(err, ShouldEqual, nil)
 
-		r := string(getOrFail(srv.URL + "/bobo", client, t))
+		r := string(getOrFail(srv.URL+"/bobo", client, t))
 		//fmt.Printf("[TEST] getOrFail returned body:\n%s\n", r)
 		So(r, ShouldContainSubstring, "blocked by Winston")
 		So(calledRequestHandler, ShouldEqual, true)
@@ -454,7 +439,7 @@ func TestMissingHostHeader(t *testing.T) {
 
 		//fmt.Println("[TEST] Starting low level HTTP request")
 		// Send the next request directly on the wire to avoid adding a host header.
-		b, err := getraw("127.0.0.1:9004", srv.URL + "/header?header=Host", "User-Agent: None\r\n")
+		b, err := getraw("127.0.0.1:9004", srv.URL+"/header?header=Host", "User-Agent: None\r\n")
 
 		So(err, ShouldEqual, nil)
 		body := string(b)
@@ -466,7 +451,7 @@ func TestMissingHostHeader(t *testing.T) {
 		calledRequestHandler = false
 
 		// Send the request again but get the user agent back
-		b, err = getraw("127.0.0.1:9004", srv.URL + "/header?header=User-Agent", "User-Agent: None\r\n")
+		b, err = getraw("127.0.0.1:9004", srv.URL+"/header?header=User-Agent", "User-Agent: None\r\n")
 		fmt.Printf("[TEST] Server's HTTP response was\n%s\n", string(b))
 		body = string(b)
 		So(len(b), ShouldNotEqual, 0)
@@ -525,8 +510,6 @@ func TestWebsockets(t *testing.T) {
 			So(err, ShouldEqual, nil)
 			So(string(p), ShouldEqual, "hello")
 		}
-
-
 
 		// The websockets server is working. Set up a local proxy and connect to it indirectly.
 		// Start a local proxy
@@ -711,7 +694,6 @@ func TestWebsockets(t *testing.T) {
 
 		fmt.Println("[TEST] TLS Proxy server started", proxyport)
 
-
 		// Repeat the websockets test queries using a proxy
 		// Note: We have to send in the server name explicitly so that the proxy server can route it to the right place.
 		// This simulates a transparent intercept. If we don't do this, it will re-route it to 127.0.0.1:443.
@@ -721,7 +703,7 @@ func TestWebsockets(t *testing.T) {
 
 		fmt.Println("[TEST] Simulating transparent intercept to", u, "->", servername)
 		d := websocket.Dialer{
-			TLSClientConfig: &tls.Config{InsecureSkipVerify: true, ServerName: servername},	// , RootCAs: certpool
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: true, ServerName: servername}, // , RootCAs: certpool
 			NetDial: func(network, addr string) (net.Conn, error) {
 				return net.Dial("tcp", proxyport)
 			},
@@ -792,7 +774,7 @@ func TestHttpsBadSNI(t *testing.T) {
 		ix := strings.LastIndex(srvhttps.URL, ":")
 		serverport := srvhttps.URL[ix+1:]
 		servername := "127.0.0.1:" + serverport
-		proxy.DestinationResolver = func(c net.Conn) (string) {
+		proxy.DestinationResolver = func(c net.Conn) string {
 			return servername
 		}
 
@@ -815,18 +797,17 @@ func TestHttpsBadSNI(t *testing.T) {
 		// Bad SNI field sent in. This doesn't point to anything valid.
 		tlsConn := tls.Client(conn, &tls.Config{
 			InsecureSkipVerify: true,
-			ServerName: "*.badsni.com",
+			ServerName:         "*.badsni.com",
 		})
 
 		//fmt.Println("[TEST] Starting TLS handshake")
 		err = tlsConn.Handshake()
 		So(err, ShouldEqual, nil)
 
-
 		//now := time.Now()
 
 		// Send request to original website
-		request, err := http.NewRequest("GET", srvhttps.URL + "/bobo", nil)
+		request, err := http.NewRequest("GET", srvhttps.URL+"/bobo", nil)
 		request.Write(tlsConn)
 
 		// Read response
@@ -839,7 +820,6 @@ func TestHttpsBadSNI(t *testing.T) {
 		So(calledRequestHandler, ShouldEqual, false)
 
 		//fmt.Println("[TEST] Direct HTTPS server request succeeded.")
-
 
 	})
 
@@ -876,20 +856,18 @@ func TestAPIHook(t *testing.T) {
 		client, err := oneShotProxy(proxy, "11301")
 		So(err, ShouldEqual, nil)
 
-		r := string(getOrFail(srv.URL + "/bobo", client, t))
+		r := string(getOrFail(srv.URL+"/bobo", client, t))
 		So(r, ShouldEqual, "bobo")
 		So(calledRequestHandler, ShouldEqual, true)
 		So(calledResponseHandler, ShouldEqual, false)
 		So(calledConnectHandler, ShouldEqual, false)
 
 		calledRequestHandler = false
-		r = string(getOrFail(srv.URL + "/bobo", client, t))
+		r = string(getOrFail(srv.URL+"/bobo", client, t))
 		So(r, ShouldEqual, "bobo")
 
 		// The request handler should not be called a second time because the TCP connection was re-used.
 		So(calledRequestHandler, ShouldEqual, false)
-
-
 
 	})
 }
@@ -916,8 +894,6 @@ func echo(w http.ResponseWriter, r *http.Request, listener chan string) {
 	}
 }
 
-
-
 func fatalOnErr(err error, msg string, t *testing.T) {
 	if err != nil {
 		t.Fatal(msg, err)
@@ -929,7 +905,6 @@ func panicOnErr(err error, msg string) {
 		os.Exit(-1)
 	}
 }
-
 
 // Returns the requested header if it exists
 type HeaderHandler struct{}
@@ -982,7 +957,7 @@ func getraw(proxy string, url string, headers string) ([]byte, error) {
 	}
 
 	// Send as HTTP/1.0 so the host header isn't required
-	fmt.Fprintf(conn, "GET " + url + " HTTP/1.0\r\n")
+	fmt.Fprintf(conn, "GET "+url+" HTTP/1.0\r\n")
 	fmt.Fprintf(conn, headers)
 	fmt.Fprintf(conn, "\r\n")
 	//_, err = bufio.NewReader(conn).ReadString('\n')
@@ -1003,8 +978,8 @@ func connectraw(proxy string, host string) (net.Conn, error) {
 	}
 
 	// We're connecting as HTTP/1.1 so Host is required.
-	fmt.Fprintf(conn, "CONNECT " + host + " HTTP/1.1\r\n")
-	fmt.Fprintf(conn, "Host: " + host + "\r\n")
+	fmt.Fprintf(conn, "CONNECT "+host+" HTTP/1.1\r\n")
+	fmt.Fprintf(conn, "Host: "+host+"\r\n")
 	fmt.Fprintf(conn, "\r\n")
 
 	// Read each line until we get to two line feeds
@@ -1027,7 +1002,7 @@ func connectraw(proxy string, host string) (net.Conn, error) {
 		}
 
 	}
-	fmt.Println("[TEST] connectraw - reached EOF");
+	fmt.Println("[TEST] connectraw - reached EOF")
 	//response, err := ioutil.ReadAll(conn)
 
 	if err != nil {
@@ -1038,8 +1013,6 @@ func connectraw(proxy string, host string) (net.Conn, error) {
 	}
 	return nil, fmt.Errorf("Received bad status code while connecting")
 }
-
-
 
 func get(url string, client *http.Client) ([]byte, error) {
 	request, err := http.NewRequest("GET", url, nil)
@@ -1055,7 +1028,6 @@ func get(url string, client *http.Client) ([]byte, error) {
 	}
 	return txt, nil
 }
-
 
 func getOrFail(url string, client *http.Client, t *testing.T) []byte {
 	//fmt.Println("[TEST] getOrFail", url)
@@ -1097,7 +1069,7 @@ func oneShotTLSProxy(proxy *goproxy.ProxyHttpServer, port string) (client *http.
 }
 
 // Given an unencrypted connection, parses the headers and returns true if we got 200 OK back
-func parseResponse(conn net.Conn) (bool) {
+func parseResponse(conn net.Conn) bool {
 	// Read each line until we get to two line feeds
 	foundOK := false
 	//var response []byte
@@ -1119,10 +1091,9 @@ func parseResponse(conn net.Conn) (bool) {
 	return foundOK
 }
 
-func parseResponseBody(conn net.Conn) (string) {
+func parseResponseBody(conn net.Conn) string {
 	// Read each line until we get to two line feeds
 	var response []byte
-
 
 	reader := bufio.NewReader(conn)
 	resp, _ := http.ReadResponse(reader, nil)

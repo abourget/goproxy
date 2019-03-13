@@ -1,10 +1,10 @@
 package goproxy_test
 
 import (
-	"testing"
 	. "github.com/smartystreets/goconvey/convey"
+	"github.com/winstonprivacyinc/winston/goproxy"
 	"net/http/httptest"
-	"github.com/winstonprivacyinc/goproxy"
+	"testing"
 )
 
 func TestRequestLogger(t *testing.T) {
@@ -79,25 +79,24 @@ func TestRequestLogger(t *testing.T) {
 	})
 }
 
-
-func GetCTX(URL string, useragent string, proxy *goproxy.ProxyHttpServer) (goproxy.ProxyCtx) {
+func GetCTX(URL string, useragent string, proxy *goproxy.ProxyHttpServer) goproxy.ProxyCtx {
 	// Create a context object to use for the following tests
 	r := httptest.NewRequest("GET", URL, nil)
 
 	w := httptest.NewRecorder()
 	ctx := goproxy.ProxyCtx{
-		Method:         r.Method,
-		SourceIP:       r.RemoteAddr, // pick it from somewhere else ? have a plugin to override this ?
-		Req:            r,
-		ResponseWriter: w,
-		UserData:       make(map[string]string),
-		UserObjects:    make(map[string]interface{}),
-		Session:        1,
-		Proxy:          proxy,
-		MITMCertConfig: proxy.MITMCertConfig,
-		Tlsfailure:	proxy.Tlsfailure,
-		VerbosityLevel: proxy.VerbosityLevel,
-		DeviceType: -1,
+		Method:          r.Method,
+		SourceIP:        r.RemoteAddr, // pick it from somewhere else ? have a plugin to override this ?
+		Req:             r,
+		ResponseWriter:  w,
+		UserData:        make(map[string]string),
+		UserObjects:     make(map[string]interface{}),
+		Session:         1,
+		Proxy:           proxy,
+		MITMCertConfig:  proxy.MITMCertConfig,
+		Tlsfailure:      proxy.Tlsfailure,
+		VerbosityLevel:  proxy.VerbosityLevel,
+		DeviceType:      -1,
 		CipherSignature: "xyz123",
 		//Host:	r.URL.Host,
 	}

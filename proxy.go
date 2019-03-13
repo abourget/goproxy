@@ -6,7 +6,7 @@ import (
 	"bufio"
 	"bytes"
 	"github.com/inconshreveable/go-vhost"
-	"github.com/winstonprivacyinc/goproxy/har"
+	"github.com/winstonprivacyinc/winston/goproxy/har"
 	"log"
 	"net"
 	"net/http"

@@ -9,7 +9,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/winstonprivacyinc/goproxy/har"
+	"github.com/winstonprivacyinc/winston/goproxy/har"
 )
 
 func (proxy *ProxyHttpServer) harLogAggregator() {
