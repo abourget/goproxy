@@ -8,23 +8,23 @@ package goproxy
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"crypto/tls"
 	"fmt"
+	"github.com/inconshreveable/go-vhost"
+	"github.com/winstonprivacyinc/dns"
+	"github.com/winstonprivacyinc/winston/shadownetwork"
 	"io"
 	"io/ioutil"
 	"net"
 	"net/http"
+	"net/textproto"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
-	"github.com/inconshreveable/go-vhost"
-	"path/filepath"
-	"time"
-	"net/textproto"
 	"sync"
-	"context"
-	"github.com/winstonprivacyinc/dns"
-	"github.com/winston/shadownetwork"
+	"time"
 	//"net/url"
 	"crypto/rand"
 	//"runtime/debug"
@@ -38,113 +38,113 @@ var NonHTTPRequest = "nonhttprequest"
 type ProxyCtx struct {
 	Method          string
 	SourceIP        string
-	IsSecure        bool                 // Whether we are handling an HTTPS request with the client
-	IsThroughMITM   bool                 // Whether the current request is currently being MITM'd
-	IsThroughTunnel bool                 // Whether the current request is going through a CONNECT tunnel, doing HTTP calls (non-secure)
-	TunnelRequest   bool                 // If set to true, the request will be forwarded without changes and tunnelled.
-	NonHTTPRequest  []byte               // A binary copy of the original request headers. Will be replayed to destination server.
+	IsSecure        bool   // Whether we are handling an HTTPS request with the client
+	IsThroughMITM   bool   // Whether the current request is currently being MITM'd
+	IsThroughTunnel bool   // Whether the current request is going through a CONNECT tunnel, doing HTTP calls (non-secure)
+	TunnelRequest   bool   // If set to true, the request will be forwarded without changes and tunnelled.
+	NonHTTPRequest  []byte // A binary copy of the original request headers. Will be replayed to destination server.
 
-	host            string               // Sniffed and non-sniffed hosts, cached here.
-	sniHost         string
+	host    string // Sniffed and non-sniffed hosts, cached here.
+	sniHost string
 
-	sniffedTLS      bool
-	MITMCertConfig  *GoproxyConfigServer
+	sniffedTLS     bool
+	MITMCertConfig *GoproxyConfigServer
 
-	connectScheme   string
+	connectScheme string
 
-					     // OriginalRequest holds a copy of the request before doing some HTTP tunnelling
-					     // through CONNECT, or doing a man-in-the-middle attack.
-	OriginalRequest   *http.Request
+	// OriginalRequest holds a copy of the request before doing some HTTP tunnelling
+	// through CONNECT, or doing a man-in-the-middle attack.
+	OriginalRequest *http.Request
 
-					     // Contains the request and response streams from the proxy to the
-					     // downstream server in the case of a MITM connection
+	// Contains the request and response streams from the proxy to the
+	// downstream server in the case of a MITM connection
 	Req            *http.Request
 	ResponseWriter http.ResponseWriter
 
-					     // Connections, up (the requester) and downstream (the server we forward to)
+	// Connections, up (the requester) and downstream (the server we forward to)
 	Conn           net.Conn
-	targetSiteConn net.Conn              // used internally when we established a CONNECT session,
-					     // to pass through new requests
+	targetSiteConn net.Conn // used internally when we established a CONNECT session,
+	// to pass through new requests
 
-					     // Resp contains the remote sever's response (if available). This can be nil if the
-					     // request wasn't sent yet, or if there was an error trying to fetch the response.
-					     // In this case, refer to `ResponseError` for the latest error.
-					     // RLS: In the case of MITM, this is the client's response stream
+	// Resp contains the remote sever's response (if available). This can be nil if the
+	// request wasn't sent yet, or if there was an error trying to fetch the response.
+	// In this case, refer to `ResponseError` for the latest error.
+	// RLS: In the case of MITM, this is the client's response stream
 	Resp *http.Response
 
-					     // ResponseError contains the last error, if any, after running `ForwardRequest()`
-					     // explicitly, or implicitly forwarding a request through other means (like returning
-					     // `FORWARD` in some handlers).
+	// ResponseError contains the last error, if any, after running `ForwardRequest()`
+	// explicitly, or implicitly forwarding a request through other means (like returning
+	// `FORWARD` in some handlers).
 	ResponseError error
 
-					     // originalResponseBody holds the first Response.Body (the original Response) in the chain.  This possibly exists if `Resp` is not nil.
+	// originalResponseBody holds the first Response.Body (the original Response) in the chain.  This possibly exists if `Resp` is not nil.
 	originalResponseBody io.ReadCloser
 
-					     // RoundTripper is used to send a request to a remote server when
-					     // forwarding a Request.  If you set your own RoundTripper, then
-					     // `FakeDestinationDNS` and `LogToHARFile` will have no effect.
-	RoundTripper            RoundTripper
-	fakeDestinationDNS      string
+	// RoundTripper is used to send a request to a remote server when
+	// forwarding a Request.  If you set your own RoundTripper, then
+	// `FakeDestinationDNS` and `LogToHARFile` will have no effect.
+	RoundTripper       RoundTripper
+	fakeDestinationDNS string
 
-					     // HAR logging
-	isLogEnabled            bool
-	isLogWithContent        bool
+	// HAR logging
+	isLogEnabled     bool
+	isLogWithContent bool
 
-					     // will contain the recent error that occured while trying to send receive or parse traffic
-	Error                   error
+	// will contain the recent error that occured while trying to send receive or parse traffic
+	Error error
 
-					     // UserObjects and UserData allow you to keep data between
-					     // Connect, Request and Response handlers.
-	UserObjects             map[string]interface{}
-	UserData                map[string]string
+	// UserObjects and UserData allow you to keep data between
+	// Connect, Request and Response handlers.
+	UserObjects map[string]interface{}
+	UserData    map[string]string
 
-					     // Will connect a request to a response
-	Session                 int64
-	Proxy                   *ProxyHttpServer
+	// Will connect a request to a response
+	Session int64
+	Proxy   *ProxyHttpServer
 
-					     // Closure to alert listeners that a TLS handshake failed
-					     // RLS 6-29-2017
-	Tlsfailure              func(ctx *ProxyCtx, untrustedCertificate bool)
+	// Closure to alert listeners that a TLS handshake failed
+	// RLS 6-29-2017
+	Tlsfailure func(ctx *ProxyCtx, untrustedCertificate bool)
 
-					     // References to persistent caches for statistics collection
-					     // RLS 7-5-2017
-	IgnoreCounter		bool    // if true, this request won't be counted (used for streaming)
+	// References to persistent caches for statistics collection
+	// RLS 7-5-2017
+	IgnoreCounter bool // if true, this request won't be counted (used for streaming)
 
-					     // Client signature
-					     // https://blog.squarelemon.com/tls-fingerprinting/
-	CipherSignature         string
+	// Client signature
+	// https://blog.squarelemon.com/tls-fingerprinting/
+	CipherSignature string
 
-	NewBodyLength           int
-	VerbosityLevel          uint16
+	NewBodyLength  int
+	VerbosityLevel uint16
 
-					     // 11/2/2017 - Used for replacement macros (user agents)
-	DeviceType int
-	Whitelisted     	bool         // If true, response filtering will be completely disabled and local DNS will be bypassed.
-	TimeRemaining		int     // Time remaining in sec for temporary whitelisting
+	// 11/2/2017 - Used for replacement macros (user agents)
+	DeviceType    int
+	Whitelisted   bool // If true, response filtering will be completely disabled and local DNS will be bypassed.
+	TimeRemaining int  // Time remaining in sec for temporary whitelisting
 
-					     // Keeps a list of any messages we want to pass back to the client
-	StatusMessage   	[]string
+	// Keeps a list of any messages we want to pass back to the client
+	StatusMessage []string
 
-					     // Request handler sets this to true if it thinks it is a first party request
-	FirstParty      	bool
+	// Request handler sets this to true if it thinks it is a first party request
+	FirstParty bool
 
-					     // Set to true to use private network
-	PrivateNetwork  	bool
-	RevealTimeRemaining	int       // Time remaining in sec for temporary uncloaking
+	// Set to true to use private network
+	PrivateNetwork      bool
+	RevealTimeRemaining int // Time remaining in sec for temporary uncloaking
 
-					     // If a shadow transport is being used, this points to it.
+	// If a shadow transport is being used, this points to it.
 	ShadowTransport *shadownetwork.ShadowTransport
 
-					     // If true, then Winston diagnostic information will be recorded about the current request
-	Trace           traceRequest
+	// If true, then Winston diagnostic information will be recorded about the current request
+	Trace traceRequest
 
-	TraceInfo       *TraceInfo           // Information about the original request/response
-	SkipRequestHandler bool              // If set to true, then response handler will be skipped
-	SkipResponseHandler bool             // If set to true, then response handler will be skipped
-	RequestTime		time.Time // Time the request was started. Useful for debugging.
-	Referrer		string       // Referrer taken from HTTP request. Used for logging.
-	CookiesModified		int   // # of cookies blocked or modified for the current request. Used for logging.
-	ElementsModified	int          // # of page elements removed or modified for the current request. Used for logging.
+	TraceInfo           *TraceInfo // Information about the original request/response
+	SkipRequestHandler  bool       // If set to true, then response handler will be skipped
+	SkipResponseHandler bool       // If set to true, then response handler will be skipped
+	RequestTime         time.Time  // Time the request was started. Useful for debugging.
+	Referrer            string     // Referrer taken from HTTP request. Used for logging.
+	CookiesModified     int        // # of cookies blocked or modified for the current request. Used for logging.
+	ElementsModified    int        // # of page elements removed or modified for the current request. Used for logging.
 }
 
 // Append a message to the context. This will be sent back to the client as a "Winston-Response" header.
@@ -344,30 +344,31 @@ func (ctx *ProxyCtx) TunnelHTTP() error {
 	})
 
 	//for {
-		// RLS - We already have the request. Not sure why they are trying to read it again. This hangs.
-		//client := bufio.NewReader(ctx.Conn)
-		//req, err := http.ReadRequest(client)
-		//fmt.Printf("[DEBUG] TunnelHTTP() 4.2 %s\n", ctx.host)
-		//if err != nil && err != io.EOF {
-		//	ctx.Warnf("cannot read request of MITM HTTP client: %+#v", err)
-		//}
-		//fmt.Printf("[DEBUG] TunnelHTTP() 4.3 %s\n", ctx.host)
-		//if err != nil {
-		//	fmt.Printf("[DEBUG] TunnelHTTP() 4.4 %s\n", ctx.host)
-		//	return err
-		//}
-		//fmt.Printf("[DEBUG] TunnelHTTP() 4.5 %s\n", ctx.host)
-		//ctx.Req = req
-		ctx.IsThroughTunnel = true
+	// RLS - We already have the request. Not sure why they are trying to read it again. This hangs.
+	//client := bufio.NewReader(ctx.Conn)
+	//req, err := http.ReadRequest(client)
+	//fmt.Printf("[DEBUG] TunnelHTTP() 4.2 %s\n", ctx.host)
+	//if err != nil && err != io.EOF {
+	//	ctx.Warnf("cannot read request of MITM HTTP client: %+#v", err)
+	//}
+	//fmt.Printf("[DEBUG] TunnelHTTP() 4.3 %s\n", ctx.host)
+	//if err != nil {
+	//	fmt.Printf("[DEBUG] TunnelHTTP() 4.4 %s\n", ctx.host)
+	//	return err
+	//}
+	//fmt.Printf("[DEBUG] TunnelHTTP() 4.5 %s\n", ctx.host)
+	//ctx.Req = req
+	ctx.IsThroughTunnel = true
 
-		fmt.Printf("[DEBUG] TunnelHTTP() dispatching request handlers...\n")
-		ctx.Proxy.DispatchRequestHandlers(ctx)
+	fmt.Printf("[DEBUG] TunnelHTTP() dispatching request handlers...\n")
+	ctx.Proxy.DispatchRequestHandlers(ctx)
 	//}
 
 	return nil
 }
 
 var ipregex = regexp.MustCompile(`^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])`)
+
 func validIP4(ipAddress string) bool {
 	ipAddress = strings.Trim(ipAddress, " ")
 
@@ -377,7 +378,6 @@ func validIP4(ipAddress string) bool {
 	}
 	return false
 }
-
 
 // ManIntheMiddleHTTPS assumes we're dealing with an TLS-wrapped
 // CONNECT tunnel.  It will perform a full-blown man-in-the-middle
@@ -396,333 +396,333 @@ func (ctx *ProxyCtx) ManInTheMiddleHTTPS() error {
 	panic("Stopping for analysis.")
 	return fmt.Errorf("MITM no longer supported")
 	/*
-	// Attempt to recover gracefully from a nested panic not caught by the later defer recover.
-	// This is a very rare race condition which happens only under high load but which
-	// unfortunately crashes the device.
-	defer func() {
-		if r := recover(); r != nil {
-			ctx.Logf(1, "[PANIC] Fatal error while processing MITM request. Recovering gracefully.", r)
-		}
-	}()
-	if ctx.Method != "CONNECT" {
-		fmt.Println("[ERROR] Attempting to MITM a non-CONNECT request")
-		panic("method is not CONNECT")
-	}
-
-	// Use to debug non-SNI requests
-	isIpAddress := validIP4(ctx.host)
-
-	// If we haven't already sniffed, send a 200 OK back to the client
-	if ctx.IsSecure && !ctx.sniffedTLS {
-		fmt.Println("[TODO] Check HTTP 1/0 response to sender here (3).")
-		ctx.Conn.Write([]byte("HTTP/1.0 200 OK\r\n\r\n"))
-	}
-	signHost := ctx.sniHost
-	if signHost == "" {
-		signHost = ctx.host
-		if !ctx.sniffedTLS {
-			ctx.Warnf("ManInTheMiddleHTTPS - Sign Host: No SNI host sniffed, falling back to CONNECT host." +
-				"  Risks being rejected by requester. To avoid that, call SNIHost() " +
-				"before doing MITM. %s", signHost)
-			//panic("stopping execution")
-		}
-	}
-	// DEBUG - uncomment to ignore all other MITM requests
-	//if !strings.Contains(ctx.host, "cbssports.com") {
-	//	return nil
-	//}
-
-	// This is our TLS server to handle client requests. See signer.go and certs.go.
-	tlsConfig, err := ctx.tlsConfig(signHost)
-	// We should always be able to get a certificate when a signhost has been provided
-	if !isIpAddress && err != nil {
-		ctx.Logf(1, "ManInTheMiddleHTTPS - Couldn't configure MITM TLS tunnel: %s", err)
-		ctx.httpError(err)
-		return err
-	}
-
-	// This contains the original connection with the client
-	ctx.OriginalRequest = ctx.Req
-
-	// this goes in a separate goroutine, so that the net/http server won't think we're
-	// still handling the request even after hijacking the connection. Those HTTP CONNECT
-	// request can take forever, and the server will be stuck when "closed".
-	// TODO: Allow Server.Close() mechanism to shut down this connection as nicely as possible
-	//fmt.Println()
-	//fmt.Printf("[DEBUG] ctx.go - MITM: %s\n", ctx.Host())
-	go func(ctx *ProxyCtx) {
-		// Found a rare but irreproducible race condition when calling isEof() with many
-		// active connections at the same time. This ensures that only the active connection
-		// goes down and doesn't take the entire process with it.
-		// RLS 3-11-2018 - Also recovers from occasional panics on line ~576:
-		//     subReq, err := http.ReadRequest(clientTlsReader)
+		// Attempt to recover gracefully from a nested panic not caught by the later defer recover.
+		// This is a very rare race condition which happens only under high load but which
+		// unfortunately crashes the device.
 		defer func() {
 			if r := recover(); r != nil {
-				ctx.Logf(1, "Error (2): Panic while processing MITM request. Recovering gracefully.", r)
+				ctx.Logf(1, "[PANIC] Fatal error while processing MITM request. Recovering gracefully.", r)
 			}
 		}()
+		if ctx.Method != "CONNECT" {
+			fmt.Println("[ERROR] Attempting to MITM a non-CONNECT request")
+			panic("method is not CONNECT")
+		}
 
-		r := ctx.Req
+		// Use to debug non-SNI requests
+		isIpAddress := validIP4(ctx.host)
 
-		// Set a reasonable timeout to complete the handshake
-		// Note: This timeout affects downloads, so we'll probably have to extend it.
-		timeoutDuration := 15 * 60 * time.Second
-		ctx.Conn.SetReadDeadline(time.Now().Add(timeoutDuration))
-		ctx.Conn.SetWriteDeadline(time.Now().Add(timeoutDuration))
-
-		// Set it again on the muxed connection, otherwise tls/conn.go/readFromUntil may hang
-		// if the client doesn't send enough information.
-		rawClientTls := tls.Server(ctx.Conn, tlsConfig)
-		rawClientTls.SetReadDeadline(time.Now().Add(timeoutDuration))
-		rawClientTls.SetWriteDeadline(time.Now().Add(timeoutDuration))
-
-		// FIX 9/13/2017: the deferred close must come before the Handshake because if it
-		// errors out, the connection is left open and we end up with thousands of orphaned objects.
-		defer func() {
-			ctx.Conn.Close()
-			rawClientTls.Close()
-		}()
-		//defer rawClientTls.Close()
-
-		// Performs the TLS handshake
-		//if ctx.Trace {
-		//	fmt.Printf("[DEBUG] About to handshake: %s\n", ctx.host)
+		// If we haven't already sniffed, send a 200 OK back to the client
+		if ctx.IsSecure && !ctx.sniffedTLS {
+			fmt.Println("[TODO] Check HTTP 1/0 response to sender here (3).")
+			ctx.Conn.Write([]byte("HTTP/1.0 200 OK\r\n\r\n"))
+		}
+		signHost := ctx.sniHost
+		if signHost == "" {
+			signHost = ctx.host
+			if !ctx.sniffedTLS {
+				ctx.Warnf("ManInTheMiddleHTTPS - Sign Host: No SNI host sniffed, falling back to CONNECT host." +
+					"  Risks being rejected by requester. To avoid that, call SNIHost() " +
+					"before doing MITM. %s", signHost)
+				//panic("stopping execution")
+			}
+		}
+		// DEBUG - uncomment to ignore all other MITM requests
+		//if !strings.Contains(ctx.host, "cbssports.com") {
+		//	return nil
 		//}
 
-		if err := rawClientTls.Handshake(); err != nil {
-			// A handshake error typically only occurs on the client side
-			// when pinned Certificates are being used, ie: a mobile
-			// application refuses to trust our local CA.
-			// Note: This can also happen if a browser window is closed while resources are loading.
-
-			// Is anyone listening? Let them know the TLS handshake failed.
-			if ctx.Tlsfailure != nil {
-				//fmt.Printf("[DEBUG] ctx.TLSHandshake error (client) - %s %+v [%s]\n", ctx.Req.URL.String(), err, ctx.CipherSignature)
-				ctx.Tlsfailure(ctx, true)
-			}
-
-			return
+		// This is our TLS server to handle client requests. See signer.go and certs.go.
+		tlsConfig, err := ctx.tlsConfig(signHost)
+		// We should always be able to get a certificate when a signhost has been provided
+		if !isIpAddress && err != nil {
+			ctx.Logf(1, "ManInTheMiddleHTTPS - Couldn't configure MITM TLS tunnel: %s", err)
+			ctx.httpError(err)
+			return err
 		}
-		ctx.Conn = rawClientTls
-		ctx.IsSecure = true
 
-		// Use to detect timeouts
-		start := time.Now()
+		// This contains the original connection with the client
+		ctx.OriginalRequest = ctx.Req
 
-		// Handshake worked. Try to process the request.
+		// this goes in a separate goroutine, so that the net/http server won't think we're
+		// still handling the request even after hijacking the connection. Those HTTP CONNECT
+		// request can take forever, and the server will be stuck when "closed".
+		// TODO: Allow Server.Close() mechanism to shut down this connection as nicely as possible
+		//fmt.Println()
+		//fmt.Printf("[DEBUG] ctx.go - MITM: %s\n", ctx.Host())
+		go func(ctx *ProxyCtx) {
+			// Found a rare but irreproducible race condition when calling isEof() with many
+			// active connections at the same time. This ensures that only the active connection
+			// goes down and doesn't take the entire process with it.
+			// RLS 3-11-2018 - Also recovers from occasional panics on line ~576:
+			//     subReq, err := http.ReadRequest(clientTlsReader)
+			defer func() {
+				if r := recover(); r != nil {
+					ctx.Logf(1, "Error (2): Panic while processing MITM request. Recovering gracefully.", r)
+				}
+			}()
 
-		readRequest := true
+			r := ctx.Req
 
-		// Use a teereader so we can recover the request if it failed
-		var buf bytes.Buffer
-		tee := io.TeeReader(rawClientTls, &buf)
-		clientTlsReader := bufio.NewReader(tee)
+			// Set a reasonable timeout to complete the handshake
+			// Note: This timeout affects downloads, so we'll probably have to extend it.
+			timeoutDuration := 15 * 60 * time.Second
+			ctx.Conn.SetReadDeadline(time.Now().Add(timeoutDuration))
+			ctx.Conn.SetWriteDeadline(time.Now().Add(timeoutDuration))
 
-		var subReq *http.Request
-		subReq, err = http.ReadRequest(clientTlsReader)
-		if err != nil && err == io.EOF {
-			// The client dropped the connection. This indicates a problem communicating through the client TLS tunnel
-			// most likely due certificate pinning or the client does not have the Winston certificate installed.
-			// Note that when browser tabs are closed, they may rapidly shut down all TLS connections in progress.
-			// We attempt to filter these out by only registering a TLS certificate error if the connection closed
-			// pretty quickly. This works because Firefox typically takes a few seconds to drop the connection,
-			// while untrusting clients will drop the connection immediately.
-			if ctx.RequestTime.Add(time.Second * 1).After(time.Now()) {
-				//fmt.Printf("[DEBUG] Client hung up on TLS connection after handshake (1). Calling NoCertificate(). [%s] [%s] elapsed time: %s\n", ctx.host, ctx.CipherSignature, time.Since(ctx.RequestTime))
+			// Set it again on the muxed connection, otherwise tls/conn.go/readFromUntil may hang
+			// if the client doesn't send enough information.
+			rawClientTls := tls.Server(ctx.Conn, tlsConfig)
+			rawClientTls.SetReadDeadline(time.Now().Add(timeoutDuration))
+			rawClientTls.SetWriteDeadline(time.Now().Add(timeoutDuration))
+
+			// FIX 9/13/2017: the deferred close must come before the Handshake because if it
+			// errors out, the connection is left open and we end up with thousands of orphaned objects.
+			defer func() {
+				ctx.Conn.Close()
+				rawClientTls.Close()
+			}()
+			//defer rawClientTls.Close()
+
+			// Performs the TLS handshake
+			//if ctx.Trace {
+			//	fmt.Printf("[DEBUG] About to handshake: %s\n", ctx.host)
+			//}
+
+			if err := rawClientTls.Handshake(); err != nil {
+				// A handshake error typically only occurs on the client side
+				// when pinned Certificates are being used, ie: a mobile
+				// application refuses to trust our local CA.
+				// Note: This can also happen if a browser window is closed while resources are loading.
+
+				// Is anyone listening? Let them know the TLS handshake failed.
 				if ctx.Tlsfailure != nil {
+					//fmt.Printf("[DEBUG] ctx.TLSHandshake error (client) - %s %+v [%s]\n", ctx.Req.URL.String(), err, ctx.CipherSignature)
 					ctx.Tlsfailure(ctx, true)
 				}
+
+				return
 			}
-			return
-		}
+			ctx.Conn = rawClientTls
+			ctx.IsSecure = true
 
-		//if strings.Contains(ctx.host, "aha.io") {
-		//if ctx.Trace {
-			//fmt.Printf("[DEBUG] Read request results: %s err=%+v\n", ctx.host, err)
+			// Use to detect timeouts
+			start := time.Now()
 
-			// Uncomment to print out raw request.
-			//fmt.Printf("[DEBUG] Read so far (%d bytes):\n%s\n", buf.Len(), buf.String())
+			// Handshake worked. Try to process the request.
 
-			// Uncomment to read rest of request.body. Will prevent request from completing.
-			//body, ok := ioutil.ReadAll(clientTlsReader)
-			//fmt.Printf("[DEBUG] Remaining Request.Body [%t]:\n%s\n", ok, string(body))
-		//}
+			readRequest := true
 
-		// If we read anything, then we know there wasn't a certificate failure.
-		n := buf.Len()
+			// Use a teereader so we can recover the request if it failed
+			var buf bytes.Buffer
+			tee := io.TeeReader(rawClientTls, &buf)
+			clientTlsReader := bufio.NewReader(tee)
 
-		// We failed to parse a standard http request. Try to parse it as non-http.
-		if err != nil && n > 0 {
-			//if ctx.Trace {
-				fmt.Printf("[DEBUG] Creating new non-httprequest: %s \n", ctx.host)
-			//}
-			// Manually create a new request
-
-			subReq = &http.Request{
-				Method:     "",
-				URL:	&url.URL{
-					Host: ctx.host,
-				},
-				Proto:      "nonhttps",
-				ProtoMajor: 0,
-				ProtoMinor: 0,
-				Header:     make(http.Header),
-				Body:       nil,
-				Host:       ctx.host,
-				RequestURI: ctx.host,
-			}
-
-
-			//fmt.Printf("[DEBUG] Non HTTP protocol received. Original request: [%s] len=%d err=%v\n%s\n", ctx.Req.URL.String(), n, err, buf)
-			//clientTlsReader := bufio.NewReader(&buf)
-			//subReq, err = ctx.readRequest(clientTlsReader, true)
-
-			ctx.TunnelRequest = true
-			originalrequest := buf.Bytes()
-			ctx.NonHTTPRequest = originalrequest
-			err = nil
-
-
-		}
-
-
-
-		if err != nil {
-			if ctx.Trace.Modified {
-				fmt.Printf("[DEBUG] Request creation failed: %s err=%+v\n", ctx.host, err)
-			}
-			//	fmt.Printf("[DEBUG] Client hung up on TLS connection after handshake (2). Calling NoCertificate(). [%s] [%s] elapsed time: %s\n", ctx.host, ctx.CipherSignature, time.Since(ctx.RequestTime))
-			if ctx.Tlsfailure != nil {
-				//fmt.Println("[DEBUG] malformed HTTP request - calling whitelisting logic")
-				ctx.Tlsfailure(ctx, true)
-			}
-			return
-		}
-
-		// Copy the request
-		if ctx.Trace.Modified || ctx.Trace.Unmodified {
-			// Copy the original method.
-			if ctx.TraceInfo.Method == nil {
-				origmethod := subReq.Method
-				ctx.TraceInfo.Method = &origmethod
-			} else {
-				subReq.Method = *ctx.TraceInfo.Method
-			}
-			// If we don't have a request body, then copy it
-			if ctx.TraceInfo.ReqBody == nil || len(*ctx.TraceInfo.ReqBody) == 0 {
-				buf, _ := ioutil.ReadAll(subReq.Body)
-				//buf = append(buf, byte('\n'))
-				ctx.TraceInfo.ReqBody = &buf
-				//rdr1 := ioutil.NopCloser(bytes.NewBuffer(buf))
-				rdr2 := ioutil.NopCloser(bytes.NewBuffer(*ctx.TraceInfo.ReqBody))
-
-				// Close original body so we don't leak the connection
-				subReq.Body.Close()
-				subReq.Body = rdr2
-
-				//fmt.Printf("[DEBUG] Copying original http.Request [%p] (%d)\n%s\n", ctx.TraceInfo.ReqBody, len(*ctx.TraceInfo.ReqBody), string(*ctx.TraceInfo.ReqBody))
-			} else {
-				// Otherwise, we have an existing request body so send it as part of this request.
-				rdr2 := ioutil.NopCloser(bytes.NewBuffer(*ctx.TraceInfo.ReqBody))
-				subReq.Body.Close()
-				subReq.Body = rdr2
-				// Setting ContentLength doesn't work for some reason.
-				//subReq.ContentLength = int64(len(*ctx.TraceInfo.ReqBody))
-				subReq.Header.Set("content-length", strconv.Itoa(len(*ctx.TraceInfo.ReqBody)))
-			}
-		}
-
-		subReq.URL.Scheme = "https"
-
-		// Unit testing: We only intercept requests which were destined for port 443, but we can invoke a proxy
-		// and point it at other ports when unit testing. To accommodate this scenario, check for the presence of
-		// a host header and if it exists, update ctx.host. WINSTON-2-8
-		//fmt.Println("[DEBUG] ", subReq.Host)
-		_, port, err := net.SplitHostPort(subReq.Host)
-		if err == nil && port != "443" {
-			//fmt.Printf("[WARN] ManInTheMiddleHTTPS() - modified ctx.host from %s to %s. This should only happen in unit testing or TLS Winston client API calls\n", ctx.host, subReq.Host)
-			ctx.host = subReq.Host
-		}
-
-		subReq.URL.Host = ctx.host
-		subReq.RemoteAddr = r.RemoteAddr // since we're converting the request, need to carry over the original connecting IP as well
-
-		ctx.Req = subReq
-		ctx.IsThroughMITM = true
-
-		// Give custom listener a chance to service the request
-		//if strings.Contains(ctx.host, "winston.conf") {
-		//	fmt.Println("[DEBUG] ManInTheMiddleHTTPS() 6", ctx.host)
-		//}
-
-		if ctx.Proxy.HandleHTTP != nil {
-			// The HandleHTTP() function is responsible for completing the request and piping the
-			// response body back to the original client. For this to work, we need to update
-			// ctx.ResponseWriter so that it points to the newly established TLS connection.
-			// Note that the goproxy dumbreponsewriter cannot write headers, so we wrote a slightly
-			// less dumb one.
-
-			// TIP: For debugging http responses, use curl:
-			//  curl -gkv https://winston.conf:82/api/total_bandwidth
-
-			// TODO: Wrap it in a real responsewriter
-			ctx.ResponseWriter = notsodumbResponseWriter{
-				ctx.Conn,
-				&http.Header{}}
-
-			ctx.Conn.Write([]byte("HTTP/1.0 200 OK\r\n"))
-			ctx.Proxy.HandleHTTP(ctx)
-
-			ctx.Conn.Write([]byte("\r\n"))
-			ctx.Conn.Close()
-			return
-		}
-
-		ctx.Proxy.DispatchRequestHandlers(ctx)
-
-		// Auto-whitelist failed TLS connections and IP addresses. These tend to be streaming requests.
-		// Some clients (Google Mobile in particular) will handshake but then drop the connection after they process
-		// the certificate. We have to whitelist these or Google Play, Google Photos and other Google clients will
-		// not work.
-		// TODO: Diagnose the root of Google Android certificate errors. Possibly mismatched ciphers with BoringSSL?
-		if !readRequest || isIpAddress {
-			// Note: Some websites (google in particular) send HTTPS requests as keep alives
-			// and don't close them. They end up timing out. We don't want to whitelist these.
-			// In contrast, smart clients and devices close the connection immediately when they
-			// don't trust the certificate. We'll use this here to prevent whitelisting
-			// keep alive requests while detecting smart devices that should be tunnelled.
-			end := time.Now()
-			duration := end.Sub(start) / time.Millisecond
-
-			if duration < 30 || isIpAddress {
-				//ctx.Logf(1, "[WARN] Client dropped connection or IP address detected. Whitelisting this device... [%s]", ctx.Req.URL)
-
-				// whitelist certain sites across an entire network.
-				if ctx.Tlsfailure != nil {
-					// TODO: We have to be more conservative. Good requests should prevent whitelisting for some period of time.
-					// Browser connection issues are common and will frequently cause whitelisting to occur.
-
-					if n == 0 {
-						// We couldn't read any bytes of the request, so consider it a certificate failure
-						fmt.Printf("[ERROR] TLS Failure (client dropped connection) [%s]\n", ctx.host)
+			var subReq *http.Request
+			subReq, err = http.ReadRequest(clientTlsReader)
+			if err != nil && err == io.EOF {
+				// The client dropped the connection. This indicates a problem communicating through the client TLS tunnel
+				// most likely due certificate pinning or the client does not have the Winston certificate installed.
+				// Note that when browser tabs are closed, they may rapidly shut down all TLS connections in progress.
+				// We attempt to filter these out by only registering a TLS certificate error if the connection closed
+				// pretty quickly. This works because Firefox typically takes a few seconds to drop the connection,
+				// while untrusting clients will drop the connection immediately.
+				if ctx.RequestTime.Add(time.Second * 1).After(time.Now()) {
+					//fmt.Printf("[DEBUG] Client hung up on TLS connection after handshake (1). Calling NoCertificate(). [%s] [%s] elapsed time: %s\n", ctx.host, ctx.CipherSignature, time.Since(ctx.RequestTime))
+					if ctx.Tlsfailure != nil {
 						ctx.Tlsfailure(ctx, true)
-					} else {
-						// Was IP Address
-						fmt.Printf("[ERROR] TLS Failure (bad request) [%s]\n", ctx.host)
-						ctx.Tlsfailure(ctx, false)
+					}
+				}
+				return
+			}
+
+			//if strings.Contains(ctx.host, "aha.io") {
+			//if ctx.Trace {
+				//fmt.Printf("[DEBUG] Read request results: %s err=%+v\n", ctx.host, err)
+
+				// Uncomment to print out raw request.
+				//fmt.Printf("[DEBUG] Read so far (%d bytes):\n%s\n", buf.Len(), buf.String())
+
+				// Uncomment to read rest of request.body. Will prevent request from completing.
+				//body, ok := ioutil.ReadAll(clientTlsReader)
+				//fmt.Printf("[DEBUG] Remaining Request.Body [%t]:\n%s\n", ok, string(body))
+			//}
+
+			// If we read anything, then we know there wasn't a certificate failure.
+			n := buf.Len()
+
+			// We failed to parse a standard http request. Try to parse it as non-http.
+			if err != nil && n > 0 {
+				//if ctx.Trace {
+					fmt.Printf("[DEBUG] Creating new non-httprequest: %s \n", ctx.host)
+				//}
+				// Manually create a new request
+
+				subReq = &http.Request{
+					Method:     "",
+					URL:	&url.URL{
+						Host: ctx.host,
+					},
+					Proto:      "nonhttps",
+					ProtoMajor: 0,
+					ProtoMinor: 0,
+					Header:     make(http.Header),
+					Body:       nil,
+					Host:       ctx.host,
+					RequestURI: ctx.host,
+				}
+
+
+				//fmt.Printf("[DEBUG] Non HTTP protocol received. Original request: [%s] len=%d err=%v\n%s\n", ctx.Req.URL.String(), n, err, buf)
+				//clientTlsReader := bufio.NewReader(&buf)
+				//subReq, err = ctx.readRequest(clientTlsReader, true)
+
+				ctx.TunnelRequest = true
+				originalrequest := buf.Bytes()
+				ctx.NonHTTPRequest = originalrequest
+				err = nil
+
+
+			}
+
+
+
+			if err != nil {
+				if ctx.Trace.Modified {
+					fmt.Printf("[DEBUG] Request creation failed: %s err=%+v\n", ctx.host, err)
+				}
+				//	fmt.Printf("[DEBUG] Client hung up on TLS connection after handshake (2). Calling NoCertificate(). [%s] [%s] elapsed time: %s\n", ctx.host, ctx.CipherSignature, time.Since(ctx.RequestTime))
+				if ctx.Tlsfailure != nil {
+					//fmt.Println("[DEBUG] malformed HTTP request - calling whitelisting logic")
+					ctx.Tlsfailure(ctx, true)
+				}
+				return
+			}
+
+			// Copy the request
+			if ctx.Trace.Modified || ctx.Trace.Unmodified {
+				// Copy the original method.
+				if ctx.TraceInfo.Method == nil {
+					origmethod := subReq.Method
+					ctx.TraceInfo.Method = &origmethod
+				} else {
+					subReq.Method = *ctx.TraceInfo.Method
+				}
+				// If we don't have a request body, then copy it
+				if ctx.TraceInfo.ReqBody == nil || len(*ctx.TraceInfo.ReqBody) == 0 {
+					buf, _ := ioutil.ReadAll(subReq.Body)
+					//buf = append(buf, byte('\n'))
+					ctx.TraceInfo.ReqBody = &buf
+					//rdr1 := ioutil.NopCloser(bytes.NewBuffer(buf))
+					rdr2 := ioutil.NopCloser(bytes.NewBuffer(*ctx.TraceInfo.ReqBody))
+
+					// Close original body so we don't leak the connection
+					subReq.Body.Close()
+					subReq.Body = rdr2
+
+					//fmt.Printf("[DEBUG] Copying original http.Request [%p] (%d)\n%s\n", ctx.TraceInfo.ReqBody, len(*ctx.TraceInfo.ReqBody), string(*ctx.TraceInfo.ReqBody))
+				} else {
+					// Otherwise, we have an existing request body so send it as part of this request.
+					rdr2 := ioutil.NopCloser(bytes.NewBuffer(*ctx.TraceInfo.ReqBody))
+					subReq.Body.Close()
+					subReq.Body = rdr2
+					// Setting ContentLength doesn't work for some reason.
+					//subReq.ContentLength = int64(len(*ctx.TraceInfo.ReqBody))
+					subReq.Header.Set("content-length", strconv.Itoa(len(*ctx.TraceInfo.ReqBody)))
+				}
+			}
+
+			subReq.URL.Scheme = "https"
+
+			// Unit testing: We only intercept requests which were destined for port 443, but we can invoke a proxy
+			// and point it at other ports when unit testing. To accommodate this scenario, check for the presence of
+			// a host header and if it exists, update ctx.host. WINSTON-2-8
+			//fmt.Println("[DEBUG] ", subReq.Host)
+			_, port, err := net.SplitHostPort(subReq.Host)
+			if err == nil && port != "443" {
+				//fmt.Printf("[WARN] ManInTheMiddleHTTPS() - modified ctx.host from %s to %s. This should only happen in unit testing or TLS Winston client API calls\n", ctx.host, subReq.Host)
+				ctx.host = subReq.Host
+			}
+
+			subReq.URL.Host = ctx.host
+			subReq.RemoteAddr = r.RemoteAddr // since we're converting the request, need to carry over the original connecting IP as well
+
+			ctx.Req = subReq
+			ctx.IsThroughMITM = true
+
+			// Give custom listener a chance to service the request
+			//if strings.Contains(ctx.host, "winston.conf") {
+			//	fmt.Println("[DEBUG] ManInTheMiddleHTTPS() 6", ctx.host)
+			//}
+
+			if ctx.Proxy.HandleHTTP != nil {
+				// The HandleHTTP() function is responsible for completing the request and piping the
+				// response body back to the original client. For this to work, we need to update
+				// ctx.ResponseWriter so that it points to the newly established TLS connection.
+				// Note that the goproxy dumbreponsewriter cannot write headers, so we wrote a slightly
+				// less dumb one.
+
+				// TIP: For debugging http responses, use curl:
+				//  curl -gkv https://winston.conf:82/api/total_bandwidth
+
+				// TODO: Wrap it in a real responsewriter
+				ctx.ResponseWriter = notsodumbResponseWriter{
+					ctx.Conn,
+					&http.Header{}}
+
+				ctx.Conn.Write([]byte("HTTP/1.0 200 OK\r\n"))
+				ctx.Proxy.HandleHTTP(ctx)
+
+				ctx.Conn.Write([]byte("\r\n"))
+				ctx.Conn.Close()
+				return
+			}
+
+			ctx.Proxy.DispatchRequestHandlers(ctx)
+
+			// Auto-whitelist failed TLS connections and IP addresses. These tend to be streaming requests.
+			// Some clients (Google Mobile in particular) will handshake but then drop the connection after they process
+			// the certificate. We have to whitelist these or Google Play, Google Photos and other Google clients will
+			// not work.
+			// TODO: Diagnose the root of Google Android certificate errors. Possibly mismatched ciphers with BoringSSL?
+			if !readRequest || isIpAddress {
+				// Note: Some websites (google in particular) send HTTPS requests as keep alives
+				// and don't close them. They end up timing out. We don't want to whitelist these.
+				// In contrast, smart clients and devices close the connection immediately when they
+				// don't trust the certificate. We'll use this here to prevent whitelisting
+				// keep alive requests while detecting smart devices that should be tunnelled.
+				end := time.Now()
+				duration := end.Sub(start) / time.Millisecond
+
+				if duration < 30 || isIpAddress {
+					//ctx.Logf(1, "[WARN] Client dropped connection or IP address detected. Whitelisting this device... [%s]", ctx.Req.URL)
+
+					// whitelist certain sites across an entire network.
+					if ctx.Tlsfailure != nil {
+						// TODO: We have to be more conservative. Good requests should prevent whitelisting for some period of time.
+						// Browser connection issues are common and will frequently cause whitelisting to occur.
+
+						if n == 0 {
+							// We couldn't read any bytes of the request, so consider it a certificate failure
+							fmt.Printf("[ERROR] TLS Failure (client dropped connection) [%s]\n", ctx.host)
+							ctx.Tlsfailure(ctx, true)
+						} else {
+							// Was IP Address
+							fmt.Printf("[ERROR] TLS Failure (bad request) [%s]\n", ctx.host)
+							ctx.Tlsfailure(ctx, false)
+						}
 					}
 				}
 			}
-		}
 
 
-		// MITM calls are asynchronous so we have to record the trace information here
-		if ctx.Trace.Modified || ctx.Trace.Unmodified {
-			writeTrace(ctx)
-		}
-	}(ctx)
+			// MITM calls are asynchronous so we have to record the trace information here
+			if ctx.Trace.Modified || ctx.Trace.Unmodified {
+				writeTrace(ctx)
+			}
+		}(ctx)
 
-	return nil*/
+		return nil*/
 }
 
 // Grafts the provided io.Closer to the provided Request body.
@@ -734,7 +734,7 @@ func (ctx *ProxyCtx) ManInTheMiddleHTTPS() error {
 // exact value (instead of -1), GetBody is populated (so 307 and 308
 // redirects can replay the body), and Body is set to NoBody if the
 // ContentLength is 0.
-func (ctx *ProxyCtx) SetRequestBody(req *http.Request, body io.Reader) (error) {
+func (ctx *ProxyCtx) SetRequestBody(req *http.Request, body io.Reader) error {
 	rc, ok := body.(io.ReadCloser)
 	if !ok && body != nil {
 		rc = ioutil.NopCloser(body)
@@ -765,11 +765,11 @@ func (ctx *ProxyCtx) SetRequestBody(req *http.Request, body io.Reader) (error) {
 				return ioutil.NopCloser(&r), nil
 			}
 		default:
-		// This is where we'd set it to -1 (at least
-		// if body != NoBody) to mean unknown, but
-		// that broke people during the Go 1.8 testing
-		// period. People depend on it being 0 I
-		// guess. Maybe retry later. See Issue 18117.
+			// This is where we'd set it to -1 (at least
+			// if body != NoBody) to mean unknown, but
+			// that broke people during the Go 1.8 testing
+			// period. People depend on it being 0 I
+			// guess. Maybe retry later. See Issue 18117.
 		}
 		// For client requests, Request.ContentLength of 0
 		// means either actually 0, or unknown. The only way
@@ -785,9 +785,8 @@ func (ctx *ProxyCtx) SetRequestBody(req *http.Request, body io.Reader) (error) {
 		}
 	}
 
-	return  nil
+	return nil
 }
-
 
 // Taken from http/request.go. Modified to support non-standard protocols coming over port 443.
 /*
@@ -911,7 +910,6 @@ func (ctx *ProxyCtx) readRequest(b *bufio.Reader, deleteHostHeader bool) (req *h
 	return req, nil
 }
 */
-
 
 /*func validMethod(method string) bool {
 	return len(method) > 0
@@ -1076,7 +1074,7 @@ func (ctx *ProxyCtx) ForwardConnect() error {
 	dnsbypassctx := ctx.Req.Context()
 
 	//if strings.Contains(ctx.host, "dallas5") {
-		fmt.Println("[DEBUG] ForwardConnect()", ctx.host, "method", ctx.Method, "whitelisted:", ctx.Whitelisted, "private:", ctx.PrivateNetwork)
+	fmt.Println("[DEBUG] ForwardConnect()", ctx.host, "method", ctx.Method, "whitelisted:", ctx.Whitelisted, "private:", ctx.PrivateNetwork)
 	//}
 
 	if ctx.Whitelisted {
@@ -1093,7 +1091,6 @@ func (ctx *ProxyCtx) ForwardConnect() error {
 	}
 
 	//fmt.Println("[DEBUG] ForwardConnect(): ctx.Method", ctx.Method, "host", ctx.host)
-
 
 	targetSiteConn, err := ctx.Proxy.connectDialContext(dnsbypassctx, "tcp", ctx.host)
 	if err != nil {
@@ -1119,14 +1116,14 @@ func (ctx *ProxyCtx) ForwardConnect() error {
 
 	start := time.Now()
 	//if strings.Contains(ctx.host, "dallas5") {
-		fmt.Println("[DEBUG] ForwardConnect() - Fusing client connection to host", ctx.host)
+	fmt.Println("[DEBUG] ForwardConnect() - Fusing client connection to host", ctx.host)
 	//}
 
 	fuse(ctx.Conn, targetSiteConn, ctx.Host())
 	//Fuse2(ctx.Conn, targetSiteConn)
 
 	//if strings.Contains(ctx.host, "dallas5") {
-		fmt.Println("[DEBUG] ForwardConnect() completed.", time.Since(start))
+	fmt.Println("[DEBUG] ForwardConnect() completed.", time.Since(start))
 	//}
 	return nil
 }
@@ -1169,8 +1166,6 @@ func (ctx *ProxyCtx) RejectConnect() {
 //	update-ca-certificates
 // This will use the above file to regenerate /etc/ssl/certs
 
-
-
 // Used to forward protocols that are "http-like" (ie: websockets). This method forwards the
 // original HTTP request before fusing the connection, allowing further
 // communication to take place (if none, it will close).
@@ -1180,9 +1175,9 @@ func (ctx *ProxyCtx) ForwardNonHTTPRequest(host string) error {
 	var err error
 
 	//if strings.Contains(host, "ice") {
-		fmt.Println("ForwardNonHTTPRequest() host:", host)
+	fmt.Println("ForwardNonHTTPRequest() host:", host)
 	//}
-	 //If the request was whitelisted, then use the upstream DNS.
+	//If the request was whitelisted, then use the upstream DNS.
 	dnsbypassctx := ctx.Req.Context()
 	if ctx.Whitelisted {
 		dnsbypassctx = context.WithValue(ctx.Req.Context(), dns.UpstreamKey, 0)
@@ -1247,12 +1242,11 @@ func (ctx *ProxyCtx) ForwardNonHTTPRequest(host string) error {
 
 	fuse(ctx.Conn, targetSiteConn, ctx.Host())
 
-
 	return nil
 }
 
 // Returns a DNS dialer which can bypass local DNS
-func HijackedDNSDialer() (*net.Dialer) {
+func HijackedDNSDialer() *net.Dialer {
 	dnsclient := new(dns.Client)
 
 	proxy := dns.NameServers{
@@ -1268,7 +1262,7 @@ func HijackedDNSDialer() (*net.Dialer) {
 	dialer := &net.Dialer{
 		Resolver: &net.Resolver{
 			PreferGo: true,
-			Dial: dnsclient.Dial,
+			Dial:     dnsclient.Dial,
 		},
 	}
 
@@ -1440,7 +1434,6 @@ func (ctx *ProxyCtx) DispatchResponseHandlers() error {
 				ctx.Logf(2, "BLOCKED/NoResponse 504: %s", ctx.Req.URL)
 			}
 
-
 			//fmt.Printf("  *** Response error: \n", ctx.ResponseError)
 
 			title := "Tracker Blocked"
@@ -1550,7 +1543,7 @@ func (ctx *ProxyCtx) ForwardResponse(resp *http.Response) error {
 	resp.Header.Set("Server", "Winston")
 
 	if len(ctx.StatusMessage) != 0 {
-		for _, msg := range(ctx.StatusMessage) {
+		for _, msg := range ctx.StatusMessage {
 			resp.Header.Add("Winston-Status", msg)
 		}
 	}
@@ -1575,7 +1568,6 @@ func (ctx *ProxyCtx) ForwardResponse(resp *http.Response) error {
 	}
 	//panic("stopping for analysis")
 
-
 	ctx.DispatchDoneHandlers()
 
 	return nil
@@ -1585,8 +1577,7 @@ func (ctx *ProxyCtx) ForwardResponse(resp *http.Response) error {
 func (ctx *ProxyCtx) forwardMITMResponse(resp *http.Response) error {
 	// Make sure we close the original response body to prevent memory leaks. This has to be
 	// done no matter what.
-	defer resp.Body.Close();
-
+	defer resp.Body.Close()
 
 	text := resp.Status
 	//fmt.Printf("[DEBUG] forwardMITMResponse()  Status: %s", text)
@@ -1616,7 +1607,7 @@ func (ctx *ProxyCtx) forwardMITMResponse(resp *http.Response) error {
 	}
 
 	if len(ctx.StatusMessage) != 0 {
-		for _, msg := range(ctx.StatusMessage) {
+		for _, msg := range ctx.StatusMessage {
 			resp.Header.Add("Winston-Status", msg)
 			//ctx.Logf(1, "  *** %s", msg)
 		}
@@ -1650,7 +1641,7 @@ func (ctx *ProxyCtx) forwardMITMResponse(resp *http.Response) error {
 	} else {
 		// We set the content-length so stream it back
 		//ctx.Logf("  *** Found target NewBodyLength: %d url %+s\n\n%s\n\n", ctx.NewBodyLength, ctx.Req.URL.String(), ctx.Resp.Body)
-		body, err := ioutil.ReadAll(resp.Body);
+		body, err := ioutil.ReadAll(resp.Body)
 
 		if err != nil {
 			ctx.Warnf("Could not read TLS response body from mitm'd client: %v", err)
@@ -1742,6 +1733,7 @@ func (ctx *ProxyCtx) NewEmptyImage(extension string) {
 // Returns 1x1 empty gif. Useful for suppressing broken image icons.
 // 9/19/2017 - Now returns 403 so we can detect blocked images on the client side.
 const base64GifPixel = "R0lGODlhAQABAIAAAP///wAAACwAAAAAAQABAAACAkQBADs="
+
 func (ctx *ProxyCtx) NewEmptyGif() {
 	//ctx.Logf("NewEmptyGif: ...")
 	//output,_ := base64.StdEncoding.DecodeString(base64GifPixel)
@@ -1754,6 +1746,7 @@ func (ctx *ProxyCtx) NewEmptyGif() {
 
 // Returns 1x1 empty png. Useful for suppressing broken image icons.
 const base64PngPixel = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAAAAAA6fptVAAAACklEQVQYV2P4DwABAQEAWk1v8QAAAABJRU5ErkJggg=="
+
 func (ctx *ProxyCtx) NewEmptyPng() {
 	//ctx.Logf("NewEmptyGif: ...")
 	//output,_ := base64.StdEncoding.DecodeString(base64PngPixel)
@@ -1868,9 +1861,9 @@ func (ctx *ProxyCtx) closeTogether(toClose chan net.Conn) {
 
 // These timeouts represent the maximum time a connection can be open. They are in addition to the
 // standard 60 second idle timeout.
-const serverReadTimeout = 15 * 60	// response timeout in seconds
-const clientReadTimeout = 15 * 60	// Client request timeout in seconds
-const connectionIdleTimeout = 60	// Connections close if idle for this long
+const serverReadTimeout = 15 * 60 // response timeout in seconds
+const clientReadTimeout = 15 * 60 // Client request timeout in seconds
+const connectionIdleTimeout = 60  // Connections close if idle for this long
 
 // SpyConnection embeds a net.Conn, all reads and writes are output to stderr
 type SpyConnection struct {
@@ -1932,22 +1925,22 @@ func fuse(client, backend net.Conn, debug string) {
 
 		//if trace {
 		//	fmt.Println("[DEBUG] fuse() server->client spyconnection", debug)
-			//spyconnection := &SpyConnection{idleconn}
-			//copyData(client, spyconnection)
+		//spyconnection := &SpyConnection{idleconn}
+		//copyData(client, spyconnection)
 
-			//n, err := copyData(client, idleconn)
-			//fmt.Println("[DEBUG] fuse() server->client n", n, "err", err)
+		//n, err := copyData(client, idleconn)
+		//fmt.Println("[DEBUG] fuse() server->client n", n, "err", err)
 		//} else {
 		//	n, err :=
-			copyData(client, idleconn)
-			//copyDataDebug(client, idleconn)
-			//if strings.HasPrefix(debug, "104") {
-			//	fmt.Printf("[DEBUG] Fuse(). Finished copy from remote->client. %T\n", backend)
-			//}
-			// These errors are common with streaming sites. Uncomment to see.
-			//if err != nil && !strings.Contains(err.Error(), "closed network connection") {
-			//	fmt.Printf("[ERROR] ctx.go/fuse() error backend->client: %d bytes transferred. [%s] Err=%s\n", n, debug, err)
-			//}
+		copyData(client, idleconn)
+		//copyDataDebug(client, idleconn)
+		//if strings.HasPrefix(debug, "104") {
+		//	fmt.Printf("[DEBUG] Fuse(). Finished copy from remote->client. %T\n", backend)
+		//}
+		// These errors are common with streaming sites. Uncomment to see.
+		//if err != nil && !strings.Contains(err.Error(), "closed network connection") {
+		//	fmt.Printf("[ERROR] ctx.go/fuse() error backend->client: %d bytes transferred. [%s] Err=%s\n", n, debug, err)
+		//}
 		//}
 
 		close(backenddie)
@@ -1964,14 +1957,12 @@ func fuse(client, backend net.Conn, debug string) {
 		// Wrap the backend connection so that we can enforce an idle timeout.
 		//idleconn := &IdleTimeoutConn{Conn: client}
 
-
 		// TEST: streaming requests will break in 60 seconds with an idle timeout if the client
 		// doesn't occasionally ping.
 		idleconn := &IdleTimeoutConn{
-			Conn: client,
+			Conn:        client,
 			IdleTimeout: connectionIdleTimeout * 2,
-			Deadline: time.Now().Add(time.Duration(clientReadTimeout) * time.Second)}
-
+			Deadline:    time.Now().Add(time.Duration(clientReadTimeout) * time.Second)}
 
 		//n, err :=
 		//if trace {
@@ -1979,12 +1970,12 @@ func fuse(client, backend net.Conn, debug string) {
 		//	spyconnection := &SpyConnection{idleconn}
 		//	copyData(backend, spyconnection)
 
-			//n, err := copyData(backend, idleconn)
-			//fmt.Println("[DEBUG] fuse() client->server n", n, "err", err)
+		//n, err := copyData(backend, idleconn)
+		//fmt.Println("[DEBUG] fuse() client->server n", n, "err", err)
 		//} else {
 		//
-			n, err := copyData(backend, idleconn)
-		 	//copyDataDebug(backend, idleconn)
+		n, err := copyData(backend, idleconn)
+		//copyDataDebug(backend, idleconn)
 		//}
 		//if strings.HasPrefix(debug, "104") {
 		//	fmt.Println("[DEBUG] Fuse client->remote", n, debug, err)
@@ -1993,7 +1984,7 @@ func fuse(client, backend net.Conn, debug string) {
 		// Timeouts and connection reset errors are very common, especially with Netflix.
 		// Uncomment to see these... not particularly helpful in most cases though.
 		//if err != nil && !strings.Contains(err.Error(), "timeout") {
-			fmt.Printf("[INFO] ctx.go/fuse() client->backend: %d bytes transferred. [%s] Err=%s\n", n, debug, err)
+		fmt.Printf("[INFO] ctx.go/fuse() client->backend: %d bytes transferred. [%s] Err=%s\n", n, debug, err)
 		//}
 
 		close(clientdie)
@@ -2005,13 +1996,11 @@ func fuse(client, backend net.Conn, debug string) {
 	<-clientdie
 
 	//if trace {
-		//elapsed := time.Since(start)
+	//elapsed := time.Since(start)
 	//	fmt.Println("[DEBUG] fuse() terminated", debug, elapsed)
 	//}
 
-
 }
-
 
 // Copy data between two connections
 func copyData(dst net.Conn, src net.Conn) (int64, error) {
@@ -2028,7 +2017,7 @@ func copyDataDebug(dst net.Conn, src net.Conn) (int, error) {
 	defer dst.Close()
 	defer src.Close()
 
-	tmp := make([]byte, 2)     // using small tmo buffer for demonstrating
+	tmp := make([]byte, 2) // using small tmo buffer for demonstrating
 	var total int
 	for {
 		n, err := src.Read(tmp)
@@ -2091,7 +2080,6 @@ func chanFromConn(conn net.Conn) chan []byte {
 
 	return c
 }
-
 
 var charsetFinder = regexp.MustCompile("charset=([^ ;]*)")
 

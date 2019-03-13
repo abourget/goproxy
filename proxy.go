@@ -5,30 +5,30 @@ package goproxy
 import (
 	"bufio"
 	"bytes"
+	"github.com/inconshreveable/go-vhost"
+	"github.com/winstonprivacyinc/goproxy/har"
 	"log"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
 	"sync"
 	"sync/atomic"
-	"github.com/inconshreveable/go-vhost"
-	"github.com/winstonprivacyinc/goproxy/har"
-	"net/url"
 	//"github.com/peterbourgon/diskv"
-	"time"
+	"context"
+	"crypto/md5"
+	"encoding/hex"
 	"fmt"
 	"github.com/winstonprivacyinc/go-conntrack"
 	"strconv"
-	"encoding/hex"
-	"crypto/md5"
-	"context"
+	"time"
 	//"crypto/tls"
-	"github.com/winston/shadownetwork"
+	"github.com/winstonprivacyinc/winston/shadownetwork"
 	//"crypto/x509"
 	//"github.com/valyala/fasthttp/fasthttputil"
-	"io/ioutil"
 	"io"
+	"io/ioutil"
 )
 
 // The basic proxy type. Implements http.Handler.
@@ -93,14 +93,14 @@ type ProxyHttpServer struct {
 	ConnectDialContext func(ctx context.Context, network string, addr string) (net.Conn, error)
 
 	// Callback function to determine if request should be traced.
-	Trace func(ctx *ProxyCtx) (traceRequest)
+	Trace func(ctx *ProxyCtx) traceRequest
 
 	// Closure to alert listeners that a TLS handshake failed
 	// RLS 6-29-2017
 	Tlsfailure func(ctx *ProxyCtx, untrustedCertificate bool)
 
 	// Closure to give listeners a chance to service a request directly. Return true if handled.
-	HandleHTTP func(ctx *ProxyCtx) (bool)
+	HandleHTTP func(ctx *ProxyCtx) bool
 
 	// If set to true, then the next HTTP request will flush all idle connections. Will be reset to false afterwards.
 	FlushIdleConnections bool
@@ -108,14 +108,13 @@ type ProxyHttpServer struct {
 	// RoundTripper which supports non-http protocols
 	NonHTTPRoundTripper *NonHTTPRoundTripper
 
-	UpdateAllowedCounter func(string, string, string, int, int, int)
-	UpdateBlockedCounter func(string, string, string, int, bool)
+	UpdateAllowedCounter     func(string, string, string, int, int, int)
+	UpdateBlockedCounter     func(string, string, string, int, bool)
 	UpdateWhitelistedCounter func(string, string, string, int)
 
 	// Defaults to a conntrak lookup but callers may substitute their own function (intended
 	// primarily for unit testing). The connection must not be used or closed.
-	DestinationResolver func(c net.Conn) (string)
-
+	DestinationResolver func(c net.Conn) string
 }
 
 // Performs sanity checking against a domain name. Is not intended to be a full blown
@@ -124,7 +123,7 @@ type ProxyHttpServer struct {
 // TODO: Blink returns *.immedia-semi.com. Would be interesting to see if we could
 // remove the leading invalid characters and use that as the host, but it is likely
 // to be a brittle solution.
-func checkDomain(host string) (bool) {
+func checkDomain(host string) bool {
 	if len(host) == 0 {
 		return false
 	}
@@ -152,8 +151,8 @@ func NewProxyHttpServer() *ProxyHttpServer {
 		// FIX WINSTON 3-14 - Running out of open file descriptors. To avoid, set IdleConnTimeout.
 		Transport: &http.Transport{
 			//TLSClientConfig: tlsClientSkipVerify,
-			Proxy:           http.ProxyFromEnvironment,
-			TLSHandshakeTimeout: 10 * time.Second,
+			Proxy:                 http.ProxyFromEnvironment,
+			TLSHandshakeTimeout:   10 * time.Second,
 			ResponseHeaderTimeout: 30 * time.Second,
 			ExpectContinueTimeout: 30 * time.Second,
 			MaxIdleConns:          20,
@@ -166,9 +165,9 @@ func NewProxyHttpServer() *ProxyHttpServer {
 			//}).DialContext,
 		},
 		//MITMCertConfig:  GoproxyCaConfig,
-		harLog:          har.New(),
-		harLogEntryCh:   make(chan harReqAndResp, 10),
-		harFlushRequest: make(chan string, 10),
+		harLog:              har.New(),
+		harLogEntryCh:       make(chan harReqAndResp, 10),
+		harFlushRequest:     make(chan string, 10),
 		NonHTTPRoundTripper: &NonHTTPRoundTripper{
 			//TLSClientConfig: tlsClientSkipVerify,
 		},
@@ -194,7 +193,6 @@ func NewProxyHttpServer() *ProxyHttpServer {
 	return &proxy
 }
 
-
 // Call after the private network has been initialized to have proxy automatically redirect requests through it.
 // The proxy will simply forward requests through the local network until this is called.
 func (proxy *ProxyHttpServer) SetShadowNetwork(sn *shadownetwork.ShadowNetwork) {
@@ -209,7 +207,8 @@ func (proxy *ProxyHttpServer) SetShadowNetwork(sn *shadownetwork.ShadowNetwork) 
 // Calls to the signature reporting service (https://winstonprivacysignature.conf) will save the signature
 // here so it can be retrieved by a follow up http request if necessary. This is shared across all proxies.
 var lastSignature = ""
-func (proxy *ProxyHttpServer) LastSignature() (string) {
+
+func (proxy *ProxyHttpServer) LastSignature() string {
 	return lastSignature
 }
 func (proxy *ProxyHttpServer) SetSignature(signature string) {
@@ -245,18 +244,18 @@ func (proxy *ProxyHttpServer) ListenAndServe(addr string) error {
 			var req *http.Request
 			req, err = http.ReadRequest(connteereader)
 
-			if (err != nil) {
+			if err != nil {
 				// TODO: Try to recover as much information from the original request as possible
 				// so that we can act on headers that might actually be there (especially referrer
 				// and user agent)
 				fmt.Printf("[DEBUG] ServeHTTP() - Couldn't parse request: %s\nOriginal Request:\n%s\n", err.Error(), string(buf.Bytes()))
 
 				req = &http.Request{
-					Method:     "",
+					Method: "",
 					//URL:	&url.URL{
-						//Host: net.JoinHostPort(Host, "80"),
+					//Host: net.JoinHostPort(Host, "80"),
 					//},
-					Proto:      "http",	// assume http, but it's probably not.
+					Proto:      "http", // assume http, but it's probably not.
 					ProtoMajor: 0,
 					ProtoMinor: 0,
 					Header:     make(http.Header),
@@ -272,7 +271,6 @@ func (proxy *ProxyHttpServer) ListenAndServe(addr string) error {
 			// This will not print out anything related to forwarded connections.
 			//resp := notsodumbResponseWriter{Conn: &SpyConnection{c}, ResponseHeader: &req.Header}
 			resp := notsodumbResponseWriter{Conn: c, ResponseHeader: &req.Header}
-
 
 			// Failover Host detection - if we couldn't read the host from the HTTP headers, check the
 			// conntrack table to get the original destination.
@@ -302,7 +300,6 @@ func (proxy *ProxyHttpServer) ListenAndServe(addr string) error {
 	}
 }
 
-
 // Expects a parsed request object, connection and a response writer. Will forward the connection to the original
 // destination (found in r.Host). If CONNECT, it will simply open a connection and the client must
 // negotiate it. Otherwise, it will replay the original request to the upstream server and pipe
@@ -317,21 +314,21 @@ func (proxy *ProxyHttpServer) ListenAndServe(addr string) error {
 // own logging.
 func (proxy *ProxyHttpServer) HandleHTTPConnection(c net.Conn, r *http.Request, w http.ResponseWriter, originalrequest *bytes.Buffer) {
 	ctx := &ProxyCtx{
-		Method:         	r.Method,
-		SourceIP:       	r.RemoteAddr, // pick it from somewhere else ? have a plugin to override this ?
-		Req:            	r,
-		ResponseWriter: 	w,
-		UserData:       	make(map[string]string),
-		UserObjects:    	make(map[string]interface{}),
-		Session:        	atomic.AddInt64(&proxy.sess, 1),
-		Proxy:          	proxy,
-		MITMCertConfig: 	proxy.MITMCertConfig,
-		Tlsfailure:		proxy.Tlsfailure,
-		VerbosityLevel: 	proxy.VerbosityLevel,
-		DeviceType: 		-1,
-		RequestTime:		time.Now(),
-		TunnelRequest: 	true,	// Forces request through verbatim.
-		Conn: 			c,
+		Method:         r.Method,
+		SourceIP:       r.RemoteAddr, // pick it from somewhere else ? have a plugin to override this ?
+		Req:            r,
+		ResponseWriter: w,
+		UserData:       make(map[string]string),
+		UserObjects:    make(map[string]interface{}),
+		Session:        atomic.AddInt64(&proxy.sess, 1),
+		Proxy:          proxy,
+		MITMCertConfig: proxy.MITMCertConfig,
+		Tlsfailure:     proxy.Tlsfailure,
+		VerbosityLevel: proxy.VerbosityLevel,
+		DeviceType:     -1,
+		RequestTime:    time.Now(),
+		TunnelRequest:  true, // Forces request through verbatim.
+		Conn:           c,
 	}
 
 	if originalrequest != nil {
@@ -374,7 +371,6 @@ func (proxy *ProxyHttpServer) HandleHTTPConnection(c net.Conn, r *http.Request, 
 	}
 
 	//fmt.Println("[DEBUG] HandleHTTPConnection() - ctx.host", r.Method, "Scheme:", r.URL.Scheme, "Host:", r.Host, "URL Host", r.URL.Host, "URI:", r.RequestURI)
-
 
 	// If no port was provided, guess it based on the scheme.
 	if strings.IndexRune(ctx.host, ':') == -1 {
@@ -467,7 +463,7 @@ func (proxy *ProxyHttpServer) HandleHTTPConnection(c net.Conn, r *http.Request, 
 		writeTrace(ctxOrig)
 
 	}
-*/
+	*/
 }
 
 // formatRequest generates ascii representation of a request. Useful when debugging.
@@ -492,9 +488,9 @@ func formatRequest(r *http.Request) string {
 
 	// If this is a POST, add post data
 	if r.Method == "POST" {
-	r.ParseForm()
-	request = append(request, "\n")
-	request = append(request, r.Form.Encode())
+		r.ParseForm()
+		request = append(request, "\n")
+		request = append(request, r.Form.Encode())
 	}
 
 	// Return the request as a string
@@ -504,7 +500,7 @@ func formatRequest(r *http.Request) string {
 // Given a connection, resolves its original destination by looking it up in the conntrak tables.
 // This is required for non-TLS protocols or for connections initiated by devices which do not
 // send a valid SNI field in the CLIENTHELLO message.
-func resolveconntrackdestination(c net.Conn) (string) {
+func resolveconntrackdestination(c net.Conn) string {
 	connections, connerr := conntrack.Flows()
 	if connerr != nil {
 		log.Printf("[ERROR] non-SNI client detected but couldn't read connection table. Dropping connection request. [%v]\n", connerr)
@@ -521,7 +517,7 @@ func resolveconntrackdestination(c net.Conn) (string) {
 		log.Println("[ERROR] non-SNI client detected but there was no source port on the request. Dropping connection request.")
 		return ""
 	} else {
-		sourcePort, _ = strconv.Atoi(c.RemoteAddr().String()[(portIndex+1):])
+		sourcePort, _ = strconv.Atoi(c.RemoteAddr().String()[(portIndex + 1):])
 	}
 
 	if sourcePort == 0 {
@@ -605,24 +601,23 @@ func (proxy *ProxyHttpServer) ListenAndServeTLS(httpsAddr string) error {
 			}
 			resp := dumbResponseWriter{tlsConn}
 
-
 			// Set up a context object for the current request
 			ctx := &ProxyCtx{
-				Method:         	connectReq.Method,
-				SourceIP:       	connectReq.RemoteAddr, // pick it from somewhere else ? have a plugin to override this ?
-				Req:            	connectReq,
-				ResponseWriter: 	resp,
-				UserData:       	make(map[string]string),
-				UserObjects:    	make(map[string]interface{}),
-				Session:        	atomic.AddInt64(&proxy.sess, 1),
-				Proxy:          	proxy,
-				MITMCertConfig: 	proxy.MITMCertConfig,
-				Tlsfailure:		proxy.Tlsfailure,
-				VerbosityLevel: 	proxy.VerbosityLevel,
-				DeviceType: 		-1,
-				RequestTime:		time.Now(),
-				TunnelRequest:		forwardwithoutintercept,
-				IsSecure: 		true,
+				Method:         connectReq.Method,
+				SourceIP:       connectReq.RemoteAddr, // pick it from somewhere else ? have a plugin to override this ?
+				Req:            connectReq,
+				ResponseWriter: resp,
+				UserData:       make(map[string]string),
+				UserObjects:    make(map[string]interface{}),
+				Session:        atomic.AddInt64(&proxy.sess, 1),
+				Proxy:          proxy,
+				MITMCertConfig: proxy.MITMCertConfig,
+				Tlsfailure:     proxy.Tlsfailure,
+				VerbosityLevel: proxy.VerbosityLevel,
+				DeviceType:     -1,
+				RequestTime:    time.Now(),
+				TunnelRequest:  forwardwithoutintercept,
+				IsSecure:       true,
 			}
 
 			ctx.host = hostwithport
@@ -659,7 +654,6 @@ func (proxy *ProxyHttpServer) ListenAndServeTLS(httpsAddr string) error {
 					//ctx.TraceInfo.ReqBody = &buf
 				}
 			}
-
 
 			// Print out TLS CLIENTHELLO message. Useful for inspecting cipher suites.
 			//if ctx.Trace {
@@ -786,7 +780,7 @@ func (proxy *ProxyHttpServer) ListenAndServeTLS(httpsAddr string) error {
 	}
 }
 
-func GenerateSignature(h *vhost.ClientHelloMsg, debug bool) (string) {
+func GenerateSignature(h *vhost.ClientHelloMsg, debug bool) string {
 
 	// Create string for cipher suites
 	// These have to be sorted because the same client can return them in an arbitrary order
@@ -798,38 +792,38 @@ func GenerateSignature(h *vhost.ClientHelloMsg, debug bool) (string) {
 	// Ref: https://tools.ietf.org/html/draft-davidben-tls-grease-01#section-5
 	for _, suite := range h.CipherSuites {
 		switch suite {
-			case 2570, 6682, 10794, 14906, 19018, 23130, 27242, 31354, 35466, 39578, 43690, 47802, 51914, 56026, 60138, 64250:
-			default:
-				b.Write([]byte (strconv.Itoa(int(suite))))
+		case 2570, 6682, 10794, 14906, 19018, 23130, 27242, 31354, 35466, 39578, 43690, 47802, 51914, 56026, 60138, 64250:
+		default:
+			b.Write([]byte(strconv.Itoa(int(suite))))
 		}
 
 	}
-	b.Write([]byte ("-"))
+	b.Write([]byte("-"))
 
 	// Create string for curves. The first value is often different for the same client, so we ignore it.
 	for _, curve := range h.SupportedCurves {
 		switch curve {
 		case 2570, 6682, 10794, 14906, 19018, 23130, 27242, 31354, 35466, 39578, 43690, 47802, 51914, 56026, 60138, 64250:
 		default:
-			b.Write([]byte (strconv.Itoa(int(curve))))
+			b.Write([]byte(strconv.Itoa(int(curve))))
 		}
 
 	}
-	b.Write([]byte ("-"))
+	b.Write([]byte("-"))
 
 	if debug {
-		logbuf.Write([]byte ("-"))
+		logbuf.Write([]byte("-"))
 	}
 
 	for _, point := range h.SupportedPoints {
-		b.Write([]byte (strconv.Itoa(int(point))))
+		b.Write([]byte(strconv.Itoa(int(point))))
 	}
-	b.Write([]byte ("-"))
+	b.Write([]byte("-"))
 
 	for _, comp := range h.CompressionMethods {
-		b.Write([]byte (strconv.Itoa(int(comp))))
+		b.Write([]byte(strconv.Itoa(int(comp))))
 	}
-	b.Write([]byte ("-"))
+	b.Write([]byte("-"))
 
 	OcspStapling := "S0"
 	if h.OcspStapling {
@@ -846,7 +840,7 @@ func GenerateSignature(h *vhost.ClientHelloMsg, debug bool) (string) {
 	}
 
 	// Concatenate the unique identifying informatoin from the TLS handshake
-	signature := strconv.FormatUint(uint64(h.Vers), 10) + "-" + string(b.Bytes()) + "-" + OcspStapling  + "-" + ticketssupported + "-" + nextprotoneg
+	signature := strconv.FormatUint(uint64(h.Vers), 10) + "-" + string(b.Bytes()) + "-" + OcspStapling + "-" + ticketssupported + "-" + nextprotoneg
 
 	// Note: this has to be compressed to avoid errors associated with too long filenames.
 	hasher := md5.New()
@@ -859,9 +853,6 @@ func GenerateSignature(h *vhost.ClientHelloMsg, debug bool) (string) {
 
 	return encodedsignature
 }
-
-
-
 
 // SetMITMCertConfig sets the CA Config to be used to sign man-in-the-middle'd
 // certificates. You can load some []byte with `LoadCAConfig()`. This bundle

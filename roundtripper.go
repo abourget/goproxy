@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 	//"net/http/httptrace"
-	"github.com/winston/shadownetwork"
 	"context"
+	"github.com/winstonprivacyinc/winston/shadownetwork"
 	//"errors"
 	//"net/http/httputil"
 )
@@ -45,7 +45,7 @@ func (ctx *ProxyCtx) RoundTrip(req *http.Request) (*http.Response, error) {
 			addendum = append(addendum, fmt.Sprintf(", sni=%q, fakedns=%q", transport.TLSClientConfig.ServerName, ctx.fakeDestinationDNS))
 			tr = transport
 		} else {
-			if ctx.PrivateNetwork && ctx.Proxy.PrivateNetwork != nil  {
+			if ctx.PrivateNetwork && ctx.Proxy.PrivateNetwork != nil {
 				// && strings.Contains(req.URL.String(), "nyt")
 				ctx.ShadowTransport = ctx.Proxy.PrivateNetwork.Transport(req.URL.Host)
 				if ctx.ShadowTransport == nil {
@@ -164,8 +164,6 @@ func (ctx *ProxyCtx) wrapTransport(tr *http.RoundTripper) RoundTripper {
 				}
 			}
 		}
-
-
 
 		return resp, err
 	})
