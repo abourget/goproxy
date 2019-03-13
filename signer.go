@@ -2,7 +2,7 @@
  * Unauthorized copying of this file, via any medium is strictly prohibited
  * Proprietary and confidential
  * Based on GoProxy. Modified by Richard Stokes <rich@winstonprivacy.com>, 2018
-*/
+ */
 
 /* Responsible for signing certificates based on Winston root certificate.
  * TODO: Check validity of certificates on first load rather than simply passing them on blindly to clients.
@@ -17,20 +17,20 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"encoding/gob"
+	"fmt"
+	"github.com/winstonprivacyinc/dns"
+	"github.com/winstonprivacyinc/winston/intransport"
+	"io/ioutil"
 	"math/big"
 	"net"
+	"os"
 	"strings"
 	"sync"
 	"time"
-	"fmt"
-	"github.com/winstonprivacyinc/dns"
-	"github.com/winstonprivacyinc/intransport"
-	"encoding/gob"
-	"io/ioutil"
-	"os"
 	//"runtime/debug"
-	"golang.org/x/net/publicsuffix"
 	"github.com/winstonprivacyinc/go-ethereum/p2p/netutil"
+	"golang.org/x/net/publicsuffix"
 )
 
 // OrganizationName is the name your CA cert will be signed with. It
@@ -57,32 +57,32 @@ func getWildcardHost(host string) string {
 }
 
 // Used to resolve certificate chains (Global)
-var certtransport	*intransport.InTransport
+var certtransport *intransport.InTransport
 
 // Global lock on the certificate store.
-var certmu          	sync.RWMutex
+var certmu sync.RWMutex
 
 // Stores metadata about a particular host. Used to improve performance.
 type HostInfo struct {
-	LastVerify 	time.Time
-	NextAttempt	time.Time	// Set to future time for invalid certs to avoid frequent reloading
-	mu 		sync.Mutex
-	Config		*tls.Config
+	LastVerify  time.Time
+	NextAttempt time.Time // Set to future time for invalid certs to avoid frequent reloading
+	mu          sync.Mutex
+	Config      *tls.Config
 }
 
 // Maintains a global list of immutable TLS Configs which can be used for TLS handshakes.
 type GoproxyConfigServer struct {
-	Root            *x509.Certificate
-	RootCAs		*x509.CertPool
-	capriv          interface{}
-	priv            *rsa.PrivateKey
-	keyID           []byte
-	validity        time.Duration
+	Root     *x509.Certificate
+	RootCAs  *x509.CertPool
+	capriv   interface{}
+	priv     *rsa.PrivateKey
+	keyID    []byte
+	validity time.Duration
 	//*tls.Config
 	bypassDnsDialer *net.Dialer // Custom DNS resolver
-	Host		map[string]*HostInfo
+	Host            map[string]*HostInfo
 	//Config		map[string]
-	IsExternal 	func(string) (bool)
+	IsExternal func(string) bool
 }
 
 // NewConfig creates a MITM config using the CA certificate and
@@ -99,7 +99,6 @@ func NewConfigServer(filename string, ca *x509.Certificate, privateKey interface
 	ca.KeyUsage = x509.KeyUsageKeyEncipherment | x509.KeyUsageDigitalSignature | x509.KeyUsageCertSign
 	ca.ExtKeyUsage = []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth}
 	//fmt.Printf("[DEBUG] ca.IsCA=%t\n", ca.IsCA)
-
 
 	// Load the cached private key if present. This greatly improves startup time.
 	if filename != "" {
@@ -122,7 +121,6 @@ func NewConfigServer(filename string, ca *x509.Certificate, privateKey interface
 		}
 	}
 
-
 	if needcert {
 		fmt.Println("[INFO] Generating new private key")
 		panic("Stopping here")
@@ -141,7 +139,6 @@ func NewConfigServer(filename string, ca *x509.Certificate, privateKey interface
 		}
 	}
 
-
 	if err != nil {
 		return nil, err
 	}
@@ -158,17 +155,16 @@ func NewConfigServer(filename string, ca *x509.Certificate, privateKey interface
 	keyID := h.Sum(nil)
 
 	tlsConfigServer := &GoproxyConfigServer{
-		Root:     		ca,
-		capriv:   		privateKey,
-		priv:     		priv,
-		keyID:    		keyID,
-		validity: 		time.Hour * 24 * 3650,
-		bypassDnsDialer:	WhitelistedDNSDialer(),
+		Root:            ca,
+		capriv:          privateKey,
+		priv:            priv,
+		keyID:           keyID,
+		validity:        time.Hour * 24 * 3650,
+		bypassDnsDialer: WhitelistedDNSDialer(),
 		//Config:	  		make(map[string]*tls.Config),//
-		Host:     		make(map[string]*HostInfo),
-		RootCAs:		x509.NewCertPool(),
+		Host:    make(map[string]*HostInfo),
+		RootCAs: x509.NewCertPool(),
 	}
-
 
 	if tlsConfigServer.RootCAs == nil {
 		tlsConfigServer.RootCAs = x509.NewCertPool()
@@ -190,7 +186,7 @@ func NewConfigServer(filename string, ca *x509.Certificate, privateKey interface
 
 // Returns a DNS dialer for port 54 (unfiltered DNS which allows all requests to succeed)
 // TODO: Should we check for DNS server on port 54 and default to port 53 if not available? For now, caller is responsible for this.
-func WhitelistedDNSDialer() (*net.Dialer) {
+func WhitelistedDNSDialer() *net.Dialer {
 	dnsclient := new(dns.Client)
 
 	proxy := dns.NameServers{
@@ -207,7 +203,7 @@ func WhitelistedDNSDialer() (*net.Dialer) {
 		Timeout: time.Duration(5) * time.Second,
 		Resolver: &net.Resolver{
 			PreferGo: true,
-			Dial: dnsclient.Dial,
+			Dial:     dnsclient.Dial,
 		},
 	}
 
@@ -303,7 +299,7 @@ func (c *GoproxyConfigServer) certWithCommonName(hostname string, commonName str
 
 	// Is this an IP address?
 	isIP := false
-	ip := net.ParseIP(host);
+	ip := net.ParseIP(host)
 	if ip != nil {
 		isIP = true
 	}
@@ -328,7 +324,6 @@ func (c *GoproxyConfigServer) certWithCommonName(hostname string, commonName str
 	// Get a lock only on this domain name
 	(*hostmetadata).mu.Lock()
 	defer (*hostmetadata).mu.Unlock()
-
 
 	// A write lock on the HostInfo struct is held at this point. We can write to it freely.
 	if found {
@@ -355,7 +350,7 @@ func (c *GoproxyConfigServer) certWithCommonName(hostname string, commonName str
 				if !strings.HasPrefix(host, "127.0.0.") {
 					_, err = tlsc.Leaf.Verify(x509.VerifyOptions{
 						//DNSName: hostname,
-						Roots:   c.RootCAs,
+						Roots: c.RootCAs,
 					})
 				}
 			} else {
@@ -413,25 +408,25 @@ func (c *GoproxyConfigServer) certWithCommonName(hostname string, commonName str
 
 			// RLS - Disable support for TLS 1.0
 			start := time.Now()
-			conn, err = tls.DialWithDialer(c.bypassDnsDialer, "tcp", host + ":" + port,
+			conn, err = tls.DialWithDialer(c.bypassDnsDialer, "tcp", host+":"+port,
 				&tls.Config{
 					InsecureSkipVerify: true,
-					MinVersion: tls.VersionTLS10,
-					MaxVersion: tls.VersionTLS12,
+					MinVersion:         tls.VersionTLS10,
+					MaxVersion:         tls.VersionTLS12,
 				})
 			elapsed := time.Since(start)
 			if err != nil {
 				// Timeouts should be rare but they aren't. CoreDNS appears to single thread some lookups
 				// (perhaps when loading the hosts file) resulting in a stampede timeout.
 				//fmt.Printf("[DEBUG] Signer.go - Error while dialing %s: %v\n", host, err, elapsed)
-				if elapsed > time.Duration(2) * time.Second && strings.Contains(err.Error(), "timeout") {
+				if elapsed > time.Duration(2)*time.Second && strings.Contains(err.Error(), "timeout") {
 					// TEST - retry in event of timeout. A slight delay is better than a failed page load.
 					start = time.Now()
-					conn, err = tls.DialWithDialer(c.bypassDnsDialer, "tcp", host + ":" + port,
+					conn, err = tls.DialWithDialer(c.bypassDnsDialer, "tcp", host+":"+port,
 						&tls.Config{
 							InsecureSkipVerify: true,
-							MinVersion: tls.VersionTLS10,
-							MaxVersion: tls.VersionTLS12,
+							MinVersion:         tls.VersionTLS10,
+							MaxVersion:         tls.VersionTLS12,
 						})
 					elapsed = time.Since(start)
 					if err != nil {
@@ -445,7 +440,6 @@ func (c *GoproxyConfigServer) certWithCommonName(hostname string, commonName str
 					return nil, err
 				}
 			}
-
 
 			//fmt.Println("[DEBUG] Signer.go() DialWithDialer() completed", host)
 			// Only close the connection if we couldn't connect.
@@ -545,7 +539,7 @@ func (c *GoproxyConfigServer) certWithCommonName(hostname string, commonName str
 		},
 		SubjectKeyId:          c.keyID,
 		KeyUsage:              x509.KeyUsageKeyEncipherment | x509.KeyUsageDigitalSignature,
-		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth },
+		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
 		BasicConstraintsValid: true,
 		NotBefore:             notbefore,
 		NotAfter:              notafter,
@@ -576,8 +570,6 @@ func (c *GoproxyConfigServer) certWithCommonName(hostname string, commonName str
 			tmpl.DNSNames = []string{host}
 		}
 	}
-
-
 
 	raw, err := x509.CreateCertificate(rand.Reader, tmpl, c.Root, c.priv.Public(), c.capriv)
 	if err != nil {
@@ -651,10 +643,9 @@ func (c *GoproxyConfigServer) certWithCommonName(hostname string, commonName str
 // Used for unit testing. Gets a certificate from a server and port and creates a local version suitable for MITM.
 func (c *GoproxyConfigServer) GetTestCertificate(host string, port string) (*tls.Config, error) {
 
-
 	// Is this an IP address?
 	isIP := false
-	ip := net.ParseIP(host);
+	ip := net.ParseIP(host)
 	if ip != nil {
 		isIP = true
 	}
@@ -731,7 +722,6 @@ func (c *GoproxyConfigServer) GetTestCertificate(host string, port string) (*tls
 		}
 	}
 
-
 	raw, err := x509.CreateCertificate(rand.Reader, tmpl, c.Root, c.priv.Public(), c.capriv)
 	if err != nil {
 		return nil, err
@@ -807,21 +797,21 @@ func GetSubdomains(domain string) []string {
 	length := len(parts)
 	TLDlen := strings.Count(TLDPlusOne, ".") + 1
 
-	domains := make([]string, length - TLDlen + 1)
-	domains[length - TLDlen] = TLDPlusOne
+	domains := make([]string, length-TLDlen+1)
+	domains[length-TLDlen] = TLDPlusOne
 
 	// Reassemble in reverse order starting from TLDPlusOne
-	for i:= length - TLDlen - 1; i>=0; i-- {
+	for i := length - TLDlen - 1; i >= 0; i-- {
 		domains[i] = parts[i] + "." + domains[i+1]
 	}
 
 	// Discard the original TLD (.com, .org, etc)
-	domains = domains[:length - TLDlen]
+	domains = domains[:length-TLDlen]
 	return domains
 
 }
 
-func IsExternal(hostname string) (bool) {
+func IsExternal(hostname string) bool {
 	hasExternalIP := true
 	addrs, err := net.LookupHost(hostname)
 	if err == nil {
