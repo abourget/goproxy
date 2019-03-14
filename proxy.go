@@ -223,6 +223,7 @@ func (proxy *ProxyHttpServer) ListenAndServe(addr string) error {
 	if err != nil {
 		log.Fatalf("Error listening for HTTP connections (err 1) - %v", err)
 	}
+
 	for {
 		c, err := ln.Accept()
 		if err != nil {
@@ -230,11 +231,15 @@ func (proxy *ProxyHttpServer) ListenAndServe(addr string) error {
 			panic("Stopping for analysis...")
 			continue
 		}
+
 		go func(c net.Conn) {
 			//log.Printf("[INFO] Incoming HTTP request - source: %s / destination: %s", c.RemoteAddr().String(), c.LocalAddr().String())
 
-			// If true, a connection will be opened to the destination and left open until server, client closes (or timeout)
-			// Because this is HTTP, we still have the ability to inspect or modify headers but that is up to the handler.
+			// If true, a connection will be opened to the destination and left open
+			// until server, client closes (or timeout) Because this is HTTP, we
+			// still have the ability to inspect or modify headers but that is up to
+			// the handler.
+
 			//isnonhttpprotocol := false
 
 			var buf bytes.Buffer
@@ -245,9 +250,9 @@ func (proxy *ProxyHttpServer) ListenAndServe(addr string) error {
 			req, err = http.ReadRequest(connteereader)
 
 			if err != nil {
-				// TODO: Try to recover as much information from the original request as possible
-				// so that we can act on headers that might actually be there (especially referrer
-				// and user agent)
+				// TODO: Try to recover as much information from the original request
+				// as possible so that we can act on headers that might actually be
+				// there (especially referrer and user agent)
 				fmt.Printf("[DEBUG] ServeHTTP() - Couldn't parse request: %s\nOriginal Request:\n%s\n", err.Error(), string(buf.Bytes()))
 
 				req = &http.Request{
@@ -269,7 +274,8 @@ func (proxy *ProxyHttpServer) ListenAndServe(addr string) error {
 
 			// To print any local responses (errors) to stdout, uncomment SpyConnection.
 			// This will not print out anything related to forwarded connections.
-			//resp := notsodumbResponseWriter{Conn: &SpyConnection{c}, ResponseHeader: &req.Header}
+			// resp := notsodumbResponseWriter{Conn: &SpyConnection{c}, ResponseHeader: &req.Header}
+
 			resp := notsodumbResponseWriter{Conn: c, ResponseHeader: &req.Header}
 
 			// Failover Host detection - if we couldn't read the host from the HTTP headers, check the
