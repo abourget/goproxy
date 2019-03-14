@@ -9,142 +9,106 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"crypto/rand"
 	"crypto/tls"
 	"fmt"
 	"github.com/inconshreveable/go-vhost"
 	"github.com/winstonprivacyinc/dns"
+	"github.com/winstonprivacyinc/winston/plumb"
 	"github.com/winstonprivacyinc/winston/shadownetwork"
 	"io"
 	"io/ioutil"
 	"net"
 	"net/http"
 	"net/textproto"
+	"os"
 	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
-	//"net/url"
-	"crypto/rand"
-	//"runtime/debug"
-	"os"
 )
 
 var NonHTTPRequest = "nonhttprequest"
 
-// ProxyCtx is the Proxy context, contains useful information about every request. It is passed to
-// every user function. Also used as a logger.
+// ProxyCtx is the Proxy context, contains useful information about every
+// request. It is passed to every user function. Als// used internally when we
+// established a CONNECT session, to pass through new requests
+//
+// Resp contains the remote sever's response (if available). This can be nil if
+// the request wasn't sent yet, or if there was an error trying to fetch the
+// response.  In this case, refer to `ResponseError` for the latest error.
+// RLS: In the case of MITM, this is the client's response streamo used as a
+// logger.
+//
+// RoundTripper is used to send a request to a remote server when
+// forwarding a Request.  If you set your own RoundTripper, then
+// `FakeDestinationDNS` and `LogToHARFile` will have no effect.
 type ProxyCtx struct {
-	Method          string
-	SourceIP        string
-	IsSecure        bool   // Whether we are handling an HTTPS request with the client
-	IsThroughMITM   bool   // Whether the current request is currently being MITM'd
-	IsThroughTunnel bool   // Whether the current request is going through a CONNECT tunnel, doing HTTP calls (non-secure)
-	TunnelRequest   bool   // If set to true, the request will be forwarded without changes and tunnelled.
-	NonHTTPRequest  []byte // A binary copy of the original request headers. Will be replayed to destination server.
+	Method               string                                         // FIXME: document this
+	SourceIP             string                                         // FIXME: document this
+	IsSecure             bool                                           // Whether we are handling an HTTPS request with the client
+	IsThroughMITM        bool                                           // Whether the current request is currently being MITM'd
+	IsThroughTunnel      bool                                           // Whether the current request is going through a CONNECT tunnel, doing HTTP calls (non-secure)
+	TunnelRequest        bool                                           // If set to true, the request will be forwarded without changes and tunnelled.
+	NonHTTPRequest       []byte                                         // A binary copy of the original request headers. Will be replayed to destination server.
+	host                 string                                         // Sniffed and non-sniffed hosts, cached here.
+	sniHost              string                                         // FIXME: document this
+	sniffedTLS           bool                                           // FIXME: document this
+	MITMCertConfig       *GoproxyConfigServer                           // FIXME: document this
+	connectScheme        string                                         // FIXME: document this
+	OriginalRequest      *http.Request                                  // OriginalRequest holds a copy of the request before doing some HTTP tunnelling through CONNECT, or doing a man-in-the-middle attack.
+	Req                  *http.Request                                  // Contains the request and response streams from the proxy to the downstream server in the case of a MITM connection
+	ResponseWriter       http.ResponseWriter                            // FIXME: document this
+	Conn                 net.Conn                                       // Connections, up (the requester) and downstream (the server we forward to)
+	targetSiteConn       net.Conn                                       // "remote" end of connection
+	Resp                 *http.Response                                 // Contains the remote sever's response if available.
+	ResponseError        error                                          // Error from response
+	originalResponseBody io.ReadCloser                                  // originalResponseBody holds the first Response.Body (the original Response) in the chain.  This possibly exists if `Resp` is not nil.
+	RoundTripper         RoundTripper                                   // RoundTripper is used to send a request to a remote server when
+	fakeDestinationDNS   string                                         // Test
+	isLogEnabled         bool                                           // HAR logging
+	isLogWithContent     bool                                           // Will capture content if true
+	Error                error                                          // will contain the recent error that occured while trying to send receive or parse traffic
+	UserObjects          map[string]interface{}                         // UserObjects and UserData allow you to keep data between Connect, Request and Response handlers.
+	UserData             map[string]string                              // FIXME: document this.
+	Session              int64                                          // Will connect a request to a response
+	Proxy                *ProxyHttpServer                               // FIXME: document this.
+	Tlsfailure           func(ctx *ProxyCtx, untrustedCertificate bool) // Closure to alert listeners that a TLS handshake failed RLS 6-29-2017 References to persistent caches for statistics collection RLS 7-5-2017
+	IgnoreCounter        bool                                           // if true, this request won't be counted (used for streaming)
+	CipherSignature      string                                         // Client signature https://blog.squarelemon.com/tls-fingerprinting/
+	NewBodyLength        int                                            // FIXME: document this.
+	VerbosityLevel       uint16                                         // FIXME: document this.
+	DeviceType           int                                            // 11/2/2017 - Used for replacement macros (user agents)
+	Whitelisted          bool                                           // If true, response filtering will be completely disabled and local DNS will be bypassed.
+	TimeRemaining        int                                            // Time remaining in sec for temporary whitelisting
+	StatusMessage        []string                                       // Keeps a list of any messages we want to pass back to the client
+	FirstParty           bool                                           // Request handler sets this to true if it thinks it is a first party request
+	PrivateNetwork       bool                                           // Set to true to use private network
+	RevealTimeRemaining  int                                            // Time remaining in sec for temporary uncloaking
+	ShadowTransport      *shadownetwork.ShadowTransport                 // If a shadow transport is being used, this points to it.
+	Trace                traceRequest                                   // If true, then Winston diagnostic information will be recorded about the current request
+	TraceInfo            *TraceInfo                                     // Information about the original request/response
+	SkipRequestHandler   bool                                           // If set to true, then response handler will be skipped
+	SkipResponseHandler  bool                                           // If set to true, then response handler will be skipped
+	RequestTime          time.Time                                      // Time the request was started. Useful for debugging.
+	Referrer             string                                         // Referrer taken from HTTP request. Used for logging.
+	CookiesModified      int                                            // # of cookies blocked or modified for the current request. Used for logging.
+	ElementsModified     int                                            // # of page elements removed or modified for the current request. Used for logging.
+	fitter               *plumb.Fitter
+}
 
-	host    string // Sniffed and non-sniffed hosts, cached here.
-	sniHost string
+var fitter *plumb.Fitter
 
-	sniffedTLS     bool
-	MITMCertConfig *GoproxyConfigServer
-
-	connectScheme string
-
-	// OriginalRequest holds a copy of the request before doing some HTTP tunnelling
-	// through CONNECT, or doing a man-in-the-middle attack.
-	OriginalRequest *http.Request
-
-	// Contains the request and response streams from the proxy to the
-	// downstream server in the case of a MITM connection
-	Req            *http.Request
-	ResponseWriter http.ResponseWriter
-
-	// Connections, up (the requester) and downstream (the server we forward to)
-	Conn           net.Conn
-	targetSiteConn net.Conn // used internally when we established a CONNECT session,
-	// to pass through new requests
-
-	// Resp contains the remote sever's response (if available). This can be nil if the
-	// request wasn't sent yet, or if there was an error trying to fetch the response.
-	// In this case, refer to `ResponseError` for the latest error.
-	// RLS: In the case of MITM, this is the client's response stream
-	Resp *http.Response
-
-	// ResponseError contains the last error, if any, after running `ForwardRequest()`
-	// explicitly, or implicitly forwarding a request through other means (like returning
-	// `FORWARD` in some handlers).
-	ResponseError error
-
-	// originalResponseBody holds the first Response.Body (the original Response) in the chain.  This possibly exists if `Resp` is not nil.
-	originalResponseBody io.ReadCloser
-
-	// RoundTripper is used to send a request to a remote server when
-	// forwarding a Request.  If you set your own RoundTripper, then
-	// `FakeDestinationDNS` and `LogToHARFile` will have no effect.
-	RoundTripper       RoundTripper
-	fakeDestinationDNS string
-
-	// HAR logging
-	isLogEnabled     bool
-	isLogWithContent bool
-
-	// will contain the recent error that occured while trying to send receive or parse traffic
-	Error error
-
-	// UserObjects and UserData allow you to keep data between
-	// Connect, Request and Response handlers.
-	UserObjects map[string]interface{}
-	UserData    map[string]string
-
-	// Will connect a request to a response
-	Session int64
-	Proxy   *ProxyHttpServer
-
-	// Closure to alert listeners that a TLS handshake failed
-	// RLS 6-29-2017
-	Tlsfailure func(ctx *ProxyCtx, untrustedCertificate bool)
-
-	// References to persistent caches for statistics collection
-	// RLS 7-5-2017
-	IgnoreCounter bool // if true, this request won't be counted (used for streaming)
-
-	// Client signature
-	// https://blog.squarelemon.com/tls-fingerprinting/
-	CipherSignature string
-
-	NewBodyLength  int
-	VerbosityLevel uint16
-
-	// 11/2/2017 - Used for replacement macros (user agents)
-	DeviceType    int
-	Whitelisted   bool // If true, response filtering will be completely disabled and local DNS will be bypassed.
-	TimeRemaining int  // Time remaining in sec for temporary whitelisting
-
-	// Keeps a list of any messages we want to pass back to the client
-	StatusMessage []string
-
-	// Request handler sets this to true if it thinks it is a first party request
-	FirstParty bool
-
-	// Set to true to use private network
-	PrivateNetwork      bool
-	RevealTimeRemaining int // Time remaining in sec for temporary uncloaking
-
-	// If a shadow transport is being used, this points to it.
-	ShadowTransport *shadownetwork.ShadowTransport
-
-	// If true, then Winston diagnostic information will be recorded about the current request
-	Trace traceRequest
-
-	TraceInfo           *TraceInfo // Information about the original request/response
-	SkipRequestHandler  bool       // If set to true, then response handler will be skipped
-	SkipResponseHandler bool       // If set to true, then response handler will be skipped
-	RequestTime         time.Time  // Time the request was started. Useful for debugging.
-	Referrer            string     // Referrer taken from HTTP request. Used for logging.
-	CookiesModified     int        // # of cookies blocked or modified for the current request. Used for logging.
-	ElementsModified    int        // # of page elements removed or modified for the current request. Used for logging.
+func init() {
+	// Set up fitter which fits/combines two net.Conns.
+	// FIXME: An  error here should be handled more gracefully.  What happens if
+	// ctx.fitter is nil?
+	if localfitter, err := plumb.NewFitter(plumb.WithBufsize(65536),
+		plumb.WithTimeout(1*time.Minute)); err == nil {
+		fitter = localfitter
+	}
 }
 
 // Append a message to the context. This will be sent back to the client as a "Winston-Response" header.
@@ -1119,8 +1083,9 @@ func (ctx *ProxyCtx) ForwardConnect() error {
 	fmt.Println("[DEBUG] ForwardConnect() - Fusing client connection to host", ctx.host)
 	//}
 
-	fuse(ctx.Conn, targetSiteConn, ctx.Host())
-	//Fuse2(ctx.Conn, targetSiteConn)
+	fitter.Fit(ctx.Conn, targetSiteConn)
+	ctx.Conn.Close()
+	targetSiteConn.Close()
 
 	//if strings.Contains(ctx.host, "dallas5") {
 	fmt.Println("[DEBUG] ForwardConnect() completed.", time.Since(start))
@@ -1237,10 +1202,9 @@ func (ctx *ProxyCtx) ForwardNonHTTPRequest(host string) error {
 		return err
 	}
 
-	// Tunnel the connections together and block until they close.
-	//fuse(ctx.Conn, spyconnection, ctx.Host())
-
-	fuse(ctx.Conn, targetSiteConn, ctx.Host())
+	fitter.Fit(ctx.Conn, targetSiteConn)
+	ctx.Conn.Close()
+	targetSiteConn.Close()
 
 	return nil
 }
