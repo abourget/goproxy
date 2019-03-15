@@ -1038,7 +1038,7 @@ func (ctx *ProxyCtx) ForwardConnect() error {
 	dnsbypassctx := ctx.Req.Context()
 
 	//if strings.Contains(ctx.host, "dallas5") {
-	fmt.Println("[DEBUG] ForwardConnect()", ctx.host, "method", ctx.Method, "whitelisted:", ctx.Whitelisted, "private:", ctx.PrivateNetwork)
+	//fmt.Println("[DEBUG] ForwardConnect()", ctx.host, "method", ctx.Method, "whitelisted:", ctx.Whitelisted, "private:", ctx.PrivateNetwork)
 	//}
 
 	if ctx.Whitelisted {
@@ -1078,9 +1078,9 @@ func (ctx *ProxyCtx) ForwardConnect() error {
 	//	ctx.Conn.Write([]byte("HTTP/1.0 200 OK\r\n\r\n"))
 	//}
 
-	start := time.Now()
+	//start := time.Now()
 	//if strings.Contains(ctx.host, "dallas5") {
-	fmt.Println("[DEBUG] ForwardConnect() - Fusing client connection to host", ctx.host)
+	//fmt.Println("[DEBUG] ForwardConnect() - Fusing client connection to host", ctx.host)
 	//}
 
 	fitter.Fit(ctx.Conn, targetSiteConn)
@@ -1088,7 +1088,7 @@ func (ctx *ProxyCtx) ForwardConnect() error {
 	targetSiteConn.Close()
 
 	//if strings.Contains(ctx.host, "dallas5") {
-	fmt.Println("[DEBUG] ForwardConnect() completed.", time.Since(start))
+	//fmt.Println("[DEBUG] ForwardConnect() completed.", time.Since(start))
 	//}
 	return nil
 }
@@ -1167,7 +1167,7 @@ func (ctx *ProxyCtx) ForwardNonHTTPRequest(host string) error {
 	} else {
 		// Set up a TLS connection to the downstream site
 		// TODO: Is this going through private network?
-		fmt.Println("ForwardNonHTTPRequest() HTTPS:", host)
+		//fmt.Println("ForwardNonHTTPRequest() HTTPS:", host)
 		// unit testing: Ignore verification with self-signed certificates coming from localhost
 		skipverification := false
 		if strings.HasPrefix(ctx.host, "127.0.0.") {
@@ -1188,7 +1188,6 @@ func (ctx *ProxyCtx) ForwardNonHTTPRequest(host string) error {
 		return fmt.Errorf("[ERROR] ForwardNonHTTPRequest() - ctx.Conn was nil! Cannot continue.")
 	}
 
-	// TODO: Remove test code below
 	// spyconnection prints out the original request to stdout
 	//spyconnection := &SpyConnection{targetSiteConn}
 	//err = ctx.Req.Write(spyconnection)
@@ -1846,203 +1845,6 @@ func (sc *SpyConnection) Write(b []byte) (int, error) {
 	mw := io.MultiWriter(sc.Conn, os.Stderr)
 	bw, err := mw.Write(b)
 	return bw, err
-}
-
-// RLS 3/12/2019 - Attempt to use io.pipe to eliminate memory allocations and buffering.
-// This causes slow uploads.
-//func pipe(client, backend net.Conn, debug string) {
-//	pr, pw := io.Pipe()
-//}
-
-// RLS 9/6/2018 - Cleaner method to pipe two conns together.
-// Fuse connections together. Have to take precautions to close connections down in various cases.
-// 9/16/2018 - Requests which are proxied by static.deploy.akamaitechnologies.com and a few other sites hang here forever.
-// It's unclear why this is happening but we've been able to reproduce the fact that the timeouts are not honored in these
-// cases. To ensure these connections close down, callers should set and close the Request.Cancel channel after some time limit.
-func fuse(client, backend net.Conn, debug string) {
-	// Copy from client -> backend, and from backend -> client
-	//defer p.logConnectionMessage("closed", client, backend)
-	//p.logConnectionMessage("opening", client, backend)
-
-	//trace := false
-	//if strings.Contains(debug, ".somafm.com") {
-	//	fmt.Println("[DEBUG] Starting fuse()", debug)
-	//	trace = true
-	//}
-
-	//start := time.Now()
-
-	defer client.Close()
-	defer backend.Close()
-
-	// Pipes data from the remote server to our client
-	backenddie := make(chan struct{})
-	go func() {
-		// TODO: Idle connection should only fire if both connections are idle. If one side is
-		// sending data, then perhaps we shouldn't close it?
-
-		// Wrap the backend connection so that we can enforce an idle timeout (60 seconds)
-		idleconn := &IdleTimeoutConn{Conn: backend, IdleTimeout: connectionIdleTimeout}
-
-		// Connections cannot stay open longer than this period of time (15 minutes)
-		idleconn.SetDeadline(time.Now().Add(time.Duration(serverReadTimeout) * time.Second))
-
-		//if trace {
-		//	fmt.Println("[DEBUG] fuse() server->client spyconnection", debug)
-		//spyconnection := &SpyConnection{idleconn}
-		//copyData(client, spyconnection)
-
-		//n, err := copyData(client, idleconn)
-		//fmt.Println("[DEBUG] fuse() server->client n", n, "err", err)
-		//} else {
-		//	n, err :=
-		copyData(client, idleconn)
-		//copyDataDebug(client, idleconn)
-		//if strings.HasPrefix(debug, "104") {
-		//	fmt.Printf("[DEBUG] Fuse(). Finished copy from remote->client. %T\n", backend)
-		//}
-		// These errors are common with streaming sites. Uncomment to see.
-		//if err != nil && !strings.Contains(err.Error(), "closed network connection") {
-		//	fmt.Printf("[ERROR] ctx.go/fuse() error backend->client: %d bytes transferred. [%s] Err=%s\n", n, debug, err)
-		//}
-		//}
-
-		close(backenddie)
-	}()
-
-	// Pipes data from our client to the remote server
-	clientdie := make(chan struct{})
-	go func() {
-		// Set read timeout
-		// With HTTP/S requests, we expect these to complete quickly. However, websockets and other protocols
-		// may need to keep the connection open more or less indefinitely.
-		//client.SetReadDeadline(time.Now().Add(clientReadTimeout * time.Second))
-
-		// Wrap the backend connection so that we can enforce an idle timeout.
-		//idleconn := &IdleTimeoutConn{Conn: client}
-
-		// TEST: streaming requests will break in 60 seconds with an idle timeout if the client
-		// doesn't occasionally ping.
-		idleconn := &IdleTimeoutConn{
-			Conn:        client,
-			IdleTimeout: connectionIdleTimeout * 2,
-			Deadline:    time.Now().Add(time.Duration(clientReadTimeout) * time.Second)}
-
-		//n, err :=
-		//if trace {
-		//	fmt.Println("[DEBUG] fuse() client->server spyconnection", debug)
-		//	spyconnection := &SpyConnection{idleconn}
-		//	copyData(backend, spyconnection)
-
-		//n, err := copyData(backend, idleconn)
-		//fmt.Println("[DEBUG] fuse() client->server n", n, "err", err)
-		//} else {
-		//
-		n, err := copyData(backend, idleconn)
-		//copyDataDebug(backend, idleconn)
-		//}
-		//if strings.HasPrefix(debug, "104") {
-		//	fmt.Println("[DEBUG] Fuse client->remote", n, debug, err)
-		//}
-
-		// Timeouts and connection reset errors are very common, especially with Netflix.
-		// Uncomment to see these... not particularly helpful in most cases though.
-		//if err != nil && !strings.Contains(err.Error(), "timeout") {
-		fmt.Printf("[INFO] ctx.go/fuse() client->backend: %d bytes transferred. [%s] Err=%s\n", n, debug, err)
-		//}
-
-		close(clientdie)
-	}()
-
-	// Wait for both connections to close before shutting the tunnel down. Otherwise we can end up
-	// in a race condition where the client request ends and shuts the tunnel down.
-	<-backenddie
-	<-clientdie
-
-	//if trace {
-	//elapsed := time.Since(start)
-	//	fmt.Println("[DEBUG] fuse() terminated", debug, elapsed)
-	//}
-
-}
-
-// Copy data between two connections
-func copyData(dst net.Conn, src net.Conn) (int64, error) {
-	defer dst.Close()
-	defer src.Close()
-
-	n, err := io.Copy(dst, src)
-	fmt.Printf("[DEBUG] Copied %d bytes\n", n)
-	return n, err
-}
-
-// Copy data in small chunks, outputting to stdout.
-func copyDataDebug(dst net.Conn, src net.Conn) (int, error) {
-	defer dst.Close()
-	defer src.Close()
-
-	tmp := make([]byte, 2) // using small tmo buffer for demonstrating
-	var total int
-	for {
-		n, err := src.Read(tmp)
-		if err != nil {
-			if err != io.EOF {
-				fmt.Println("read error:", err)
-			}
-			break
-		}
-		total += n
-		fmt.Printf("%s", string(tmp[:n]))
-		dst.Write(tmp[:n])
-	}
-	return total, nil
-}
-
-// Experimental method to weld two connections together
-func Fuse2(conn1 net.Conn, conn2 net.Conn) {
-	chan1 := chanFromConn(conn1)
-	chan2 := chanFromConn(conn2)
-
-	for {
-		select {
-		case b1 := <-chan1:
-			if b1 == nil {
-				return
-			} else {
-				conn2.Write(b1)
-			}
-		case b2 := <-chan2:
-			if b2 == nil {
-				return
-			} else {
-				conn1.Write(b2)
-			}
-		}
-	}
-}
-
-func chanFromConn(conn net.Conn) chan []byte {
-	c := make(chan []byte)
-
-	go func() {
-		b := make([]byte, 1024)
-
-		for {
-			n, err := conn.Read(b)
-			if n > 0 {
-				res := make([]byte, n)
-				// Copy the buffer so it doesn't get changed while read by the recipient.
-				copy(res, b[:n])
-				c <- res
-			}
-			if err != nil {
-				c <- nil
-				break
-			}
-		}
-	}()
-
-	return c
 }
 
 var charsetFinder = regexp.MustCompile("charset=([^ ;]*)")
