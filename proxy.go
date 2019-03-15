@@ -253,7 +253,7 @@ func (proxy *ProxyHttpServer) ListenAndServe(addr string) error {
 				// TODO: Try to recover as much information from the original request
 				// as possible so that we can act on headers that might actually be
 				// there (especially referrer and user agent)
-				fmt.Printf("[DEBUG] ServeHTTP() - Couldn't parse request: %s\nOriginal Request:\n%s\n", err.Error(), string(buf.Bytes()))
+				//fmt.Printf("[DEBUG] ServeHTTP() - Couldn't parse request: %s\nOriginal Request:\n%s\n", err.Error(), string(buf.Bytes()))
 
 				req = &http.Request{
 					Method: "",
