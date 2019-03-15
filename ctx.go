@@ -1140,7 +1140,7 @@ func (ctx *ProxyCtx) ForwardNonHTTPRequest(host string) error {
 	var err error
 
 	//if strings.Contains(host, "ice") {
-	fmt.Println("ForwardNonHTTPRequest() host:", host)
+	//fmt.Println("ForwardNonHTTPRequest() host:", host)
 	//}
 	//If the request was whitelisted, then use the upstream DNS.
 	dnsbypassctx := ctx.Req.Context()

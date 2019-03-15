@@ -47,7 +47,7 @@ func localTls(url string) string  { return https.URL + url }
 
 func TestLargeUpload(t *testing.T) {
 	Convey("Large uploads complete in a reasonable amount of time", t, func() {
-		port := "9017"
+		port := "9117"
 		proxy := goproxy.NewProxyHttpServer()
 
 		proxy.HandleConnectFunc(func(ctx *goproxy.ProxyCtx) goproxy.Next {
@@ -73,7 +73,7 @@ func TestLargeUpload(t *testing.T) {
 		bb := bytes.NewBuffer(b)
 
 		//fmt.Println("[TEST] writing request body", b)
-		fmt.Printf("[TEST] writing bb %x", bb.Bytes())
+		//fmt.Printf("[TEST] writing bb %x", bb.Bytes())
 		request, err := http.NewRequest("GET", srvhttps.URL+"/bobo", bb)
 
 		proxyname := "127.0.0.1:" + port
