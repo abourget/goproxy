@@ -1037,22 +1037,23 @@ func (ctx *ProxyCtx) HijackConnect() net.Conn {
 func (ctx *ProxyCtx) ForwardConnect() error {
 	dnsbypassctx := ctx.Req.Context()
 
-	//if strings.Contains(ctx.host, "dallas5") {
-	//fmt.Println("[DEBUG] ForwardConnect()", ctx.host, "method", ctx.Method, "whitelisted:", ctx.Whitelisted, "private:", ctx.PrivateNetwork)
+	//if strings.Contains(ctx.host, "icanhazip") {
+	//	fmt.Println("[DEBUG] ForwardConnect()", ctx.host, "method", ctx.Method, "whitelisted:", ctx.Whitelisted, "private:", ctx.PrivateNetwork)
 	//}
 
 	if ctx.Whitelisted {
 		//ctx.Logf(1, "  *** ForwardConnect() - Bypassing DNS for whitelisted host [%s]", ctx.host)
 		//fmt.Println("[DEBUG] ForwardConnect() - bypassing DNS for whitelisted host", ctx.host)
 		dnsbypassctx = context.WithValue(ctx.Req.Context(), dns.UpstreamKey, 0)
+	} else if ctx.PrivateNetwork {
+		// Send in a pointer to a struct that so the shadownetwork let us know if there was an error calling out to the private network
+		//if strings.Contains(ctx.host, "icanhazip") {
+		//	fmt.Println("[DEBUG] ForwardNonHTTPRequest() - Using private network and setting new context.", ctx.host)
+		//}
+		dnsbypassctx = context.WithValue(dnsbypassctx, shadownetwork.PrivateNetworkKey, true)
+		dnsbypassctx = context.WithValue(dnsbypassctx, shadownetwork.ShadowTransportFailed, &shadownetwork.ShadowNetworkFailure{})
 	}
 
-	// When forwarding requests, a connection can be whitelisted (bypassing filtered DNS) but
-	// routed through the private network.
-	if ctx.PrivateNetwork {
-		//fmt.Println("[DEBUG] ForwardConnect() - Using private network", ctx.host)
-		dnsbypassctx = context.WithValue(dnsbypassctx, shadownetwork.PrivateNetworkKey, true)
-	}
 
 	//fmt.Println("[DEBUG] ForwardConnect(): ctx.Method", ctx.Method, "host", ctx.host)
 
@@ -1072,11 +1073,6 @@ func (ctx *ProxyCtx) ForwardConnect() error {
 		//fmt.Println("[DEBUG] ForwardConnect() - Responding to client with 200 OK", ctx.host)
 		ctx.Conn.Write([]byte("HTTP/1.1 200 OK\r\n\r\n"))
 	}
-	//else if !ctx.sniffedTLS && ctx.IsSecure {
-	//	// This doesn't appear to be necessary but leaving it in just in case. Never gets triggered.
-	//	fmt.Println("[TODO] Check HTTP 1.0 response to sender here (5).", ctx.host)
-	//	ctx.Conn.Write([]byte("HTTP/1.0 200 OK\r\n\r\n"))
-	//}
 
 	//start := time.Now()
 	//if strings.Contains(ctx.host, "dallas5") {
@@ -1131,30 +1127,41 @@ func (ctx *ProxyCtx) RejectConnect() {
 //	update-ca-certificates
 // This will use the above file to regenerate /etc/ssl/certs
 
-// Used to forward protocols that are "http-like" (ie: websockets). This method forwards the
+// Used to forward protocols that are "http-like" (ie: websockets). This method replays the
 // original HTTP request before fusing the connection, allowing further
 // communication to take place (if none, it will close).
-// TODO: Add P2P support
-func (ctx *ProxyCtx) ForwardNonHTTPRequest(host string) error {
+func (ctx *ProxyCtx) ForwardRequest(host string) error {
 	var targetSiteConn net.Conn
 	var err error
 
-	//if strings.Contains(host, "ice") {
-	//fmt.Println("ForwardNonHTTPRequest() host:", host)
+	//if strings.Contains(ctx.host, "icanhazip") {
+	//	fmt.Println("[DEBUG] ForwardNonHTTPRequest() host:", ctx.host, "whitelisted?", ctx.Whitelisted, "private?", ctx.PrivateNetwork)
 	//}
 	//If the request was whitelisted, then use the upstream DNS.
 	dnsbypassctx := ctx.Req.Context()
 	if ctx.Whitelisted {
 		dnsbypassctx = context.WithValue(ctx.Req.Context(), dns.UpstreamKey, 0)
 	} else if ctx.PrivateNetwork {
-		//fmt.Println("[DEBUG] ForwardNonHTTPRequest() - Using private network", ctx.host)
+		// Send in a pointer to a struct that so the shadownetwork let us know if there was an error calling out to the private network
+		//if strings.Contains(ctx.host, "icanhazip") {
+		//	fmt.Println("[DEBUG] ForwardNonHTTPRequest() - Using private network and setting new context.", ctx.host)
+		//}
 		dnsbypassctx = context.WithValue(dnsbypassctx, shadownetwork.PrivateNetworkKey, true)
+		dnsbypassctx = context.WithValue(dnsbypassctx, shadownetwork.ShadowTransportFailed, &shadownetwork.ShadowNetworkFailure{})
 	}
 
-	// Send in a pointer to a struct that RoundTrip can modify to let us know if there was an error calling out to the private network
-	dnsbypassctx = context.WithValue(dnsbypassctx, shadownetwork.ShadowTransportFailed, &shadownetwork.ShadowNetworkFailure{})
+
+	//dnsbypassctx = context.WithValue(dnsbypassctx, shadownetwork.ShadowTransportFailed, &shadownetwork.ShadowNetworkFailure{})
+
+	//if strings.Contains(ctx.host, "icanhazip") {
+	//	fmt.Printf("[DEBUG] ForwardNonHTTPRequest() %s  ctx: %v\n", ctx.host, dnsbypassctx)
+	//}
+
 
 	if !ctx.IsSecure {
+		//if strings.Contains(ctx.host, "icanhazip") {
+		//	fmt.Println("[DEBUG] calling connectDialContext()", ctx.host)
+		//}
 		targetSiteConn, err = ctx.Proxy.connectDialContext(dnsbypassctx, "tcp", ctx.host)
 		//d := HijackedDNSDialer()
 		//targetSiteConn, err = d.DialContext(dnsbypassctx, "tcp", ctx.host)
@@ -1234,7 +1241,7 @@ func HijackedDNSDialer() *net.Dialer {
 
 // Forwards a request to a downstream server. This is done after MITM has been established.
 // TODO: Remove host from function parameters
-func (ctx *ProxyCtx) ForwardRequest(host string) error {
+func (ctx *ProxyCtx) ForwardHTTPRequest(host string) error {
 
 	//if strings.Contains(host, "hsforms.net") {
 	//	fmt.Println("[DEBUG] ForwardRequest() - hsforms.net whitelisted", ctx.Whitelisted)

@@ -5,7 +5,7 @@ import (
 	"context"
 	"crypto/tls"
 	"errors"
-	"fmt"
+	//"fmt"
 	"github.com/winstonprivacyinc/winston/shadownetwork"
 	"io"
 	"io/ioutil"
@@ -28,31 +28,44 @@ func stripPort(s string) string {
 // RLS 2/15/2018 - New DialContext routines. Preferred because these allow the transport
 // to cancel dials as soon as they are no longer needed.
 func (proxy *ProxyHttpServer) dialContext(ctx context.Context, network, addr string) (c net.Conn, err error) {
-	//fmt.Printf("[DEBUG] https.go/dialContext() %s\n", addr)
+	//if strings.Contains(addr, "icanhazip") {
+	//	fmt.Printf("[DEBUG] https.go/dialContext() %s  ctx: %v\n", addr, ctx)
+	//}
 	// ctx must be non-nil. Ensure we always have one.
 	if ctx == nil {
 		ctx = context.Background()
 	}
 
 	privatenetwork, ok := ctx.Value(shadownetwork.PrivateNetworkKey).(bool)
-	//fmt.Println("[DEBUG] privatenetwork", privatenetwork)
+	//if strings.Contains(addr, "icanhazip") {
+	//	fmt.Printf("[DEBUG] [%s] https.go/dialContext() -> [%s] found privatenetwork key? %t\n", proxy.Name, addr, ok)
+	//}
 	if ok && privatenetwork && proxy.PrivateNetwork != nil {
-		//fmt.Printf("[DEBUG] https.go/dialContext() -> forwarding through private network [%s]. PrivateNetwork:\n", addr, )
+		//if strings.Contains(addr, "icanhazip") {
+		//	fmt.Printf("[DEBUG] [%s] https.go/dialContext() -> forwarding through private network [%s]. PrivateNetwork: %v\n", proxy.Name, addr, proxy.PrivateNetwork )
+		//}
 		shadowtr := proxy.PrivateNetwork.Transport(addr)
 		if shadowtr != nil {
 			ctx2 := context.WithValue(ctx, shadownetwork.ShadowTransportKey, shadowtr)
 			return shadowtr.Transport.(*shadownetwork.KCPTransport).DialContext(ctx2, network, addr)
 		}
-	} //else {
-	//fmt.Printf("[DEBUG] https.go/dialContext() -> Local network [%s]\n", addr)
-	//}
+	} /*else {
+		if strings.Contains(addr, "icanhazip") {
+			fmt.Printf("[DEBUG] [%s] https.go/dialContext() -> Local network [%s]\n", proxy.Name, addr)
+		}
+	}*/
 
 	if proxy.Transport.DialContext != nil {
-		//fmt.Printf("[DEBUG] https.go/dialContext() -> Custom DialContext [%s] %v\n", addr, ctx)
+		//if strings.Contains(addr, "icanhazip") {
+		//	fmt.Printf("[DEBUG] https.go/dialContext() -> Custom DialContext [%s] %v\n", addr, ctx)
+		//}
 		// Call the custom dialer, if we have one.
 		return proxy.Transport.DialContext(ctx, network, addr)
 	}
 
+	//if strings.Contains(addr, "icanhazip") {
+	//	fmt.Printf("[DEBUG] https.go/dialContext() -> default dialer [%s]\n", addr)
+	//}
 	// This is the default dialer
 	var d net.Dialer
 	return d.DialContext(ctx, network, addr)
@@ -76,7 +89,6 @@ func (proxy *ProxyHttpServer) connectDialContext(ctx context.Context, network, a
 		ctx = context.Background()
 	}
 
-	fmt.Println("[DEBUG] connectDialContext() 2")
 	// This would be hit if we defined a custom dialer (we don't)
 	return proxy.ConnectDialContext(ctx, network, addr)
 }

@@ -217,7 +217,7 @@ func (proxy *ProxyHttpServer) DispatchRequestHandlers(ctx *ProxyCtx) {
 		//fmt.Println("[DEBUG] Dispatcher.go:DispatchRequestHandlers() - Forward Non HTTP Request", ctx.host)
 		// This forwards the request and pipes the response back to the client, similar to ForwardConnect()
 		// We don't process the response in any way (yet).
-		ctx.ForwardNonHTTPRequest(ctx.host)
+		ctx.ForwardRequest(ctx.host)
 	} else {
 		// If we're tracing, we need to copy the original headers so that we can duplicate the request
 		if ctx.Trace.Modified || ctx.Trace.Unmodified {
@@ -230,7 +230,7 @@ func (proxy *ProxyHttpServer) DispatchRequestHandlers(ctx *ProxyCtx) {
 		}
 
 		//fmt.Println("[DEBUG] Dispatcher.go:DispatchRequestHandlers() - Forward HTTP Request", ctx.host)
-		ctx.ForwardRequest(ctx.host)
+		ctx.ForwardHTTPRequest(ctx.host)
 		ctx.DispatchResponseHandlers()
 	}
 }
