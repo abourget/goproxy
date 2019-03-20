@@ -34,13 +34,13 @@ import (
 // The basic proxy type. Implements http.Handler.
 type ProxyHttpServer struct {
 	// Useful for debugging when running multiple proxy servers
-	Name 		string
+	Name string
 
 	// session variable must be aligned in i386
 	// see http://golang.org/src/pkg/sync/atomic/doc.go#L41
-	sess 		int64
+	sess int64
 	// setting Verbose to true will log information on each request sent to the proxy
-	Verbose 	bool
+	Verbose bool
 
 	// 0 (default) = Startup, service messages  and command output only
 	// 1 Serious Errors
@@ -231,7 +231,6 @@ func (proxy *ProxyHttpServer) ListenAndServe(addr string) error {
 		c, err := ln.Accept()
 		if err != nil {
 			log.Printf("Error accepting new HTTP connection (err 2) - %v", err)
-			panic("Stopping for analysis...")
 			continue
 		}
 
@@ -555,7 +554,6 @@ func (proxy *ProxyHttpServer) ListenAndServeTLS(httpsAddr string) error {
 		c, err := ln.Accept()
 		if err != nil {
 			log.Printf("Error accepting new connection (err 2) - %v", err)
-			panic("Stopping for analysis...")
 			continue
 		}
 		go func(c net.Conn) {
