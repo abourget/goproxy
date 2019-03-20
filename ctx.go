@@ -1092,6 +1092,7 @@ func (ctx *ProxyCtx) ForwardConnect() error {
 //var hasPort = regexp.MustCompile(`:\d+$`)
 
 func (ctx *ProxyCtx) RejectConnect() {
+
 	if ctx.Method != "CONNECT" {
 		panic("cannot RejectConnect() when Method is not CONNECT")
 	}
@@ -1103,6 +1104,7 @@ func (ctx *ProxyCtx) RejectConnect() {
 		ctx.Conn.Write([]byte("HTTP/1.0 502 Rejected\r\n\r\n"))
 	}
 
+	//fmt.Println("[DEBUG] RejectConnect()", ctx.host, "open handlers:", ctx.Proxy.openhandlers)
 	ctx.Conn.Close()
 }
 
