@@ -118,6 +118,9 @@ type ProxyHttpServer struct {
 	// Defaults to a conntrak lookup but callers may substitute their own function (intended
 	// primarily for unit testing). The connection must not be used or closed.
 	DestinationResolver func(c net.Conn) string
+
+	// Track # of running handlers. Ideally this is equivalent to the # of open connections.
+	openhandlers 		int64
 }
 
 // Performs sanity checking against a domain name. Is not intended to be a full blown
@@ -236,13 +239,10 @@ func (proxy *ProxyHttpServer) ListenAndServe(addr string) error {
 
 		go func(c net.Conn) {
 			//log.Printf("[INFO] Incoming HTTP request - source: %s / destination: %s", c.RemoteAddr().String(), c.LocalAddr().String())
-
-			// If true, a connection will be opened to the destination and left open
-			// until server, client closes (or timeout) Because this is HTTP, we
-			// still have the ability to inspect or modify headers but that is up to
-			// the handler.
-
-			//isnonhttpprotocol := false
+			atomic.AddInt64(&proxy.openhandlers, 1)
+			defer func() {
+				atomic.AddInt64(&proxy.openhandlers, -1)
+			}()
 
 			var buf bytes.Buffer
 			tee := io.TeeReader(c, &buf)
@@ -557,6 +557,11 @@ func (proxy *ProxyHttpServer) ListenAndServeTLS(httpsAddr string) error {
 			continue
 		}
 		go func(c net.Conn) {
+			atomic.AddInt64(&proxy.openhandlers, 1)
+			defer func() {
+				atomic.AddInt64(&proxy.openhandlers, -1)
+			}()
+
 			//log.Printf("[INFO] INCOMING TLS CONNECTION - source: %s / destination: %s", c.RemoteAddr().String(), c.LocalAddr().String())
 			tlsConn, err := vhost.TLS(c)
 
