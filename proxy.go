@@ -120,7 +120,7 @@ type ProxyHttpServer struct {
 	DestinationResolver func(c net.Conn) string
 
 	// Track # of running handlers. Ideally this is equivalent to the # of open connections.
-	openhandlers 		int64
+	openhandlers int64
 }
 
 // Performs sanity checking against a domain name. Is not intended to be a full blown
@@ -345,11 +345,16 @@ func (proxy *ProxyHttpServer) HandleHTTPConnection(c net.Conn, r *http.Request, 
 
 	// Set up host and port
 	ctx.host = r.Host
+
 	if ctx.host == "" {
 		// Fail safe. Should we ever get here?
 		ctx.host = r.URL.Host
 		fmt.Println("[WARN] Did not have a host in HandleHTTPConnection(). Failed over to r.URL.Host", ctx.host)
 	}
+
+	// NOTE: subtle: we're okay with setting ctx.CipherSignature to an empty string here.
+	// before we push it into influx, we'll convert it to something reasonable.
+	ctx.CipherSignature = r.Header.Get("User-Agent")
 
 	// For any non-CONNECT request, we must guarantee the following before calling the handlers.
 	// ctx.host is set to the actual host of the request (ie: www.example.com)
@@ -643,14 +648,16 @@ func (proxy *ProxyHttpServer) ListenAndServeTLS(httpsAddr string) error {
 
 			// TODO: Should caller handle this or should we?
 			// Create a signature string for the accepted ciphers
-			if tlsConn.ClientHelloMsg != nil && len(tlsConn.ClientHelloMsg.CipherSuites) > 0 {
-				// RLS 10/10/2017 - Expanded signature
-				// Generate a fingerprint for the client. This enables us to whitelist
-				// failed TLS queries on a per-client basis.
-				ctx.CipherSignature = GenerateSignature(tlsConn.ClientHelloMsg, false)
-			} else {
-				ctx.CipherSignature = ""
-			}
+
+			ctx.CipherSignature = func() string {
+				if tlsConn.ClientHelloMsg != nil && len(tlsConn.ClientHelloMsg.CipherSuites) > 0 {
+					// RLS 10/10/2017 - Expanded signature
+					// Generate a fingerprint for the client. This enables us to whitelist
+					// failed TLS queries on a per-client basis.
+					return GenerateSignature(tlsConn.ClientHelloMsg, false)
+				}
+				return ""
+			}()
 
 			// TEST
 			// Set up a shared buffer so the second request can see the original request body
