@@ -352,6 +352,13 @@ func (proxy *ProxyHttpServer) HandleHTTPConnection(c net.Conn, r *http.Request, 
 		fmt.Println("[WARN] Did not have a host in HandleHTTPConnection(). Failed over to r.URL.Host", ctx.host)
 	}
 
+	// TODO: Try to read a user agent for the client signature - Can remove when Ayan pushes new user agent code
+	ctx.CipherSignature = "Unknown"
+	if r != nil && r.Header != nil {
+		ua := r.Header.Get("User-Agent")
+		ctx.CipherSignature = ua
+	}
+
 	// For any non-CONNECT request, we must guarantee the following before calling the handlers.
 	// ctx.host is set to the actual host of the request (ie: www.example.com)
 	// r.URL.Host is set to domain+port (ie: www.example.com:80)
@@ -585,7 +592,7 @@ func (proxy *ProxyHttpServer) ListenAndServeTLS(httpsAddr string) error {
 
 			// If still invalid, we couldn't resolve it. Drop the request.
 			if !checkDomain(Host) {
-				fmt.Printf("[ERROR] Failed to parse original HTTP host: %s. Dropping request.\n", Host)
+				//fmt.Printf("[ERROR] Failed to parse original HTTP host: %s. Dropping request.\n", Host)
 				tlsConn.Close()
 				return
 			}
@@ -674,7 +681,7 @@ func (proxy *ProxyHttpServer) ListenAndServeTLS(httpsAddr string) error {
 			//	fmt.Printf("[TRACE] CLIENTHELLO [%s] [Vers=%v] =\n%+v\n\n", ctx.CipherSignature, (*tlsConn.ClientHelloMsg).Vers, *tlsConn.ClientHelloMsg)
 			//}
 
-			fmt.Println("[DEBUG] ListenAndServeTLS() - request host:", ctx.host, ctx.IsSecure)
+			//fmt.Println("[DEBUG] ListenAndServeTLS() - request host:", ctx.host, ctx.IsSecure)
 
 			proxy.dispatchConnectHandlers(ctx)
 
