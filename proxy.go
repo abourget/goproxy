@@ -5,8 +5,6 @@ package goproxy
 import (
 	"bufio"
 	"bytes"
-	"github.com/inconshreveable/go-vhost"
-	"github.com/winstonprivacyinc/winston/goproxy/har"
 	"log"
 	"net"
 	"net/http"
@@ -15,14 +13,21 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+
+	"github.com/avct/uasurfer"
+	"github.com/inconshreveable/go-vhost"
+	"github.com/winstonprivacyinc/winston/goproxy/har"
+
 	//"github.com/peterbourgon/diskv"
 	"context"
 	"crypto/md5"
 	"encoding/hex"
 	"fmt"
-	"github.com/winstonprivacyinc/go-conntrack"
 	"strconv"
 	"time"
+
+	"github.com/winstonprivacyinc/go-conntrack"
+
 	//"crypto/tls"
 	"github.com/winstonprivacyinc/winston/shadownetwork"
 	//"crypto/x509"
@@ -34,13 +39,13 @@ import (
 // The basic proxy type. Implements http.Handler.
 type ProxyHttpServer struct {
 	// Useful for debugging when running multiple proxy servers
-	Name 		string
+	Name string
 
 	// session variable must be aligned in i386
 	// see http://golang.org/src/pkg/sync/atomic/doc.go#L41
-	sess 		int64
+	sess int64
 	// setting Verbose to true will log information on each request sent to the proxy
-	Verbose 	bool
+	Verbose bool
 
 	// 0 (default) = Startup, service messages  and command output only
 	// 1 Serious Errors
@@ -120,7 +125,7 @@ type ProxyHttpServer struct {
 	DestinationResolver func(c net.Conn) string
 
 	// Track # of running handlers. Ideally this is equivalent to the # of open connections.
-	openhandlers 		int64
+	openhandlers int64
 }
 
 // Performs sanity checking against a domain name. Is not intended to be a full blown
@@ -234,7 +239,6 @@ func (proxy *ProxyHttpServer) ListenAndServe(addr string) error {
 		c, err := ln.Accept()
 		if err != nil {
 			log.Printf("Error accepting new HTTP connection (err 2) - %v", err)
-			panic("Stopping for analysis...")
 			continue
 		}
 
@@ -309,6 +313,39 @@ func (proxy *ProxyHttpServer) ListenAndServe(addr string) error {
 	}
 }
 
+func ConvertUserAgentToSignature(s string) string {
+	if strings.TrimSpace(s) == "" {
+		return "unknown"
+	}
+
+	ua := uasurfer.Parse(s)
+
+	// create slice of parts
+	parts := []string{ua.OS.Platform.StringTrimPrefix(), ua.DeviceType.StringTrimPrefix(), ua.Browser.Name.StringTrimPrefix(), ua.OS.Name.StringTrimPrefix(), strconv.Itoa(ua.OS.Version.Major)}
+
+	filtered := []string{}
+	for _, v := range parts {
+		if v == "Unknown" || v == "0" {
+			continue
+		}
+		filtered = append(filtered, v)
+	}
+
+	candidate := strings.ToLower(strings.Join(filtered, "-"))
+
+	if candidate == "" {
+		// back to the original user agent
+		candidate = s
+		candidate = strings.ReplaceAll(candidate, " ", "-")
+		candidate = strings.ReplaceAll(candidate, "/", "-")
+		candidate = strings.ReplaceAll(candidate, "_", "-")
+	}
+
+	rc := strings.ToLower(candidate)
+
+	return rc
+}
+
 // Expects a parsed request object, connection and a response writer. Will forward the connection to the original
 // destination (found in r.Host). If CONNECT, it will simply open a connection and the client must
 // negotiate it. Otherwise, it will replay the original request to the upstream server and pipe
@@ -346,17 +383,19 @@ func (proxy *ProxyHttpServer) HandleHTTPConnection(c net.Conn, r *http.Request, 
 
 	// Set up host and port
 	ctx.host = r.Host
+
 	if ctx.host == "" {
 		// Fail safe. Should we ever get here?
 		ctx.host = r.URL.Host
 		fmt.Println("[WARN] Did not have a host in HandleHTTPConnection(). Failed over to r.URL.Host", ctx.host)
 	}
 
-	// TODO: Try to read a user agent for the client signature - Can remove when Ayan pushes new user agent code
-	ctx.CipherSignature = "Unknown"
+	// NOTE: subtle: we're okay with setting ctx.CipherSignature to an empty string here.
+	// before we push it into influx, we'll convert it to something reasonable.
 	if r != nil && r.Header != nil {
-		ua := r.Header.Get("User-Agent")
-		ctx.CipherSignature = ua
+		ctx.CipherSignature = ConvertUserAgentToSignature(r.Header.Get("User-Agent"))
+	} else {
+		ctx.CipherSignature = "unknown"
 	}
 
 	// For any non-CONNECT request, we must guarantee the following before calling the handlers.
@@ -562,7 +601,6 @@ func (proxy *ProxyHttpServer) ListenAndServeTLS(httpsAddr string) error {
 		c, err := ln.Accept()
 		if err != nil {
 			log.Printf("Error accepting new connection (err 2) - %v", err)
-			panic("Stopping for analysis...")
 			continue
 		}
 		go func(c net.Conn) {
@@ -652,14 +690,16 @@ func (proxy *ProxyHttpServer) ListenAndServeTLS(httpsAddr string) error {
 
 			// TODO: Should caller handle this or should we?
 			// Create a signature string for the accepted ciphers
-			if tlsConn.ClientHelloMsg != nil && len(tlsConn.ClientHelloMsg.CipherSuites) > 0 {
-				// RLS 10/10/2017 - Expanded signature
-				// Generate a fingerprint for the client. This enables us to whitelist
-				// failed TLS queries on a per-client basis.
-				ctx.CipherSignature = GenerateSignature(tlsConn.ClientHelloMsg, false)
-			} else {
-				ctx.CipherSignature = ""
-			}
+
+			ctx.CipherSignature = func() string {
+				if tlsConn.ClientHelloMsg != nil && len(tlsConn.ClientHelloMsg.CipherSuites) > 0 {
+					// RLS 10/10/2017 - Expanded signature
+					// Generate a fingerprint for the client. This enables us to whitelist
+					// failed TLS queries on a per-client basis.
+					return GenerateSignature(tlsConn.ClientHelloMsg, false)
+				}
+				return ""
+			}()
 
 			// TEST
 			// Set up a shared buffer so the second request can see the original request body
