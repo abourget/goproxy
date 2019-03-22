@@ -119,6 +119,7 @@ type ProxyHttpServer struct {
 	UpdateAllowedCounter     func(string, string, string, int, int, int)
 	UpdateBlockedCounter     func(string, string, string, int, bool)
 	UpdateWhitelistedCounter func(string, string, string, int)
+	UpdateTempWhitelistedCounter func(string, string, string, int)
 
 	// Defaults to a conntrak lookup but callers may substitute their own function (intended
 	// primarily for unit testing). The connection must not be used or closed.
