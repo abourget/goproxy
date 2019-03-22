@@ -5,8 +5,6 @@ package goproxy
 import (
 	"bufio"
 	"bytes"
-	"github.com/inconshreveable/go-vhost"
-	"github.com/winstonprivacyinc/winston/goproxy/har"
 	"log"
 	"net"
 	"net/http"
@@ -15,14 +13,21 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+
+	"github.com/avct/uasurfer"
+	"github.com/inconshreveable/go-vhost"
+	"github.com/winstonprivacyinc/winston/goproxy/har"
+
 	//"github.com/peterbourgon/diskv"
 	"context"
 	"crypto/md5"
 	"encoding/hex"
 	"fmt"
-	"github.com/winstonprivacyinc/go-conntrack"
 	"strconv"
 	"time"
+
+	"github.com/winstonprivacyinc/go-conntrack"
+
 	//"crypto/tls"
 	"github.com/winstonprivacyinc/winston/shadownetwork"
 	//"crypto/x509"
@@ -308,6 +313,39 @@ func (proxy *ProxyHttpServer) ListenAndServe(addr string) error {
 	}
 }
 
+func ConvertUserAgentToSignature(s string) string {
+	if strings.TrimSpace(s) == "" {
+		return "unknown"
+	}
+
+	ua := uasurfer.Parse(s)
+
+	// create slice of parts
+	parts := []string{ua.OS.Platform.StringTrimPrefix(), ua.DeviceType.StringTrimPrefix(), ua.Browser.Name.StringTrimPrefix(), ua.OS.Name.StringTrimPrefix(), strconv.Itoa(ua.OS.Version.Major)}
+
+	filtered := []string{}
+	for _, v := range parts {
+		if v == "Unknown" || v == "0" {
+			continue
+		}
+		filtered = append(filtered, v)
+	}
+
+	candidate := strings.ToLower(strings.Join(filtered, "-"))
+
+	if candidate == "" {
+		// back to the original user agent
+		candidate = s
+		candidate = strings.ReplaceAll(candidate, " ", "-")
+		candidate = strings.ReplaceAll(candidate, "/", "-")
+		candidate = strings.ReplaceAll(candidate, "_", "-")
+	}
+
+	rc := strings.ToLower(candidate)
+
+	return rc
+}
+
 // Expects a parsed request object, connection and a response writer. Will forward the connection to the original
 // destination (found in r.Host). If CONNECT, it will simply open a connection and the client must
 // negotiate it. Otherwise, it will replay the original request to the upstream server and pipe
@@ -354,7 +392,11 @@ func (proxy *ProxyHttpServer) HandleHTTPConnection(c net.Conn, r *http.Request, 
 
 	// NOTE: subtle: we're okay with setting ctx.CipherSignature to an empty string here.
 	// before we push it into influx, we'll convert it to something reasonable.
-	ctx.CipherSignature = r.Header.Get("User-Agent")
+	if r != nil && r.Header != nil {
+		ctx.CipherSignature = ConvertUserAgentToSignature(r.Header.Get("User-Agent"))
+	} else {
+		ctx.CipherSignature = "unknown"
+	}
 
 	// For any non-CONNECT request, we must guarantee the following before calling the handlers.
 	// ctx.host is set to the actual host of the request (ie: www.example.com)
