@@ -13,9 +13,10 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"unicode"
 
 	"github.com/avct/uasurfer"
-	"github.com/inconshreveable/go-vhost"
+	vhost "github.com/inconshreveable/go-vhost"
 	"github.com/winstonprivacyinc/winston/goproxy/har"
 
 	//"github.com/peterbourgon/diskv"
@@ -26,7 +27,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/winstonprivacyinc/go-conntrack"
+	conntrack "github.com/winstonprivacyinc/go-conntrack"
 
 	//"crypto/tls"
 	"github.com/winstonprivacyinc/winston/shadownetwork"
@@ -116,9 +117,9 @@ type ProxyHttpServer struct {
 	// RoundTripper which supports non-http protocols
 	NonHTTPRoundTripper *NonHTTPRoundTripper
 
-	UpdateAllowedCounter     func(string, string, string, int, int, int)
-	UpdateBlockedCounter     func(string, string, string, int, bool)
-	UpdateWhitelistedCounter func(string, string, string, int)
+	UpdateAllowedCounter         func(string, string, string, int, int, int)
+	UpdateBlockedCounter         func(string, string, string, int, bool)
+	UpdateWhitelistedCounter     func(string, string, string, int)
 	UpdateTempWhitelistedCounter func(string, string, string, int)
 
 	// Defaults to a conntrak lookup but callers may substitute their own function (intended
@@ -314,7 +315,20 @@ func (proxy *ProxyHttpServer) ListenAndServe(addr string) error {
 	}
 }
 
+// Returns supplied string with all non-alphanumeric runes removed.
+func alnum(s string) string {
+	b := strings.Builder{}
+	for _, c := range s {
+		if !unicode.IsDigit(c) && !unicode.IsLetter(c) {
+			continue
+		}
+		b.WriteRune(c)
+	}
+	return b.String()
+}
+
 func ConvertUserAgentToSignature(s string) string {
+
 	if strings.TrimSpace(s) == "" {
 		return "unknown"
 	}
@@ -322,14 +336,20 @@ func ConvertUserAgentToSignature(s string) string {
 	ua := uasurfer.Parse(s)
 
 	// create slice of parts
-	parts := []string{ua.OS.Platform.StringTrimPrefix(), ua.DeviceType.StringTrimPrefix(), ua.Browser.Name.StringTrimPrefix(), ua.OS.Name.StringTrimPrefix(), strconv.Itoa(ua.OS.Version.Major)}
+	parts := []string{
+		ua.OS.Platform.StringTrimPrefix(),
+		ua.DeviceType.StringTrimPrefix(),
+		ua.Browser.Name.StringTrimPrefix(),
+		ua.OS.Name.StringTrimPrefix(),
+		strconv.Itoa(ua.OS.Version.Major),
+	}
 
 	filtered := []string{}
 	for _, v := range parts {
 		if v == "Unknown" || v == "0" {
 			continue
 		}
-		filtered = append(filtered, v)
+		filtered = append(filtered, alnum(v))
 	}
 
 	candidate := strings.ToLower(strings.Join(filtered, "-"))

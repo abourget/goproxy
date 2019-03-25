@@ -4,6 +4,40 @@ import (
 	"testing"
 )
 
+func TestAlnum(t *testing.T) {
+	tests := []struct {
+		name     string
+		value    string
+		expected string
+	}{
+		{
+			name:     "Empty String",
+			value:    "",
+			expected: "",
+		}, {
+			name: "Multiple Spaces",
+			value: "			  		 		 					",
+			expected: "",
+		}, {
+			name:     "All Alpha-Numeric",
+			value:    "WinstonPrivacy12345",
+			expected: "WinstonPrivacy12345",
+		}, {
+			name:     "All Alpha-Numeric With Punctuation",
+			value:    "!!!Wins;ton[Privacy]-(1)23,45@",
+			expected: "WinstonPrivacy12345",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if v := alnum(test.value); v != test.expected {
+				t.Fatalf("alnum(%q) returned %q; expected %q", test.value, v, test.expected)
+			}
+		})
+	}
+}
+
 // NOTE: we want to return these components from the user agent
 // platform
 // device type
@@ -14,7 +48,6 @@ import (
 // ipad-tablet-chrome-53-ios
 
 func TestUAParse(t *testing.T) {
-
 	tests := []struct {
 		name     string
 		value    string
